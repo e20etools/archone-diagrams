@@ -265,7 +265,7 @@ export function createRelationship(
   };
 }
 
-export type RelationshipPatch = Partial<Pick<Relationship, "kind" | "label" | "protocol" | "port" | "description" | "links">>;
+export type RelationshipPatch = Partial<Pick<Relationship, "kind" | "label" | "protocol" | "port" | "description" | "links" | "flow" | "protocols" | "network" | "encrypted">>;
 
 export function updateRelationship(ws: Workspace, id: string, patch: RelationshipPatch): Workspace {
   const current = ws.relationships[id];
@@ -276,6 +276,8 @@ export function updateRelationship(ws: Workspace, id: string, patch: Relationshi
   const changed = (Object.keys(patch) as (keyof RelationshipPatch)[]).some((key) => key !== "links" && patch[key] !== undefined && patch[key] !== current[key]);
   const next: Relationship = { ...(changed ? kept : current), ...patch, updatedAt: nowIso() };
   if ("links" in patch) setLinks(next, patch.links);
+  // Cleared properties are left out rather than kept as empty values.
+  for (const key of ["flow", "protocols", "network", "encrypted"] as const) if (key in patch && (patch[key] === undefined || patch[key] === "")) delete next[key];
   return touch({ ...ws, relationships: { ...ws.relationships, [id]: next } });
 }
 
@@ -506,4 +508,28 @@ export function diagramBox(ws: Workspace, diagramId: string): { ws: Workspace; o
   if (existing) return { ws, objectId: existing.id };
   const made = createObject(ws, { typeId: "diagram", name: target.name, componentId: "diagrams.diagram", diagramId, description: target.description });
   return { ws: made.ws, objectId: made.object.id };
+}
+
+export type ConnectionProtocol = NonNullable<Relationship["protocols"]>[number];
+
+/**
+ * Sets a connection's protocols and ports. The plain protocol and port fields follow, so
+ * exports, checks and the API that read them see the same thing.
+ */
+export function setProtocols(ws: Workspace, id: string, protocols: ConnectionProtocol[]): Workspace {
+  const clean = protocols
+    .map((p) => ({ ...p, name: p.name.trim(), port: (p.port ?? "").trim() }))
+    .filter((p, i, all) => p.name && all.findIndex((q) => q.name.toLowerCase() === p.name.toLowerCase() && q.port === p.port) === i)
+    .slice(0, 12);
+  return updateRelationship(ws, id, {
+    protocols: clean.length ? clean : undefined,
+    protocol: clean.map((p) => p.name).join(", ").slice(0, 100),
+    port: clean.map((p) => p.port).filter(Boolean).join(", ").slice(0, 100),
+  });
+}
+
+/** The protocols of a connection: its list, or the plain fields read as one. */
+export function protocolsOf(r: Pick<Relationship, "protocols" | "protocol" | "port">): ConnectionProtocol[] {
+  if (r.protocols?.length) return r.protocols;
+  return r.protocol.trim() ? [{ name: r.protocol.trim(), port: r.port.trim() }] : [];
 }

@@ -1,6 +1,7 @@
 import { ChevronRight, Search } from "lucide-react";
 import { useMemo, useState, type DragEvent } from "react";
 import { DRAG_MIME, type DragItem } from "@/components/canvas/DiagramCanvas";
+import { PROTOCOLS, protocolLabel, searchProtocols, type ProtocolInfo } from "@/lib/library/protocols";
 import { LibraryIcon } from "@/components/icons";
 import { Input, Select } from "@/components/ui";
 import { LIBRARY_SECTIONS, PROVIDERS, componentsIn, providerById, searchLibrary, sectionById, type LibraryComponent } from "@/lib/library";
@@ -66,12 +67,15 @@ export function LibraryPanel({
   intro,
   diagrams,
   onPickDiagram,
+  onPickProtocol,
 }: {
   onPick: (c: LibraryComponent) => void;
   intro?: React.ReactNode;
   /** The other diagrams of the workspace, offered in the Diagrams section as boxes to connect to. */
   diagrams?: { id: string; name: string; kind: string }[];
   onPickDiagram?: (diagramId: string) => void;
+  /** Given, the panel ends with the protocols and ports, applied to the connection picked. */
+  onPickProtocol?: (protocol: ProtocolInfo) => void;
 }) {
   const [query, setQuery] = useState("");
   const [source, setSource] = useState<LibrarySource>(GENERAL);
@@ -150,7 +154,48 @@ export function LibraryPanel({
               );
             })}
           </ul>
+          {onPickProtocol && <ProtocolsSection onPick={onPickProtocol} />}
         </>
+      )}
+    </div>
+  );
+}
+
+/** The protocols and ports, by group; a click gives the connection picked on the diagram that protocol. */
+function ProtocolsSection({ onPick }: { onPick: (p: ProtocolInfo) => void }) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const shown = searchProtocols(query);
+  return (
+    <div className="border-t border-line-soft pt-1.5" data-library-protocols>
+      <button type="button" className="w-full flex items-center gap-1.5 px-1.5 py-1 rounded-md text-left text-[13px] font-medium hover:bg-line-soft" aria-expanded={open} onClick={() => setOpen(!open)}>
+        <ChevronRight size={14} className={`shrink-0 text-ink-faint transition-transform ${open ? "rotate-90" : ""}`} />
+        <span className="shrink-0 text-[#0E7490]">
+          <LibraryIcon name="Cable" size={15} />
+        </span>
+        <span className="min-w-0 flex-1 truncate">Protocols and ports</span>
+        <span className="text-xs text-ink-faint tabular-nums">{PROTOCOLS.length}</span>
+      </button>
+      {open && (
+        <div className="pl-1 pt-1 pb-1.5 space-y-1">
+          <p className="px-1 text-xs text-ink-faint">Pick a connection on the diagram, then a protocol to add it.</p>
+          <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="HTTPS, 1433, LDAP…" aria-label="Find a protocol" />
+          <div className="max-h-72 overflow-y-auto space-y-0.5">
+            {shown.map((p) => (
+              <button
+                key={`${p.name}-${p.port}`}
+                type="button"
+                data-library-protocol={p.name}
+                onClick={() => onPick(p)}
+                className="w-full flex items-center gap-2 rounded px-1.5 py-1 text-left text-[13px] hover:bg-line-soft"
+                title={p.use}
+              >
+                <span className="min-w-0 flex-1 truncate">{p.name}</span>
+                <span className="text-xs tabular-nums text-ink-faint">{protocolLabel(p).slice(p.name.length).trim()}</span>
+              </button>
+            ))}
+          </div>
+        </div>
       )}
     </div>
   );

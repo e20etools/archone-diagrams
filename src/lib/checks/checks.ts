@@ -1,3 +1,5 @@
+import { protocolByName } from "../library/protocols";
+import { protocolsOf } from "../model";
 import { objectType } from "../catalog";
 import { toCsv } from "../exporters";
 import { describeRule, runCustomCheck } from "./custom";
@@ -108,6 +110,16 @@ const DATA_STORES = new Set(["database", "storage", "queue", "cache"]);
 const OUTSIDE = new Set(["external-system", "actor"]);
 /** Protocols that send data in the clear. A protocol written with TLS, or HTTPS, SFTP and the like, passes. */
 const CLEAR_TEXT = /^(http|ftp|telnet|smtp|ldap|amqp|mqtt|redis|tcp|udp|jdbc|odbc|rsh|tftp|ws)$/i;
+/** Protocols of the catalogue that carry everything in clear text by design, with no way to switch encryption on. */
+const CLEAR_BY_DESIGN = new Set(["HTTP", "HTTP alternate", "WebSocket", "Telnet", "FTP", "FTP data", "TFTP", "POP3", "IMAP", "LDAP", "VNC", "WinRM HTTP", "NetBIOS session", "NetBIOS name service", "PPTP (legacy)", "LPD", "Raw printing (JetDirect)", "rsync"]);
+
+/** The protocols of a connection that send in clear text: the catalogue's clear-by-design ones, or the usual short names. */
+function clearTextOf(r: Relationship): string[] {
+  return protocolsOf(r)
+    .map((p) => ({ p, known: protocolByName(p.name) }))
+    .filter(({ p, known }) => (known ? CLEAR_BY_DESIGN.has(known.name) : CLEAR_TEXT.test(p.name.trim())))
+    .map(({ p, known }) => (known ? known.name : p.name.trim().toUpperCase()));
+}
 const name = (o: ModelObject | undefined) => o?.name ?? "A deleted object";
 const isPci = (o: ModelObject) => o.tags.includes("pci");
 
@@ -266,8 +278,13 @@ export const RULES: Rule[] = [
     packs: ["security", "privacy", "pci", "nca"],
     run: ({ ws, relationships }) =>
       relationships
-        .filter((r) => CLEAR_TEXT.test(r.protocol.trim()))
-        .map((r) => ({ message: `${name(ws.objects[r.sourceId])} to ${name(ws.objects[r.targetId])} uses ${r.protocol.trim().toUpperCase()}, which is not encrypted.`, objectIds: [r.sourceId, r.targetId], relationshipIds: [r.id] })),
+        .map((r) => ({ r, plain: clearTextOf(r) }))
+        .filter(({ r, plain }) => plain.length > 0 && r.encrypted !== "yes")
+        .map(({ r, plain }) => ({
+          message: `${name(ws.objects[r.sourceId])} to ${name(ws.objects[r.targetId])} uses ${plain.join(", ")}, which ${plain.length === 1 ? "is" : "are"} not encrypted.`,
+          objectIds: [r.sourceId, r.targetId],
+          relationshipIds: [r.id],
+        })),
   },
   {
     id: "protocol-missing",

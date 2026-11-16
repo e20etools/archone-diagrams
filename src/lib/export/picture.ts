@@ -3,6 +3,8 @@ import { NODE_H, NODE_W } from "../layout";
 import { componentById } from "../library";
 import type { Diagram, Workspace } from "../types";
 import { visibleEdges } from "../views";
+import { protocolsOf } from "../model";
+import { protocolLabel } from "../library/protocols";
 import { zonesOf } from "../zones";
 
 /**
@@ -33,6 +35,7 @@ export interface PictureEdge {
   y2: number;
   label: string;
   kind: string;
+  flow: "out" | "in" | "both";
 }
 export interface Picture {
   title: string;
@@ -89,7 +92,10 @@ export function diagramPicture(ws: Workspace, diagram: Diagram): Picture {
     if (!a || !b) continue;
     const [x1, y1] = border(a.x + a.w / 2, a.y + a.h / 2, a.w + 8, a.h + 8, b.x + b.w / 2, b.y + b.h / 2);
     const [x2, y2] = border(b.x + b.w / 2, b.y + b.h / 2, b.w + 12, b.h + 12, a.x + a.w / 2, a.y + a.h / 2);
-    edges.push({ id: e.id, from: e.sourceId, to: e.targetId, x1, y1, x2, y2, label: e.label || RELATION_KIND_INFO[e.kind]?.label || "", kind: e.kind });
+    const rel = e.implied ? undefined : ws.relationships[e.relationshipIds[0]];
+    const carried = rel ? protocolsOf(rel).slice(0, 2).map(protocolLabel).join(", ") : "";
+    const label = [e.label || RELATION_KIND_INFO[e.kind]?.label || "", carried].filter(Boolean).join(" · ");
+    edges.push({ id: e.id, from: e.sourceId, to: e.targetId, x1, y1, x2, y2, label, kind: e.kind, flow: rel?.flow ?? "out" });
   }
   // Zones around their boxes, inner ones first so an outer zone can take in an inner one.
   const zoneFrames = new Map<string, { x: number; y: number; w: number; h: number }>();
@@ -170,8 +176,11 @@ export function pictureSvg(p: Picture, options: SvgOptions = {}): string {
   }
   for (const e of p.edges) {
     const on = options.highlight?.has(e.id);
-    const dash = options.dash !== undefined ? ` stroke-dasharray="7 6" stroke-dashoffset="${-options.dash}"` : "";
-    out.push(`<line x1="${e.x1.toFixed(1)}" y1="${e.y1.toFixed(1)}" x2="${e.x2.toFixed(1)}" y2="${e.y2.toFixed(1)}" stroke="${on ? "#E0662B" : "#8A95A8"}" stroke-width="${on ? 3 : 1.4}"${on ? "" : dash} marker-end="url(#${on ? "arrow-on" : "arrow"})"/>`);
+    const marker = `url(#${on ? "arrow-on" : "arrow"})`;
+    const ends = `${e.flow !== "in" ? ` marker-end="${marker}"` : ""}${e.flow !== "out" ? ` marker-start="${marker}"` : ""}`;
+    // Inbound traffic moves from the target back to the source.
+    const moving = options.dash !== undefined ? ` stroke-dasharray="7 6" stroke-dashoffset="${e.flow === "in" ? options.dash : -options.dash}"` : "";
+    out.push(`<line x1="${e.x1.toFixed(1)}" y1="${e.y1.toFixed(1)}" x2="${e.x2.toFixed(1)}" y2="${e.y2.toFixed(1)}" stroke="${on ? "#E0662B" : "#8A95A8"}" stroke-width="${on ? 3 : 1.4}"${on ? "" : moving}${ends}/>`);
     if (e.label) {
       const mx = (e.x1 + e.x2) / 2;
       const my = (e.y1 + e.y2) / 2;

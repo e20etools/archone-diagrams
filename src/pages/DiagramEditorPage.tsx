@@ -10,6 +10,7 @@ import { AiDraftDialog, ExportMenu, ShareDialog } from "@/components/dialogs";
 import { FlowBar, FlowsPanel, NO_FLOW, useFlowCursor, useFlowKeys } from "@/components/Flows";
 import { LibraryPanel } from "@/components/LibraryBrowser";
 import { SaveAsTemplateDialog } from "@/components/SaveAsTemplate";
+import { protocolLabel, type ProtocolInfo } from "@/lib/library/protocols";
 import { ArchiveDialog } from "@/components/NewArchitecture";
 import { componentById, componentSubtitle, objectFromComponent, type LibraryComponent } from "@/lib/library";
 import { addStep, flowsOf } from "@/lib/flows";
@@ -29,8 +30,10 @@ import {
   diagramBox,
   diagramsUsing,
   placeNodes,
+  protocolsOf,
   relationshipsOf,
   removeNodes,
+  setProtocols,
   setRelationshipHidden,
   sortedDiagrams,
   sortedObjects,
@@ -90,6 +93,7 @@ function Palette({
   onAddComponent,
   onAddObject,
   onAddDiagram,
+  onPickProtocol,
   onCollapse,
 }: {
   ws: Workspace;
@@ -98,6 +102,7 @@ function Palette({
   onAddComponent: (component: LibraryComponent) => void;
   onAddObject: (objectId: string) => void;
   onAddDiagram: (diagramId: string) => void;
+  onPickProtocol: (protocol: ProtocolInfo) => void;
   onCollapse: () => void;
 }) {
   const [basicOpen, setBasicOpen] = useState(true);
@@ -139,6 +144,7 @@ function Palette({
               .filter((d) => d.id !== diagram.id)
               .map((d) => ({ id: d.id, name: d.name, kind: VIEW_TYPE_INFO[d.viewType].label }))}
             onPickDiagram={onAddDiagram}
+            onPickProtocol={onPickProtocol}
           />
           <div className="border-t border-line-soft pt-2.5">
           <button type="button" className="w-full flex items-center justify-between text-[13px] font-medium" aria-expanded={basicOpen} onClick={() => setBasicOpen(!basicOpen)}>
@@ -740,6 +746,21 @@ function Editor({ ws, diagram }: { ws: Workspace; diagram: Diagram }) {
     [diagramId],
   );
 
+  // A protocol from the library goes onto the connection picked.
+  const pickProtocol = useCallback(
+    (p: ProtocolInfo) => {
+      const edgeId = selectionRef.current.edgeId;
+      const rel = edgeId ? useStore.getState().ws.relationships[edgeId] : undefined;
+      if (!rel) {
+        notify("Pick a connection on the diagram first, then the protocol.");
+        return;
+      }
+      apply((w) => setProtocols(w, rel.id, [...protocolsOf(w.relationships[rel.id]), { name: p.name, port: p.port, transport: p.transport }]));
+      notify(`${protocolLabel(p)} added to the connection.`);
+    },
+    [notify],
+  );
+
   // Another diagram as one box: the same box wherever that diagram is connected to.
   const addDiagram = useCallback(
     (targetId: string) => {
@@ -958,7 +979,7 @@ function Editor({ ws, diagram }: { ws: Workspace; diagram: Diagram }) {
       )}
       <div className="min-h-0 flex-1 flex">
         {!canEdit ? null : paletteOpen ? (
-          <Palette ws={ws} diagram={diagram} onAddType={addType} onAddComponent={addComponent} onAddObject={addExisting} onAddDiagram={addDiagram} onCollapse={() => togglePalette(false)} />
+          <Palette ws={ws} diagram={diagram} onAddType={addType} onAddComponent={addComponent} onAddObject={addExisting} onAddDiagram={addDiagram} onPickProtocol={pickProtocol} onCollapse={() => togglePalette(false)} />
         ) : (
           <div className="w-11 shrink-0 flex justify-center pt-2 bg-surface border-r border-line">
             <IconButton label="Show the panel for adding objects" onClick={() => togglePalette(true)}>

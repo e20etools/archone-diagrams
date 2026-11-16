@@ -814,6 +814,20 @@ build it:
 Every draft, imported or AI-made, becomes a diagram of the kind and name chosen, and each new
 object is linked to the library component its name or technology names exactly.
 
+### Connections: direction, protocols and ports
+
+Each connection says which way it goes: outbound (from the first box to the second, the usual),
+inbound, or both ways. The canvas draws the arrowheads that way and moves dashes along the line
+in the direction of the traffic (still for people who ask their system for less motion). A
+connection carries one or more protocols and ports, picked from the catalogue of 150 under
+Library, Protocols and ports (web, remote access, file transfer, email, identity, name and
+time, databases, messaging, monitoring, tunnels, storage, containers, industrial, finance and
+health) or typed; the network it runs over (from the Network connections section, such as MPLS
+or GSN); and whether it is encrypted. The line's label shows the first protocols, and its tooltip
+everything. In a diagram's library panel, a protocol is added to the connection picked. The
+clear-text check reads the protocols (HTTP, FTP, Telnet, LDAP and the like) and stays quiet when
+the connection is marked encrypted. Exports carry the direction and protocols.
+
 ### Network zones, connections, integrations and diagram boxes
 
 Four more sections in the library:

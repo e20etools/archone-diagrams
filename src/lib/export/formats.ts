@@ -267,7 +267,7 @@ export function drawioXml(diagram: Diagram, p: Picture): string {
     cells.push(`<mxCell id="${ids.get(n.id)}" value="${label}" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=${n.color};strokeWidth=2;fontColor=#16233A;" vertex="1" parent="1"><mxGeometry x="${Math.round(n.x)}" y="${Math.round(n.y)}" width="${n.w}" height="${n.h}" as="geometry"/></mxCell>`);
   }
   p.edges.forEach((e, i) => {
-    cells.push(`<mxCell id="e${i + 1}" value="${escapeXml(e.label)}" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#8A95A8;fontColor=#5B6779;fontSize=10;" edge="1" parent="1" source="${ids.get(e.from)}" target="${ids.get(e.to)}"><mxGeometry relative="1" as="geometry"/></mxCell>`);
+    cells.push(`<mxCell id="e${i + 1}" value="${escapeXml(e.label)}" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#8A95A8;fontColor=#5B6779;fontSize=10;${e.flow === "in" ? "startArrow=classic;endArrow=none;" : e.flow === "both" ? "startArrow=classic;endArrow=classic;" : ""}" edge="1" parent="1" source="${ids.get(e.from)}" target="${ids.get(e.to)}"><mxGeometry relative="1" as="geometry"/></mxCell>`);
   });
   return `<mxfile host="ArchONE Diagrams" modified="${new Date().toISOString()}" type="device">
   <diagram id="${escapeXml(diagram.id)}" name="${escapeXml(diagram.name)}">

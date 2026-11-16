@@ -343,3 +343,34 @@
 .object-node[data-shape="gateway"] .object-node__icon { border-radius: 3px; transform: rotate(45deg) scale(0.82); }
 .object-node[data-shape="data"] { border-radius: 2px 2px 14px 14px; }
 .object-node[data-shape="participant"] { border-style: dashed; }
+
+/* Connections move the way their traffic goes: out, in, or back and forth for both ways. */
+.react-flow__edge.traffic .react-flow__edge-path {
+  stroke-dasharray: 7 6;
+  animation: traffic-out 1.1s linear infinite;
+}
+.react-flow__edge.traffic-in .react-flow__edge-path {
+  animation-name: traffic-in;
+}
+.react-flow__edge.traffic-both .react-flow__edge-path {
+  animation: traffic-out 1.1s linear infinite alternate;
+}
+@keyframes traffic-out {
+  to {
+    stroke-dashoffset: -26;
+  }
+}
+@keyframes traffic-in {
+  to {
+    stroke-dashoffset: 26;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .react-flow__edge.traffic .react-flow__edge-path {
+    animation: none;
+  }
+}
+.archone-still .react-flow__edge.traffic .react-flow__edge-path {
+  animation: none;
+  stroke-dasharray: none;
+}

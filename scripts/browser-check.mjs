@@ -146,6 +146,38 @@ try {
   const sampleEdges = await count(page, ".react-flow__edge");
   await shot(page, "02-editor");
 
+  // A connection: which way it goes, moving on the canvas, and its protocols and ports.
+  {
+    const movingBefore = await count(page, ".react-flow__edge.traffic-out");
+    const edgeId = await page.$eval(".react-flow__edge.traffic", (e) => e.getAttribute("data-id"));
+    await page.evaluate((id) => {
+      const path = document.querySelector(`.react-flow__edge[data-id="${id}"] .react-flow__edge-interaction`) ?? document.querySelector(`.react-flow__edge[data-id="${id}"] path`);
+      path.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    }, edgeId);
+    await page.waitForSelector("[data-connection-properties]");
+    await page.$eval('[data-connection-properties] [data-flow="both"]', (b) => b.click());
+    await page.type('[data-connection-properties] input[aria-label="Add a protocol"]', "LDAPS");
+    await page.click("[data-protocol-add]");
+    await page.type('[data-connection-properties] input[aria-label="Add a protocol"]', "HTTP");
+    await page.click("[data-protocol-add]");
+    await sleep(400);
+    const rel = (await stored()).relationships[edgeId];
+    const drawn = await page.$eval(`.react-flow__edge[data-id="${edgeId}"]`, (e) => ({ both: e.classList.contains("traffic-both"), markers: !!e.querySelector("path[marker-start]") && !!e.querySelector("path[marker-end]") }));
+    const labelText = await page.evaluate(() => [...document.querySelectorAll(".edge-label")].map((l) => l.textContent).join(" | "));
+    const warning = await page.$eval("[data-connection-properties]", (e) => e.innerText.includes("does not encrypt by itself"));
+    await shot(page, "02b-connection");
+    check(
+      "a connection goes both ways, moves on the canvas, and carries more than one protocol and port",
+      movingBefore > 0 && rel.flow === "both" && rel.protocols?.map((p) => `${p.name}:${p.port}`).join(",") === "LDAPS:636,HTTP:80" && drawn.both && drawn.markers && labelText.includes("LDAPS 636/TCP") && warning,
+      JSON.stringify({ movingBefore, flow: rel.flow, protocols: rel.protocols, drawn, warning }),
+    );
+    await page.$eval('[data-connection-properties] [data-flow="out"]', (b) => b.click());
+    await page.evaluate(() => document.querySelectorAll('[data-connection-properties] [aria-label^="Remove "]').forEach((b) => b.click()));
+    await page.evaluate(() => document.querySelector('[data-connection-properties] [aria-label^="Remove "]')?.click());
+    await sleep(300);
+    await page.keyboard.press("Escape");
+  }
+
   // Select a box and edit it in the inspector.
   await page.click(".object-node");
   await page.waitForSelector('aside[aria-label="Details"] h2');
@@ -1097,7 +1129,8 @@ try {
   const docxName = (await readdir(downloads)).find((f) => f.endsWith(".docx"));
   const docx = docxName ? await JSZip.loadAsync(await readFile(join(downloads, docxName))) : null;
   const docXml = docx ? await docx.file("word/document.xml").async("string") : "";
-  const docPictures = docx ? Object.keys(docx.files).filter((f) => f.startsWith("word/media/")).length : 0;
+  // Pictures placed in the text; two identical diagrams share one stored image.
+  const docPictures = (docXml.match(/<pic:pic\b/g) ?? []).length;
   check(
     "the model is written up as a Word document with a picture of each diagram",
     /^shop-architecture-review-\d{4}-\d\d-\d\d\.docx$/.test(docxName ?? "") && docPictures === docDiagrams && docXml.includes("Shop architecture review") && docXml.includes("How the parts connect") && !(await hasText(page, "could not be drawn")),

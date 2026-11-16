@@ -28,8 +28,9 @@ import { TypeIcon } from "@/components/icons";
 import { LIFECYCLE_INFO, RELATION_KIND_INFO, objectType, ownerColor, typeColor } from "@/lib/catalog";
 import { NODE_H, NODE_W, boundsOf } from "@/lib/layout";
 import { zonesOf } from "@/lib/zones";
+import { protocolLabel } from "@/lib/library/protocols";
 import { componentSubtitle } from "@/lib/library";
-import { childrenOf } from "@/lib/model";
+import { childrenOf, protocolsOf } from "@/lib/model";
 import type { Diagram, ModelObject, Workspace } from "@/lib/types";
 import { scopeMembers, visibleEdges } from "@/lib/views";
 
@@ -206,7 +207,7 @@ const LabelledEdge = memo(function LabelledEdge({
   data,
   selected,
   interactionWidth,
-}: EdgeProps<Edge<{ slot: number; dim?: boolean }>>) {
+}: EdgeProps<Edge<{ slot: number; dim?: boolean; title?: string }>>) {
   const [path] = getSmoothStepPath({ sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition, borderRadius: 8 });
   const slot = data?.slot ?? 0;
   const vertical = targetPosition === Position.Top;
@@ -219,7 +220,7 @@ const LabelledEdge = memo(function LabelledEdge({
       <BaseEdge id={id} path={path} markerStart={markerStart} markerEnd={markerEnd} style={style} interactionWidth={interactionWidth} />
       {label && (
         <EdgeLabelRenderer>
-          <div className="edge-label" data-selected={selected || undefined} style={{ transform, opacity: data?.dim ? 0.25 : undefined }}>
+          <div className="edge-label" data-selected={selected || undefined} title={data?.title} style={{ transform, opacity: data?.dim ? 0.25 : undefined }}>
             {label}
           </div>
         </EdgeLabelRenderer>
@@ -373,9 +374,14 @@ function Inner({
     return visibleEdges(ws, diagram).map((e) => {
         const inStep = lit?.has(e.id) ?? false;
         const color = inStep ? "#2447d6" : e.implied ? "#93a0b4" : "#5b6b84";
+        // Which way traffic goes, and what it carries, from the relationship behind the line.
+        const rel = e.implied ? undefined : ws.relationships[e.relationshipIds[0]];
+        const flow = rel?.flow ?? "out";
+        const carried = rel ? protocolsOf(rel) : [];
+        const carriedText = carried.slice(0, 2).map(protocolLabel).join(", ") + (carried.length > 2 ? ` +${carried.length - 2}` : "");
         // In a notation the line itself says what kind of relationship it is.
         const arrow = diagram.notation === "archimate" ? archimateArrow(e.kind) : diagram.notation === "bpmn" ? bpmnArrow(e.kind) : null;
-        let text = e.label.trim() || (arrow ? arrow.name : e.kind === "calls" ? "" : RELATION_KIND_INFO[e.kind].verb);
+        let text = [e.label.trim() || (arrow ? arrow.name : e.kind === "calls" ? "" : RELATION_KIND_INFO[e.kind].verb), carriedText].filter(Boolean).join(" · ");
         const repeat = `${e.targetId}|${text}`;
         if (text && !e.implied && said.has(repeat) && selection?.edgeId !== e.id) text = "";
         if (text && !e.implied) said.add(repeat);
@@ -387,15 +393,23 @@ function Inner({
           target: e.targetId,
           type: "labelled",
           label: text || undefined,
-          data: { slot, dim: !!lit && !inStep },
-          className: lit ? (inStep ? "flow-edge" : "dim-edge") : undefined,
+          data: {
+            slot,
+            dim: !!lit && !inStep,
+            title: [RELATION_KIND_INFO[e.kind].label, flow === "both" ? "both ways" : flow === "in" ? "inbound" : "outbound", ...carried.map(protocolLabel), rel?.network ? `over ${rel.network}` : "", rel?.encrypted === "yes" ? "encrypted" : rel?.encrypted === "no" ? "not encrypted" : ""].filter(Boolean).join(" · "),
+          },
+          className: [lit ? (inStep ? "flow-edge" : "dim-edge") : "", !e.implied && !lit ? `traffic traffic-${flow}` : ""].filter(Boolean).join(" ") || undefined,
           animated: inStep,
           ...(arrow
             ? {
                 [arrow.reversed ? "markerStart" : "markerEnd"]: { type: arrow.head === "open" ? MarkerType.Arrow : MarkerType.ArrowClosed, width: 16, height: 16, color },
                 style: { stroke: color, strokeDasharray: e.implied ? "6 4" : arrow.dashed ? "4 4" : undefined },
               }
-            : { markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16, color }, style: { stroke: color, strokeDasharray: e.implied ? "6 4" : undefined } }),
+            : {
+                ...(flow !== "in" ? { markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16, color } } : {}),
+                ...(flow !== "out" ? { markerStart: { type: MarkerType.ArrowClosed, width: 16, height: 16, color } } : {}),
+                style: { stroke: color, strokeDasharray: e.implied ? "6 4" : undefined },
+              }),
           selected: selection?.edgeId === e.id,
           deletable: false,
           reconnectable: false,

@@ -1,4 +1,4 @@
-import { Plus, Search } from "lucide-react";
+import { Lock, Plus, Search } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { ComponentTile, GENERAL, SourceSelect, sectionsOf, type LibrarySource } from "@/components/LibraryBrowser";
@@ -8,8 +8,11 @@ import { objectType } from "@/lib/catalog";
 import { useCanEdit } from "@/lib/cloud/session";
 import { LIBRARY_COUNTS, PROVIDERS, componentById, componentLabel, componentsIn, objectFromComponent, providerById, searchLibrary, sectionById } from "@/lib/library";
 import { profileById } from "@/lib/library/profiles";
+import { PROTOCOLS, PROTOCOL_GROUPS, protocolLabel, searchProtocols } from "@/lib/library/protocols";
+import { protocolsOf } from "@/lib/model";
 import { addObject, useWorkspace } from "@/lib/store";
 
+const PROTOCOLS_ID = "__protocols";
 const FIELD_KIND: Record<string, string> = { text: "Text", number: "Number", date: "Date", url: "Web address", select: "Choice", ip: "IP address" };
 
 /**
@@ -71,8 +74,23 @@ export function LibraryPage() {
             </li>
           ))}
         </ul>
+        <div className="border-t border-line-soft px-1.5 py-2">
+          <button
+            type="button"
+            className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left text-[13px] ${sectionId === PROTOCOLS_ID ? "bg-blueprint-soft text-blueprint-deep font-medium" : "hover:bg-line-soft"}`}
+            onClick={() => setSectionId(PROTOCOLS_ID)}
+            data-library-section={PROTOCOLS_ID}
+          >
+            <LibraryIcon name="Cable" size={15} />
+            <span className="min-w-0 flex-1 truncate">Protocols and ports</span>
+            <span className="text-xs text-ink-faint tabular-nums">{PROTOCOLS.length}</span>
+          </button>
+        </div>
       </aside>
 
+      {sectionId === PROTOCOLS_ID ? (
+        <ProtocolsCatalog />
+      ) : (
       <main className="min-w-0 flex-1 overflow-y-auto px-6 py-5">
         <div className="relative max-w-md">
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-faint pointer-events-none" />
@@ -98,8 +116,9 @@ export function LibraryPage() {
           ))}
         </div>
       </main>
+      )}
 
-      {picked && (
+      {picked && sectionId !== PROTOCOLS_ID && (
         <aside className="w-[320px] shrink-0 overflow-y-auto bg-surface border-l border-line px-4 py-4" aria-label="Component details" data-library-detail={picked.id}>
           <div className="flex items-start gap-3">
             <span className="grid size-11 shrink-0 place-items-center rounded-lg border border-line" style={{ color: sectionById(picked.sectionId)?.color }}>
@@ -170,5 +189,71 @@ export function LibraryPage() {
         </aside>
       )}
     </div>
+  );
+}
+
+/**
+ * The protocols and ports connections use, by group, with how many connections of this model
+ * use each. A connection takes them in its details: one or more each.
+ */
+function ProtocolsCatalog() {
+  const ws = useWorkspace();
+  const [query, setQuery] = useState("");
+  const [group, setGroup] = useState<string | null>(null);
+  const used = useMemo(() => {
+    const count = new Map<string, number>();
+    for (const r of Object.values(ws.relationships)) for (const p of protocolsOf(r)) count.set(p.name.toLowerCase(), (count.get(p.name.toLowerCase()) ?? 0) + 1);
+    return count;
+  }, [ws.relationships]);
+  const shown = searchProtocols(query).filter((p) => !group || p.group === group);
+  return (
+    <main className="min-w-0 flex-1 overflow-y-auto px-6 py-5" data-protocols-catalog>
+      <h2 className="text-sm font-semibold">Protocols and ports</h2>
+      <p className="text-[13px] text-ink-soft">
+        What connections carry. Open a connection on a diagram to give it one or more of these; the lock marks protocols that encrypt what they carry.
+      </p>
+      <div className="mt-3 flex flex-wrap items-center gap-1.5">
+        <div className="relative w-64">
+          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-faint pointer-events-none" />
+          <Input className="pl-9" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Name, port or use" aria-label="Search protocols" />
+        </div>
+        {[null, ...PROTOCOL_GROUPS].map((g) => (
+          <button key={g ?? "all"} type="button" onClick={() => setGroup(g)} className={`rounded-full border px-2.5 py-0.5 text-xs ${group === g ? "border-blueprint bg-blueprint-soft text-blueprint" : "border-line text-ink-soft hover:border-ink-faint"}`}>
+            {g ?? "All"}
+          </button>
+        ))}
+      </div>
+      <table className="mt-3 w-full text-left text-[13px]">
+        <thead className="text-xs text-ink-soft border-b border-line">
+          <tr>
+            <th className="py-1.5 font-medium">Protocol</th>
+            <th className="py-1.5 font-medium">Port</th>
+            <th className="py-1.5 font-medium">Transport</th>
+            <th className="py-1.5 font-medium">Group</th>
+            <th className="py-1.5 font-medium">Use</th>
+            <th className="py-1.5 font-medium text-right">In this model</th>
+          </tr>
+        </thead>
+        <tbody>
+          {shown.map((p) => (
+            <tr key={`${p.name}-${p.port}`} className="border-b border-line-soft" data-protocol={p.name}>
+              <td className="py-1.5 font-medium">
+                <span className="inline-flex items-center gap-1">
+                  {p.name}
+                  {p.secure && <Lock size={12} className="text-ok" aria-label="Encrypts what it carries" />}
+                </span>
+              </td>
+              <td className="py-1.5 tabular-nums">{p.port || "–"}</td>
+              <td className="py-1.5">{p.transport}</td>
+              <td className="py-1.5 text-ink-soft">{p.group}</td>
+              <td className="py-1.5 text-ink-soft">{p.use}</td>
+              <td className="py-1.5 text-right tabular-nums">{used.get(p.name.toLowerCase()) ?? 0}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {!shown.length && <p className="mt-3 text-ink-soft">No protocol matches.</p>}
+      <p className="mt-3 text-xs text-ink-faint">Written on a line as {protocolLabel(PROTOCOLS[1])}.</p>
+    </main>
   );
 }

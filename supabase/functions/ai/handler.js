@@ -3888,6 +3888,28 @@ var relationshipSchema = objectType({
 		by: stringType(),
 		at: stringType()
 	}).optional(),
+	/** Which way traffic goes: out from the source to the target (the usual), in from the target, or both ways. */
+	flow: enumType([
+		"out",
+		"in",
+		"both"
+	]).optional(),
+	/** The protocols and ports it uses, one or more. The protocol and port fields above repeat them as text. */
+	protocols: arrayType(objectType({
+		name: stringType().min(1).max(60),
+		port: stringType().max(40).default(""),
+		transport: enumType([
+			"TCP",
+			"UDP",
+			"TCP/UDP",
+			"IP",
+			"Other"
+		]).optional()
+	})).max(12).optional(),
+	/** The network it runs over, such as MPLS, Internet or a site-to-site VPN. */
+	network: stringType().max(80).optional(),
+	/** Whether what it carries is encrypted on the way. */
+	encrypted: enumType(["yes", "no"]).optional(),
 	links: arrayType(linkSchema).optional(),
 	provenance: provenanceSchema,
 	createdAt: stringType(),

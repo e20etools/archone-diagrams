@@ -1,15 +1,16 @@
 import { CLASSIFICATIONS, agentLens, dataLens, isDataField, withAgentField, withDataField } from "@/lib/checks/checks";
-import { ArrowRight, ExternalLink, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, ArrowLeftRight, ArrowRight, ExternalLink, Lock, Plus, Trash2, X } from "lucide-react";
 import { useState } from "react";
 import { MAX_LINKS, linkLabel, safeUrl } from "@/lib/links";
 import { ADR_STATUS_LABEL, adrLabel, adrsAbout } from "@/lib/adr";
 import { Link } from "react-router-dom";
 import { BasicInformation, ComponentField } from "@/components/BasicInformation";
 import { TypeIcon } from "@/components/icons";
-import { profileOf } from "@/lib/library";
+import { componentsIn, profileOf } from "@/lib/library";
+import { PROTOCOLS, protocolByName, protocolLabel } from "@/lib/library/protocols";
 import { Badge, Button, CommitInput, Field, IconButton, Input, Select, formatDateTime } from "@/components/ui";
 import { CATEGORY_INFO, LIFECYCLE_INFO, OBJECT_TYPES, RELATION_KIND_INFO, objectType, type Category } from "@/lib/catalog";
-import { allOwners, diagramsUsing, possibleParents, relationshipsOf, updateObject, updateRelationship } from "@/lib/model";
+import { allOwners, diagramsUsing, possibleParents, protocolsOf, relationshipsOf, setProtocols, updateObject, updateRelationship } from "@/lib/model";
 import { cloudSuggestions } from "@/lib/cloudCatalog";
 import { useMe } from "@/lib/cloud/me";
 import { useCanEdit, useMyCategoryRoles } from "@/lib/cloud/session";
@@ -511,19 +512,134 @@ export function RelationshipEditor({ ws, relationship }: { ws: Workspace; relati
       <Field label="Label" hint="Shown on the arrow. Leave empty to show the kind.">
         <CommitInput value={relationship.label} onCommit={(label) => patch({ label })} placeholder={info.verb} />
       </Field>
-      <div className="grid grid-cols-2 gap-2.5">
-        <Field label="Protocol">
-          <CommitInput value={relationship.protocol} onCommit={(protocol) => patch({ protocol })} placeholder="HTTPS" />
-        </Field>
-        <Field label="Port">
-          <CommitInput value={relationship.port} onCommit={(port) => patch({ port })} placeholder="443" />
-        </Field>
-      </div>
+      <ConnectionProperties ws={ws} relationship={relationship} />
       <Field label="Description">
         <CommitInput multiline rows={2} value={relationship.description} onCommit={(description) => patch({ description })} />
       </Field>
       <LinksEditor links={relationship.links} about="this connection" onChange={(links) => patch({ links })} />
       <Handshake ws={ws} relationship={relationship} />
     </div>
+  );
+}
+
+const FLOWS = [
+  { id: "out", label: "Outbound", hint: "From the first to the second", Icon: ArrowRight },
+  { id: "in", label: "Inbound", hint: "From the second to the first", Icon: ArrowLeft },
+  { id: "both", label: "Both ways", hint: "Each calls the other", Icon: ArrowLeftRight },
+] as const;
+
+/** Which way a connection goes, and the protocols, ports, network and encryption it uses. */
+export function ConnectionProperties({ ws, relationship }: { ws: Workspace; relationship: Relationship }) {
+  const canEdit = useCanEdit();
+  const source = ws.objects[relationship.sourceId]?.name ?? "";
+  const target = ws.objects[relationship.targetId]?.name ?? "";
+  const flow = relationship.flow ?? "out";
+  const list = protocolsOf(relationship);
+  const [adding, setAdding] = useState("");
+  const [port, setPort] = useState("");
+  const listId = `protocols-${relationship.id}`;
+  const networks = componentsIn("connections").map((c) => c.name);
+  const insecure = list.filter((p) => protocolByName(p.name) && !protocolByName(p.name)!.secure);
+  const add = () => {
+    const known = protocolByName(adding.replace(/\s+\d.*$/, "")) ?? protocolByName(adding);
+    const name = known?.name ?? adding.trim();
+    if (!name) return;
+    apply((w) => setProtocols(w, relationship.id, [...protocolsOf(w.relationships[relationship.id]), { name, port: port.trim() || known?.port || "", ...(known ? { transport: known.transport } : {}) }]));
+    setAdding("");
+    setPort("");
+  };
+  return (
+    <fieldset disabled={!canEdit} className="space-y-3 min-w-0" data-connection-properties>
+      <div>
+        <span className="block text-[13px] font-medium text-ink-soft mb-1">Direction</span>
+        <div className="grid grid-cols-3 gap-1" role="radiogroup" aria-label="Direction">
+          {FLOWS.map(({ id, label, Icon }) => (
+            <button
+              key={id}
+              type="button"
+              role="radio"
+              aria-checked={flow === id}
+              data-flow={id}
+              onClick={() => apply((w) => updateRelationship(w, relationship.id, { flow: id === "out" ? undefined : id }))}
+              className={`flex flex-col items-center gap-0.5 rounded-md border px-1.5 py-1.5 text-xs ${flow === id ? "border-blueprint bg-blueprint-soft text-blueprint font-medium" : "border-line text-ink-soft hover:border-ink-faint"}`}
+            >
+              <Icon size={15} />
+              {label}
+            </button>
+          ))}
+        </div>
+        <p className="mt-1 text-xs text-ink-faint">
+          {flow === "out" ? `${source} → ${target}` : flow === "in" ? `${source} ← ${target}` : `${source} ↔ ${target}`}
+        </p>
+      </div>
+
+      <div>
+        <span className="block text-[13px] font-medium text-ink-soft mb-1">Protocols and ports</span>
+        {list.length > 0 && (
+          <ul className="flex flex-wrap gap-1 mb-1.5" data-connection-protocols={list.length}>
+            {list.map((p, i) => {
+              const info = protocolByName(p.name);
+              return (
+                <li key={`${p.name}-${p.port}-${i}`} className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs ${info && !info.secure ? "border-signal/50 bg-signal-soft" : "border-line bg-paper"}`} title={info?.use}>
+                  {info?.secure && <Lock size={10} className="text-ok" />}
+                  {protocolLabel(p)}
+                  <button type="button" aria-label={`Remove ${p.name}`} className="text-ink-faint hover:text-danger" onClick={() => apply((w) => setProtocols(w, relationship.id, protocolsOf(w.relationships[relationship.id]).filter((_, j) => j !== i)))}>
+                    <X size={11} />
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+        <div className="grid grid-cols-[1fr_72px_auto] gap-1">
+          <Input
+            list={listId}
+            value={adding}
+            placeholder="HTTPS, LDAPS, SQL Server…"
+            aria-label="Add a protocol"
+            onChange={(e) => {
+              setAdding(e.target.value);
+              const known = protocolByName(e.target.value);
+              if (known) setPort(known.port);
+            }}
+            onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), add())}
+          />
+          <Input value={port} placeholder="Port" aria-label="Port" onChange={(e) => setPort(e.target.value)} onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), add())} />
+          <Button size="sm" icon={<Plus size={13} />} onClick={add} disabled={!adding.trim()} data-protocol-add>
+            Add
+          </Button>
+        </div>
+        <datalist id={listId}>
+          {PROTOCOLS.map((p) => (
+            <option key={`${p.name}-${p.port}`} value={p.name}>
+              {protocolLabel(p)} · {p.group}
+            </option>
+          ))}
+        </datalist>
+        {insecure.length > 0 && (
+          <p className="mt-1 text-xs text-signal">
+            {insecure.map((p) => p.name).join(", ")} {insecure.length === 1 ? "does" : "do"} not encrypt by itself. Use its TLS form or a VPN, and set Encrypted when it is.
+          </p>
+        )}
+      </div>
+
+      <div className="grid grid-cols-2 gap-2.5">
+        <Field label="Runs over">
+          <Input list={`${listId}-networks`} defaultValue={relationship.network ?? ""} key={relationship.network ?? ""} placeholder="MPLS, Internet…" aria-label="Runs over" onBlur={(e) => e.target.value !== (relationship.network ?? "") && apply((w) => updateRelationship(w, relationship.id, { network: e.target.value.trim() || undefined }))} />
+          <datalist id={`${listId}-networks`}>
+            {networks.map((n) => (
+              <option key={n} value={n} />
+            ))}
+          </datalist>
+        </Field>
+        <Field label="Encrypted">
+          <Select value={relationship.encrypted ?? ""} aria-label="Encrypted" onChange={(e) => apply((w) => updateRelationship(w, relationship.id, { encrypted: (e.target.value || undefined) as "yes" | "no" | undefined }))}>
+            <option value="">Not said</option>
+            <option value="yes">Yes</option>
+            <option value="no">No</option>
+          </Select>
+        </Field>
+      </div>
+    </fieldset>
   );
 }
