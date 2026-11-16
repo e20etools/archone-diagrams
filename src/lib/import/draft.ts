@@ -1,3 +1,4 @@
+import { exactComponent, type LibraryComponent } from "../library";
 import { OBJECT_TYPES, RELATION_KIND_INFO, isKnownType, objectType } from "../catalog";
 import { NODE_H, NODE_W } from "../layout";
 import { findByName, newId, normalizeName, nowIso } from "../model";
@@ -50,6 +51,19 @@ const median = (values: number[]) => {
 const clamp = (value: number, low: number, high: number) => Math.min(high, Math.max(low, value));
 
 /** One page of a Visio or draw.io file as a draft: an object per labelled shape, a relationship per connector, boxes placed as drawn. */
+/** The component a draw.io or Visio stencil names, such as mxgraph.aws4.lambda_function. */
+function stencilComponent(hint: string): LibraryComponent | undefined {
+  const PREFIX: [RegExp, string][] = [[/^aws/, "AWS"], [/^(azure|mscae)/, "Azure"], [/^gcp/, "Google Cloud"], [/^(oci|oracle)/, "OCI"], [/^ibm/, "IBM Cloud"], [/^alibaba/, "Alibaba Cloud"], [/^huawei/, "Huawei Cloud"]];
+  const names = [...hint.matchAll(/(?:resIcon|shape|prIcon)=mxgraph\.([a-z0-9_]+)\.([a-z0-9_]+)/gi)].map((m) => ({ space: m[1].toLowerCase(), name: m[2].replace(/_/g, " ") }));
+  for (const { space, name } of names.reverse()) {
+    // The stencil set says whose service it is, which settles a name several providers share.
+    const prefix = PREFIX.find(([pattern]) => pattern.test(space))?.[1];
+    const found = (prefix && exactComponent(`${prefix} ${name}`)) || exactComponent(name);
+    if (found) return found;
+  }
+  return undefined;
+}
+
 export function pageToProposal(ws: Workspace, page: ImportedPage, kind: "visio" | "drawio", fileName: string): Proposal {
   const shapes = nestByGeometry(page.shapes);
   const byId = new Map(shapes.map((s) => [s.id, s]));
@@ -74,6 +88,8 @@ export function pageToProposal(ws: Workspace, page: ImportedPage, kind: "visio" 
   const keyOf = new Map<string, string>();
   const objects: ProposedObject[] = [];
   let repeated = 0;
+  let matched = 0;
+  let unmatched = 0;
   for (const shape of shapes) {
     const [first, ...rest] = shape.text.split("\n");
     const name = first.length > 90 ? `${first.slice(0, 88).trimEnd()}…` : first;
@@ -87,9 +103,13 @@ export function pageToProposal(ws: Workspace, page: ImportedPage, kind: "visio" 
     keyByName.set(normalizeName(name), key);
     keyOf.set(shape.id, key);
     const depth = depthBelow(shape.id);
-    const guessed = guessType(shape.hint, shape.text);
-    const typeId = depth >= 2 ? "domain" : depth === 1 ? (guessed && objectType(guessed).level <= 2 && guessed !== "actor" ? guessed : "system") : (guessed ?? "application");
     const isLeaf = depth === 0;
+    // A shape whose label, or whose stencil, is exactly a library component becomes that component: no guessing.
+    const exact = isLeaf ? (exactComponent(name) ?? stencilComponent(shape.hint)) : undefined;
+    const guessed = guessType(shape.hint, shape.text);
+    const typeId = exact && isKnownType(exact.kind) ? exact.kind : depth >= 2 ? "domain" : depth === 1 ? (guessed && objectType(guessed).level <= 2 && guessed !== "actor" ? guessed : "system") : (guessed ?? "application");
+    if (exact) matched += 1;
+    else if (isLeaf) unmatched += 1;
     objects.push({
       key,
       name,
@@ -99,6 +119,7 @@ export function pageToProposal(ws: Workspace, page: ImportedPage, kind: "visio" 
       parentKey: null,
       decision: "pending",
       matchId: null,
+      ...(exact ? { componentId: exact.id } : {}),
       // A shape that encloses others is the frame around them, not a box of its own.
       ...(isLeaf ? { x: Math.round((shape.x + shape.width / 2 - left) * scaleX), y: Math.round((shape.y + shape.height / 2 - top) * scaleY) } : {}),
     });
@@ -128,7 +149,8 @@ export function pageToProposal(ws: Workspace, page: ImportedPage, kind: "visio" 
   const { unlabelled, loose, notes: textNotes } = page.skipped;
   const notes = sentence([
     `Page "${page.name}".`,
-    "Types and relationship kinds are guessed from the shapes and labels; check them before accepting.",
+    matched > 0 && `${plural(matched, "shape")} matched a library component exactly and ${matched === 1 ? "takes" : "take"} its type.`,
+    unmatched > 0 ? `${plural(unmatched, "shape")} matched no library component exactly; ${unmatched === 1 ? "its type is" : "their types are"} guessed from the shape and label, so check ${unmatched === 1 ? "it" : "them"} before accepting.` : "Relationship kinds are guessed from the connectors' labels; check them before accepting.",
     repeated > 0 && `${plural(repeated, "shape")} repeated a name already on the page and ${repeated === 1 ? "was" : "were"} merged into one object.`,
     unlabelled > 0 && `Left out: ${plural(unlabelled, "shape")} without a label.`,
     loose > 0 && `Left out: ${plural(loose, "connector")} not attached to a labelled shape at both ends.`,

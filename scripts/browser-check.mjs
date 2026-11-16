@@ -255,9 +255,14 @@ try {
   await waitText(page, "What it shows");
   await sleep(200);
   // Typed with no click first: the dialog itself has to put the keyboard in the name field.
-  check("a dialog opens with the keyboard in its first field", await page.evaluate(() => !!document.activeElement?.matches('[role=dialog] input[placeholder^="For example: Payments"]')));
+  check("a dialog opens with the keyboard in its first field", await page.evaluate(() => !!document.activeElement?.matches('[role=dialog] input[placeholder^="For example:"]')));
   await page.keyboard.type("Landscape check");
-  await clickText(page, "Create diagram");
+  await clickText(page, "Next: how to build it");
+  await page.waitForSelector("[data-new-ways]");
+  const ways = await page.$$eval("[data-new-ways] [data-way]", (els) => els.map((e) => e.dataset.way));
+  check("after the kind, nine ways to build the diagram are offered", ways.join(",") === "manual,wizard,existing,template,text,voice,import,drawio,archived", ways.join(","));
+  await shot(page, "30-new-diagram-ways");
+  await page.click('[data-way="manual"]');
   await page.waitForSelector(".object-node");
   await sleep(600);
   const landscapeNodes = await count(page, ".object-node");
@@ -821,6 +826,102 @@ try {
     await page.$eval("[data-template-delete-confirm]", (b) => b.click());
     await sleep(300);
     check("a saved template can be deleted after confirming", Object.keys((await stored()).templates ?? {}).length === 0 && !(await page.$("[data-template-own]")));
+    await page.keyboard.press("Escape");
+  }
+
+  // New diagram: the kind first, then one of the ways to build it.
+  {
+    const startNew = async (name, kind) => {
+      await page.goto(base, { waitUntil: "networkidle0" });
+      await page.click("[data-new-diagram]");
+      await page.waitForSelector(`[data-view-type="${kind}"]`);
+      await page.type('[role=dialog] input[placeholder^="For example:"]', name);
+      await page.$eval(`[data-view-type="${kind}"]`, (e) => e.click());
+      if (kind === "container" || kind === "context") {
+        await page.waitForSelector('select[aria-label="Which system"]');
+        const value = await page.$eval('select[aria-label="Which system"]', (s) => [...s.options].find((o) => o.textContent.includes("Software system"))?.value ?? s.options[1].value);
+        await page.select('select[aria-label="Which system"]', value);
+      }
+      await page.click("[data-new-next]");
+      await page.waitForSelector("[data-new-ways]");
+    };
+    // 02 The wizard, for a C4 Level 2 diagram.
+    await startNew("Wizard check", "container");
+    await page.click('[data-way="wizard"]');
+    await page.waitForSelector('[data-wizard-step="system"]');
+    const answer = async (stepTitle, name) => {
+      await page.type(`input[aria-label="${stepTitle} 1"]`, name);
+      await page.click("[data-wizard-next]");
+    };
+    const systemPrefilled = await page.$eval('input[aria-label="The system 1"]', (e) => e.value);
+    await page.click("[data-wizard-next]");
+    await answer("People", "Wizard shopper");
+    await answer("Front ends", "Wizard web shop");
+    await answer("Services", "Wizard basket service");
+    await answer("Data stores", "Wizard basket DB");
+    await answer("Other systems", "Wizard card network");
+    await page.waitForSelector("[data-wizard-review]");
+    await shot(page, "31-wizard-review");
+    await page.click("[data-wizard-create]");
+    await page.waitForFunction(() => location.pathname.startsWith("/diagram/"));
+    await page.waitForSelector(".object-node");
+    await sleep(400);
+    let model = await stored();
+    const wizardDiagram = Object.values(model.diagrams).find((d) => d.name === "Wizard check");
+    const wizardObjects = Object.values(model.objects).filter((o) => o.name.startsWith("Wizard "));
+    const wizardLines = Object.values(model.relationships).filter((r) => wizardObjects.some((o) => o.id === r.sourceId));
+    check(
+      "the wizard builds a connected diagram of the chosen kind, every box a library component",
+      !!systemPrefilled && wizardDiagram?.viewType === "container" && wizardObjects.length === 5 && wizardObjects.every((o) => o.componentId) && wizardLines.length >= 4,
+      `${systemPrefilled} :: ${wizardDiagram?.viewType}, ${wizardObjects.length} objects, ${wizardLines.length} lines`,
+    );
+    // 03 A copy with separate objects; the original stays as it is.
+    await startNew("Copy check", "custom");
+    await page.click('[data-way="existing"]');
+    await page.waitForSelector("[data-copy-source]");
+    await page.$eval(`[data-copy-source="${wizardDiagram.id}"]`, (b) => b.click());
+    await page.$eval("[data-copy-separate]", (b) => b.click());
+    await page.click("[data-copy-create]");
+    await page.waitForFunction(() => location.pathname.startsWith("/diagram/"));
+    await sleep(400);
+    model = await stored();
+    const copy = Object.values(model.diagrams).find((d) => d.name === "Copy check");
+    const copiedIds = Object.keys(copy?.nodes ?? {});
+    const originalIds = Object.keys(model.diagrams[wizardDiagram.id].nodes);
+    check(
+      "a diagram is copied with objects of its own, and the original keeps its own",
+      copiedIds.length === originalIds.length && copiedIds.every((id) => !originalIds.includes(id) && model.objects[id].name.endsWith("(target)")),
+      `${copiedIds.length} boxes`,
+    );
+    // 09 Archiving and restoring, each with a reason.
+    await page.goto(base, { waitUntil: "networkidle0" });
+    await page.$eval(`[data-archive="${copy.id}"]`, (b) => b.click());
+    await page.type('textarea[aria-label="Reason for archiving"]', "Option not chosen");
+    await page.click("[data-archive-confirm]");
+    await page.waitForSelector("[data-archived-open]");
+    const listedAfter = await page.$$eval("tbody tr td:first-child a", (links) => links.map((a) => a.textContent.trim()));
+    await page.click("[data-archived-open]");
+    await page.waitForSelector(`[data-archived="${copy.id}"]`);
+    const archivedText = await page.$eval(`[data-archived="${copy.id}"]`, (e) => e.innerText);
+    await shot(page, "32-archived");
+    await page.click(`[data-restore="${copy.id}"]`);
+    await page.type('textarea[aria-label="Reason for restoring"]', "Back on the table");
+    await page.click("[data-restore-confirm]");
+    await sleep(300);
+    const restored = (await stored()).diagrams[copy.id];
+    check(
+      "a diagram is archived with a reason, leaves the list, and comes back with a reason",
+      !listedAfter.includes("Copy check") && archivedText.includes("Option not chosen") && restored.archive?.archived === false && restored.archive.history.length === 2,
+      archivedText.replace(/\n/g, " | "),
+    );
+    // 06 Voice: the words, said or typed, become a text draft with English names.
+    await startNew("Voice check", "custom");
+    await page.click('[data-way="voice"]');
+    await page.waitForSelector('textarea[aria-label="What you said"]');
+    await page.type('textarea[aria-label="What you said"]', "The portal calls the billing service");
+    await page.click("[data-voice-continue]");
+    await waitText(page, "Voice to architecture");
+    check("voice to architecture hands what was said to a draft for review", await page.evaluate(() => [...document.querySelectorAll("[role=dialog] textarea")].some((t) => t.value.includes("billing service"))));
     await page.keyboard.press("Escape");
   }
 

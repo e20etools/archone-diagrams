@@ -1,6 +1,6 @@
 import { NOTATION_INFO } from "@/lib/notation";
 import { NOTATIONS, type Notation } from "@/lib/types";
-import { BookmarkPlus, AlignCenterHorizontal, AlignCenterVertical, AlignEndHorizontal, AlignEndVertical, AlignHorizontalSpaceAround, AlignStartHorizontal, AlignStartVertical, AlignVerticalSpaceAround, ChevronRight, EyeOff, LayoutDashboard, Presentation, ListOrdered, MessageSquare, PanelLeftClose, PanelLeftOpen, Search, Share2, ShieldCheck, Shuffle, SlidersHorizontal, Sparkles, Trash2, Waypoints, X, ZoomIn } from "lucide-react";
+import { Archive, BookmarkPlus, AlignCenterHorizontal, AlignCenterVertical, AlignEndHorizontal, AlignEndVertical, AlignHorizontalSpaceAround, AlignStartHorizontal, AlignStartVertical, AlignVerticalSpaceAround, ChevronRight, EyeOff, LayoutDashboard, Presentation, ListOrdered, MessageSquare, PanelLeftClose, PanelLeftOpen, Search, Share2, ShieldCheck, Shuffle, SlidersHorizontal, Sparkles, Trash2, Waypoints, X, ZoomIn } from "lucide-react";
 import { checkCopy } from "@/lib/freshness";
 import { alignNodes, distributeNodes, type AlignMode } from "@/lib/arrange";
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from "react";
@@ -10,6 +10,7 @@ import { AiDraftDialog, ExportMenu, ShareDialog } from "@/components/dialogs";
 import { FlowBar, FlowsPanel, NO_FLOW, useFlowCursor, useFlowKeys } from "@/components/Flows";
 import { LibraryPanel } from "@/components/LibraryBrowser";
 import { SaveAsTemplateDialog } from "@/components/SaveAsTemplate";
+import { ArchiveDialog } from "@/components/NewArchitecture";
 import { componentById, componentSubtitle, objectFromComponent, type LibraryComponent } from "@/lib/library";
 import { addStep, flowsOf } from "@/lib/flows";
 import { TypeIcon } from "@/components/icons";
@@ -217,6 +218,7 @@ function DiagramSettings({ ws, diagram, onClose }: { ws: Workspace; diagram: Dia
   const navigate = useNavigate();
   const [confirm, setConfirm] = useState(false);
   const [templating, setTemplating] = useState(false);
+  const [archiving, setArchiving] = useState(false);
   const [savedAs, setSavedAs] = useState("");
   const rankIn = useCategoryRank();
   const canEdit = useCanEdit() && rankIn(viewCategory(diagram.viewType)) >= 3;
@@ -340,6 +342,15 @@ function DiagramSettings({ ws, diagram, onClose }: { ws: Workspace; diagram: Dia
             </p>
           )}
           {templating && <SaveAsTemplateDialog ws={ws} diagram={diagram} onClose={() => setTemplating(false)} onSaved={setSavedAs} />}
+        </Section>
+      )}
+      {canEdit && (
+        <Section title="Archive">
+          <p className="text-[13px] text-ink-soft mb-2">Take it out of the lists without deleting anything. It can be restored, with a reason, from Archived diagrams.</p>
+          <Button size="sm" icon={<Archive size={14} />} data-archive={diagram.id} onClick={() => setArchiving(true)}>
+            Archive diagram
+          </Button>
+          {archiving && <ArchiveDialog diagram={diagram} onClose={() => setArchiving(false)} onDone={() => navigate("/")} />}
         </Section>
       )}
       <Section title="Delete">

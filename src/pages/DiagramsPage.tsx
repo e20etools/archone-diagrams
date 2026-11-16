@@ -1,12 +1,13 @@
-import { BookmarkPlus, Copy, FileUp, LayoutTemplate, Plus, Sparkles, Trash2 } from "lucide-react";
+import { Archive, BookmarkPlus, Copy, FileUp, LayoutTemplate, Plus, Sparkles, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { AiDraftDialog, NewDiagramDialog } from "@/components/dialogs";
+import { AiDraftDialog } from "@/components/dialogs";
+import { ArchiveDialog, ArchivedDialog, NewArchitectureDialog } from "@/components/NewArchitecture";
 import { ImportDialog } from "@/components/ImportDialog";
 import { Button, EmptyState, IconButton, Modal, formatDate } from "@/components/ui";
 import { VIEW_TYPE_INFO } from "@/lib/catalog";
 import { demoWorkspace } from "@/lib/demo";
-import { deleteDiagram, duplicateDiagram, sortedDiagrams } from "@/lib/model";
+import { archivedDiagrams, deleteDiagram, duplicateDiagram, sortedDiagrams } from "@/lib/model";
 import { apply, useStore, useWorkspace } from "@/lib/store";
 import { allTemplates, applyTemplate, deleteSavedTemplate } from "@/lib/templates";
 import { TemplatePicker } from "@/components/TemplatePicker";
@@ -18,7 +19,9 @@ export function DiagramsPage() {
   const ws = useWorkspace();
   const replace = useStore((s) => s.replace);
   const navigate = useNavigate();
-  const [dialog, setDialog] = useState<"new" | "ai" | "import" | "template" | null>(null);
+  const [dialog, setDialog] = useState<"new" | "ai" | "import" | "template" | "archived" | null>(null);
+  const [archiving, setArchiving] = useState<Diagram | null>(null);
+  const archivedCount = archivedDiagrams(ws).length;
   const [removing, setRemoving] = useState<Diagram | null>(null);
   const [templating, setTemplating] = useState<Diagram | null>(null);
   const canEdit = useCanEdit();
@@ -43,7 +46,7 @@ export function DiagramsPage() {
             <Button icon={<Sparkles size={15} />} onClick={() => setDialog("ai")}>
               Draft with AI
             </Button>
-            <Button variant="primary" icon={<Plus size={15} />} onClick={() => setDialog("new")}>
+            <Button variant="primary" icon={<Plus size={15} />} data-new-diagram onClick={() => setDialog("new")}>
               New diagram
             </Button>
           </div>
@@ -123,6 +126,11 @@ export function DiagramsPage() {
                         <BookmarkPlus size={15} />
                       </IconButton>
                     )}
+                    {canEdit && (
+                      <IconButton label={`Archive ${d.name}`} data-archive={d.id} onClick={() => setArchiving(d)}>
+                        <Archive size={15} />
+                      </IconButton>
+                    )}
                     <IconButton label={`Duplicate ${d.name}`} onClick={() => apply((w) => duplicateDiagram(w, d.id).ws)}>
                       <Copy size={15} />
                     </IconButton>
@@ -135,6 +143,14 @@ export function DiagramsPage() {
             </tbody>
           </table>
         </div>
+      )}
+      {archivedCount > 0 && (
+        <p className="mt-3 text-[13px] text-ink-soft">
+          <button type="button" className="text-blueprint hover:underline" data-archived-open onClick={() => setDialog("archived")}>
+            {archivedCount} archived {archivedCount === 1 ? "diagram" : "diagrams"}
+          </button>{" "}
+          are kept out of this list.
+        </p>
       )}
 
       {dialog === "template" && (
@@ -156,7 +172,9 @@ export function DiagramsPage() {
         />
       )}
       {templating && <SaveAsTemplateDialog ws={ws} diagram={templating} onClose={() => setTemplating(null)} />}
-      {dialog === "new" && <NewDiagramDialog ws={ws} onClose={() => setDialog(null)} />}
+      {dialog === "new" && <NewArchitectureDialog ws={ws} onClose={() => setDialog(null)} />}
+      {dialog === "archived" && <ArchivedDialog ws={ws} onClose={() => setDialog(null)} />}
+      {archiving && <ArchiveDialog diagram={archiving} onClose={() => setArchiving(null)} />}
       {dialog === "ai" && <AiDraftDialog ws={ws} onClose={() => setDialog(null)} />}
       {dialog === "import" && <ImportDialog onClose={() => setDialog(null)} />}
       {removing && (

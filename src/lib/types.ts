@@ -135,10 +135,18 @@ export const diagramSchema = z.object({
   notation: z.enum(NOTATIONS).optional(),
   /** Missing when the diagram has none. */
   flows: z.array(flowSchema).optional(),
+  /** Set while the diagram is archived; its history of archiving and restoring stays, with the reasons. */
+  archive: z
+    .object({
+      archived: z.boolean(),
+      history: z.array(z.object({ action: z.enum(["archived", "restored"]), at: z.string(), by: z.string(), reason: z.string() })),
+    })
+    .optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
 export type Diagram = z.infer<typeof diagramSchema>;
+export type DiagramArchive = NonNullable<Diagram["archive"]>;
 
 export const DECISIONS = ["pending", "accepted", "rejected"] as const;
 export type Decision = (typeof DECISIONS)[number];
@@ -153,6 +161,8 @@ export const proposedObjectSchema = z.object({
   decision: z.enum(DECISIONS),
   /** An existing object with the same name; when set, accepting reuses it instead of creating a duplicate. */
   matchId: z.string().nullable(),
+  /** The library component it is, when the draft knows it exactly. */
+  componentId: z.string().optional(),
   // Only imports fill the rest. A spreadsheet row can carry these; a diagram file gives a position.
   owner: z.string().optional(),
   lifecycle: z.enum(LIFECYCLES).optional(),
@@ -190,7 +200,11 @@ export const proposalSchema = z.object({
   importKind: z.enum(["spreadsheet", "visio", "drawio", "mermaid", "structurizr", "apm"]).optional(),
   /** A spreadsheet fills the model without drawing anything; a diagram file becomes a diagram laid out as it was drawn. */
   /** What a drafted proposal was drafted from, when it was not a description. */
-  sourceKind: z.enum(["transcript"]).optional(),
+  sourceKind: z.enum(["transcript", "voice"]).optional(),
+  /** The diagram the draft becomes, as chosen when it was started: its name and kind. */
+  diagramName: z.string().optional(),
+  diagramViewType: z.enum(VIEW_TYPES).optional(),
+  diagramScopeId: z.string().optional(),
   withoutDiagram: z.boolean().optional(),
   placeAsDrawn: z.boolean().optional(),
   source: z.string(),

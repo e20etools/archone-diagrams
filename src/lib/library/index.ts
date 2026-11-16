@@ -149,6 +149,46 @@ export function searchLibrary(query: string, options: { sectionId?: string; prov
   return scored.slice(0, options.limit ?? scored.length).map((s) => s.c);
 }
 
+const EXACT = (() => {
+  const map = new Map<string, LibraryComponent[]>();
+  const add = (key: string, c: LibraryComponent) => {
+    if (!key) return;
+    const list = map.get(key) ?? [];
+    if (!list.includes(c)) list.push(c);
+    map.set(key, list);
+  };
+  for (const c of LIBRARY) {
+    add(normalizeComponentName(c.name), c);
+    const short = /\(([^)]+)\)\s*$/.exec(c.name)?.[1];
+    if (short) add(normalizeComponentName(short), c);
+    for (const alias of c.aliases.split(/[,;]/)) add(normalizeComponentName(alias), c);
+    // A cloud service is also called by its provider's name in front: "Amazon S3", "AWS Lambda", "Azure Functions".
+    const provider = c.provider ? PROVIDERS.find((p) => p.id === c.provider) : undefined;
+    if (provider) {
+      const prefixes = new Set([provider.short, provider.label, provider.label.split(" ")[0]]);
+      for (const prefix of prefixes) {
+        add(normalizeComponentName(`${prefix} ${c.name}`), c);
+        if (short) add(normalizeComponentName(`${prefix} ${short}`), c);
+      }
+    }
+  }
+  return map;
+})();
+
+/**
+ * The one library component a name stands for exactly: its name, its short form or one of its
+ * other names, ignoring case and punctuation. Nothing when no component, or more than one, fits.
+ * A kind narrows the choice when several fit.
+ */
+export function exactComponent(text: string, kind?: string): LibraryComponent | undefined {
+  const found = EXACT.get(normalizeComponentName(text)) ?? [];
+  const fitting = kind ? found.filter((c) => c.kind === kind) : found;
+  if (fitting.length === 1) return fitting[0];
+  // A general component wins over the same name at a cloud provider.
+  const general = fitting.filter((c) => !c.provider);
+  return general.length === 1 ? general[0] : undefined;
+}
+
 /** What placing a component writes into a new object. */
 export function objectFromComponent(c: LibraryComponent): { typeId: string; name: string; componentId: string; technology: string } {
   return { typeId: isKnownType(c.kind) ? c.kind : "application", name: c.name, componentId: c.id, technology: c.provider ? componentLabel(c) : "" };

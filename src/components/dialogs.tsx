@@ -4,13 +4,11 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import type { CanvasHandle } from "@/components/canvas/DiagramCanvas";
 import { LiveLinks } from "@/components/cloud/LiveLinks";
+import type { DiagramStart } from "@/components/ImportDialog";
 import { Button, Field, Input, Modal, Select, Tabs, Textarea, cx } from "@/components/ui";
 import { AiError, draftFromImage, draftFromPrompt, fetchAiStatus, getAccessCode, type AiStatus, type DraftResult } from "@/lib/ai/client";
 import { draftToProposal, saveProposal } from "@/lib/ai/proposals";
-import { VIEW_TYPE_INFO, objectType } from "@/lib/catalog";
 import { cloudEnabled } from "@/lib/cloud/config";
-import { useCategoryRank } from "@/lib/cloud/session";
-import { CATEGORIES as AREAS, CATEGORY_INFO as AREA_INFO, VIEWS_BY_CATEGORY, viewCategory } from "@/lib/categories";
 import {
   diagramJson,
   diagramObjects,
@@ -25,119 +23,27 @@ import {
 import { transcriptToProposal } from "@/lib/ai/transcript";
 import { calmJson } from "@/lib/calm";
 import { exportPdf, exportPng, exportSvg, stampFor } from "@/lib/exportImage";
-import { sortedObjects } from "@/lib/model";
 import { buildSharePayload, encodeShare, shareUrl } from "@/lib/share";
-import { addView, apply } from "@/lib/store";
-import { type Diagram, type ViewType, type Workspace } from "@/lib/types";
-
-/* ---------- new diagram ---------- */
-
-export function NewDiagramDialog({ ws, onClose }: { ws: Workspace; onClose: () => void }) {
-  const navigate = useNavigate();
-  const [name, setName] = useState("");
-  const rankIn = useCategoryRank();
-  // The first kind the person may create, preferring a system landscape when the model has objects.
-  const [viewType, setViewType] = useState<ViewType>(() => {
-    const offered = AREAS.filter((a) => rankIn(a) >= 3).flatMap((a) => VIEWS_BY_CATEGORY[a]);
-    const preferred: ViewType = Object.keys(ws.objects).length ? "landscape" : "custom";
-    return offered.includes(preferred) ? preferred : (offered[0] ?? preferred);
-  });
-  const [scopeId, setScopeId] = useState("");
-  const [direction, setDirection] = useState<"TB" | "LR">("TB");
-  const needsScope = viewType === "context" || viewType === "container";
-  const scopes = sortedObjects(ws).filter((o) => objectType(o.typeId).level <= 3);
-  const ready = (!needsScope || !!scopeId) && rankIn(viewCategory(viewType)) >= 3;
-  const create = () => {
-    const fallback = needsScope && scopeId ? `${VIEW_TYPE_INFO[viewType].label}: ${ws.objects[scopeId].name}` : VIEW_TYPE_INFO[viewType].label;
-    const diagram = addView({ name: name.trim() || fallback, viewType, scopeId: needsScope ? scopeId : null, direction });
-    onClose();
-    navigate(`/diagram/${diagram.id}`);
-  };
-  return (
-    <Modal
-      title="New diagram"
-      width={640}
-      onClose={onClose}
-      footer={
-        <>
-          <Button onClick={onClose}>Cancel</Button>
-          <Button variant="primary" disabled={!ready} onClick={create}>
-            Create diagram
-          </Button>
-        </>
-      }
-    >
-      <div className="space-y-4">
-        <Field label="Name">
-          <Input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="For example: Payments system context" onKeyDown={(e) => e.key === "Enter" && ready && create()} />
-        </Field>
-        <fieldset>
-          <legend className="text-[13px] font-medium text-ink-soft mb-1.5">What it shows</legend>
-          <div className="space-y-2.5">
-            {AREAS.map((area) => {
-              const allowed = rankIn(area) >= 3;
-              return (
-                <div key={area} data-view-category={area}>
-                  <p className="text-xs font-semibold text-ink-soft mb-1">
-                    {AREA_INFO[area].label}
-                    {!allowed && <span className="ml-1.5 font-normal text-ink-faint">{rankIn(area) === 0 ? "no access" : "view only"}</span>}
-                  </p>
-                  <div className={cx("grid gap-1.5", VIEWS_BY_CATEGORY[area].length > 1 && "sm:grid-cols-3")}>
-                    {VIEWS_BY_CATEGORY[area].map((type) => (
-                      <label
-                        key={type}
-                        className={cx(
-                          "flex items-start gap-2.5 rounded-md border px-3 py-2",
-                          !allowed ? "opacity-50 cursor-not-allowed border-line" : "cursor-pointer",
-                          allowed && (viewType === type ? "border-blueprint bg-blueprint-soft" : "border-line hover:border-ink-faint"),
-                        )}
-                      >
-                        <input type="radio" name="view-type" data-view-type={type} className="mt-1 accent-blueprint" disabled={!allowed} checked={viewType === type} onChange={() => setViewType(type)} />
-                        <span>
-                          <span className="block font-medium">{VIEW_TYPE_INFO[type].label}</span>
-                          <span className="block text-[13px] text-ink-soft">{VIEW_TYPE_INFO[type].hint}</span>
-                        </span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </fieldset>
-        {needsScope && (
-          <Field label="Which object" hint={scopes.length ? "The diagram is filled with this object's surroundings from the model." : "Create an object first, or pick another kind of diagram."}>
-            <Select value={scopeId} onChange={(e) => setScopeId(e.target.value)}>
-              <option value="">Choose an object</option>
-              {scopes.map((o) => (
-                <option key={o.id} value={o.id}>
-                  {o.name} ({objectType(o.typeId).label})
-                </option>
-              ))}
-            </Select>
-          </Field>
-        )}
-        <Field label="Layout direction">
-          <Select value={direction} onChange={(e) => setDirection(e.target.value as "TB" | "LR")}>
-            <option value="TB">Top to bottom</option>
-            <option value="LR">Left to right</option>
-          </Select>
-        </Field>
-      </div>
-    </Modal>
-  );
-}
+import { apply } from "@/lib/store";
+import { type Diagram, type Workspace } from "@/lib/types";
 
 /* ---------- AI draft ---------- */
 
 const EXAMPLE =
   "Customers use the web portal, which calls the API gateway. The gateway routes requests to the order service and the payment service. The order service stores data in PostgreSQL and publishes events to Kafka. The payment service calls Stripe.";
 
-export function AiDraftDialog({ ws, targetDiagram, onClose }: { ws: Workspace; targetDiagram?: Diagram; onClose: () => void }) {
+export interface DraftStart extends DiagramStart {
+  tab?: "text" | "image";
+  text?: string;
+  /** The text was spoken; the names in the draft are asked for in English. */
+  voice?: boolean;
+}
+
+export function AiDraftDialog({ ws, targetDiagram, onClose, start }: { ws: Workspace; targetDiagram?: Diagram; onClose: () => void; start?: DraftStart }) {
   const navigate = useNavigate();
-  const [tab, setTab] = useState<"text" | "image" | "meeting">("text");
+  const [tab, setTab] = useState<"text" | "image" | "meeting">(start?.tab ?? "text");
   const [transcript, setTranscript] = useState("");
-  const [text, setText] = useState("");
+  const [text, setText] = useState(start?.text ?? "");
   const [file, setFile] = useState<File | null>(null);
   const [note, setNote] = useState("");
   const [into, setInto] = useState<"new" | "current">(targetDiagram ? "current" : "new");
@@ -162,6 +68,8 @@ export function AiDraftDialog({ ws, targetDiagram, onClose }: { ws: Workspace; t
       source,
       engine: result.engine,
       targetDiagramId: into === "current" && targetDiagram ? targetDiagram.id : null,
+      ...(start ? { diagram: { name: start.name, viewType: start.viewType, scopeId: start.scopeId } } : {}),
+      ...(start?.voice ? { sourceKind: "voice" as const } : {}),
     });
     apply((w) => saveProposal(w, proposal));
     onClose();
@@ -181,7 +89,7 @@ export function AiDraftDialog({ ws, targetDiagram, onClose }: { ws: Workspace; t
         apply((w) => saveProposal(w, proposal));
         onClose();
         navigate(`/ai/${proposal.id}`);
-      } else if (tab === "text") finish(await draftFromPrompt(text.trim()), "ai-prompt", text.trim());
+      } else if (tab === "text") finish(await draftFromPrompt(start?.voice ? `${text.trim()}\n\nName every component in English, even where the description is in another language.` : text.trim()), "ai-prompt", text.trim());
       else if (file) finish(await draftFromImage(file, note.trim()), "ai-image", file.name);
     } catch (e) {
       setError(e instanceof AiError ? e.message : "The draft failed. Try again.");
@@ -193,7 +101,7 @@ export function AiDraftDialog({ ws, targetDiagram, onClose }: { ws: Workspace; t
   const ready = tab === "text" ? text.trim().length >= 3 : tab === "meeting" ? transcript.trim().length >= 20 : !!file;
   return (
     <Modal
-      title="Draft with AI"
+      title={start?.voice ? "Voice to architecture" : start ? (start.tab === "image" ? "Image to architecture" : "Text to architecture") : "Draft with AI"}
       width={620}
       onClose={onClose}
       footer={

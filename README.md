@@ -769,6 +769,34 @@ before sending it, opens those diagrams read-only and offers only the kinds the 
 create. Scenarios keep the roles of the workspace they were made from; changes are written to
 the audit log. API keys keep their own access and domain limits.
 
+### Starting a new diagram
+
+New diagram asks first what the diagram shows (its kind, by category) and its name, then how to
+build it:
+
+1. **Create manually**: the diagram opens, filled with what the model already has for that kind.
+2. **Wizard steps**: a few questions for that kind (for a C4 Level 2 diagram: the system, its
+   people, front ends, services, data stores and other systems; for Business: the domain, the
+   process, who takes part and its steps in order). Each answer becomes a library component,
+   chosen or recognised by name, and the answers are joined as the questions say. A review shows
+   the picture before anything is created.
+3. **From an existing diagram**: a copy, with the same objects or with objects of its own
+   (named with a label such as "target") so it can change freely. The original stays as it is.
+4. **From a template**: the template picker, opened on the category's perspective.
+5. **Text to architecture** and 6. **Voice to architecture**: a draft from a description, typed
+   or dictated (Arabic or English; the browser's dictation, started only on request), reviewed
+   before it is saved. Component names are asked for in English.
+7. **Import architecture**: a file, or a picture through the AI draft.
+8. **Import draw.io file**: no AI; a shape whose label or draw.io stencil is exactly a library
+   component (also "Amazon S3", "AWS Lambda", "Azure Functions") becomes that component, and the
+   draft lists the shapes that matched nothing.
+9. **Archived diagrams**: a diagram can be archived from its row or its settings, with a reason;
+   it leaves the lists and search, nothing is deleted, and it can be restored with a reason. Both
+   reasons are kept with the diagram (column `archive`), and scenarios keep it archived.
+
+Every draft, imported or AI-made, becomes a diagram of the kind and name chosen, and each new
+object is linked to the library component its name or technology names exactly.
+
 ### Templates
 
 115 templates for the most common diagrams, under Start from a template on the Diagrams

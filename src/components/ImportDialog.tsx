@@ -1,3 +1,4 @@
+import type { ViewType } from "@/lib/types";
 import { FileCode2, FileSpreadsheet, FileUp, Workflow } from "lucide-react";
 import { useMemo, useRef, useState, type DragEvent } from "react";
 import { useNavigate } from "react-router-dom";
@@ -129,7 +130,13 @@ function SheetCard({ sheet, mapping, onChange }: { sheet: Sheet; mapping: SheetM
 }
 
 /** Import a spreadsheet or a diagram file. The result is a draft to review, never a direct change to the model. */
-export function ImportDialog({ onClose }: { onClose: () => void }) {
+export interface DiagramStart {
+  name: string;
+  viewType: ViewType;
+  scopeId?: string | null;
+}
+
+export function ImportDialog({ onClose, start, only }: { onClose: () => void; start?: DiagramStart; only?: "drawio" }) {
   const ws = useWorkspace();
   const navigate = useNavigate();
   const canEdit = useCanEdit();
@@ -189,9 +196,13 @@ export function ImportDialog({ onClose }: { onClose: () => void }) {
 
   const create = () => {
     if (!preview || "error" in preview) return;
-    apply((w) => saveProposal(w, preview.proposal));
+    // Started from New diagram: the draft becomes a diagram of the kind and name chosen there.
+    const proposal: Proposal = start
+      ? { ...preview.proposal, diagramName: start.name || undefined, diagramViewType: start.viewType, ...(start.scopeId ? { diagramScopeId: start.scopeId } : {}) }
+      : preview.proposal;
+    apply((w) => saveProposal(w, proposal));
     onClose();
-    navigate(`/ai/${preview.proposal.id}`);
+    navigate(`/ai/${proposal.id}`);
   };
 
   const proposal = preview && "proposal" in preview ? preview.proposal : null;
@@ -199,7 +210,7 @@ export function ImportDialog({ onClose }: { onClose: () => void }) {
 
   return (
     <Modal
-      title={loaded ? `Import "${loaded.fileName}"` : "Import a file"}
+      title={loaded ? `Import "${loaded.fileName}"` : only === "drawio" ? "Import a draw.io file" : "Import a file"}
       width={loaded?.kind === "sheets" ? 720 : 560}
       onClose={onClose}
       footer={
@@ -240,10 +251,16 @@ export function ImportDialog({ onClose }: { onClose: () => void }) {
               {busy ? "Reading the file" : "Choose a file"}
             </Button>
             <p className="mt-2 text-[13px] text-ink-soft">or drop it here. Up to 25 MB. The file is read in your browser and is not uploaded.</p>
-            <input ref={picker} type="file" accept={ACCEPT} className="sr-only" aria-label="File to import" onChange={(e) => void choose(e.target.files?.[0])} />
+            <input ref={picker} type="file" accept={only === "drawio" ? ".drawio,.xml" : ACCEPT} className="sr-only" aria-label="File to import" onChange={(e) => void choose(e.target.files?.[0])} />
           </div>
           {problem && <Problem text={problem} />}
-          <ApmImport canEdit={canEdit} onDone={onClose} />
+          {only === "drawio" && (
+            <p className="text-[13px] text-ink-soft" data-drawio-exact>
+              No AI is used. A shape whose label, or whose draw.io stencil, is exactly a component of the library becomes that component. Every other shape is listed in the draft so you can check
+              its type before accepting.
+            </p>
+          )}
+          {!only && <ApmImport canEdit={canEdit} onDone={onClose} />}
           <ul className="space-y-2.5">
             <li className="flex gap-3">
               <FileSpreadsheet size={18} className="mt-0.5 shrink-0 text-ink-soft" />

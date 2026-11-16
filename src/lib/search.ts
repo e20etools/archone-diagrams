@@ -61,6 +61,7 @@ export function searchDiagrams(ws: Workspace, query: string, limit = 50): Diagra
   // Filters such as tag: describe objects, so a filtered query matches no diagrams.
   if (!q.text.length || q.tags.length || q.types.length || q.owners.length || q.lifecycles.length) return [];
   return Object.values(ws.diagrams)
+    .filter((d) => !d.archive?.archived)
     .filter((d) => q.text.every((t) => `${d.name} ${d.description}`.toLowerCase().includes(t)))
     .sort((a, b) => a.name.localeCompare(b.name))
     .slice(0, limit);

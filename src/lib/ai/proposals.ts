@@ -1,3 +1,5 @@
+import type { ViewType } from "../types";
+import { componentById, exactComponent } from "../library";
 import { objectType } from "../catalog";
 import { canSetParent, createDiagram, createObject, createRelationship, findByName, newId, nowIso, placeNodes, updateDiagram, updateObject, type ObjectPatch } from "../model";
 import type { Decision, NodePlacement, Proposal, ProposedObject, Provenance, Workspace } from "../types";
@@ -16,6 +18,9 @@ export interface ProposalMeta {
   source: string;
   engine: string;
   targetDiagramId: string | null;
+  /** Set when the draft was started for a new diagram of a chosen kind and name. */
+  diagram?: { name: string; viewType: ViewType; scopeId?: string | null };
+  sourceKind?: "voice";
 }
 
 export function draftToProposal(ws: Workspace, draft: Draft, meta: ProposalMeta): Proposal {
@@ -28,6 +33,8 @@ export function draftToProposal(ws: Workspace, draft: Draft, meta: ProposalMeta)
     createdAt: nowIso(),
     status: "pending",
     targetDiagramId: meta.targetDiagramId && ws.diagrams[meta.targetDiagramId] ? meta.targetDiagramId : null,
+    ...(meta.sourceKind ? { sourceKind: meta.sourceKind } : {}),
+    ...(meta.diagram ? { diagramName: meta.diagram.name, diagramViewType: meta.diagram.viewType, ...(meta.diagram.scopeId ? { diagramScopeId: meta.diagram.scopeId } : {}) } : {}),
     objects: draft.objects.map((o) => ({
       key: o.key,
       name: o.name,
@@ -98,6 +105,7 @@ export function proposalCounts(p: Proposal) {
 }
 
 function diagramName(p: Proposal): string {
+  if (p.diagramName?.trim()) return p.diagramName.trim();
   if (p.origin === "api") return p.source.slice(0, 60) || "Proposed through the API";
   if (p.origin !== "ai-prompt") return p.source.replace(/\.[a-z0-9]+$/i, "") || "Imported diagram";
   const firstLine = p.source.trim().split(/\n/)[0].replace(/\s+/g, " ");
@@ -186,7 +194,10 @@ export function applyProposal(ws: Workspace, id: string, user: string): ApplyRes
       continue;
     }
     const parentId = o.parentKey ? keyToId.get(o.parentKey) : undefined;
+    // Every new object is linked to the library when the draft or its name and technology say exactly which component it is.
+    const component = componentById(o.componentId) ?? exactComponent(o.technology, o.typeId) ?? exactComponent(o.name, o.typeId);
     const made = createObject(next, {
+      componentId: component && component.kind === o.typeId ? component.id : undefined,
       typeId: o.typeId,
       name: o.name,
       description: o.description,
@@ -230,7 +241,7 @@ export function applyProposal(ws: Workspace, id: string, user: string): ApplyRes
     if (!isNew) {
       diagramId = proposal.targetDiagramId;
     } else {
-      const made = createDiagram(next, { name: diagramName(proposal), viewType: "custom" });
+      const made = createDiagram(next, { name: diagramName(proposal), viewType: proposal.diagramViewType ?? "custom", scopeId: proposal.diagramScopeId && next.objects[proposal.diagramScopeId] ? proposal.diagramScopeId : null });
       next = made.ws;
       diagramId = made.diagram.id;
     }

@@ -35,9 +35,9 @@ export const TemplatePreview = memo(function TemplatePreview({ template }: { tem
  * Choosing a template: a search box, the four perspectives, and every template as a small
  * picture with its name above it. A click picks one and shows what it is; Use puts it in the model.
  */
-export function TemplatePicker({ templates, onUse, onClose, onDelete }: { templates: Template[]; onUse: (template: Template) => void; onClose: () => void; onDelete?: (template: Template) => void }) {
+export function TemplatePicker({ templates, onUse, onClose, onDelete, initialPerspective = null, useLabel }: { templates: Template[]; onUse: (template: Template) => void; onClose: () => void; onDelete?: (template: Template) => void; initialPerspective?: Perspective | null; useLabel?: string }) {
   const [query, setQuery] = useState("");
-  const [perspective, setPerspective] = useState<Perspective | null>(null);
+  const [perspective, setPerspective] = useState<Perspective | null>(initialPerspective);
   const [ownOnly, setOwnOnly] = useState(false);
   const [picked, setPicked] = useState<Template | null>(null);
   const [confirming, setConfirming] = useState(false);
@@ -85,7 +85,7 @@ export function TemplatePicker({ templates, onUse, onClose, onDelete }: { templa
             ))}
           <Button onClick={onClose}>Cancel</Button>
           <Button variant="primary" disabled={!picked} onClick={() => picked && onUse(picked)} data-template-use>
-            Use this template
+            {useLabel ?? "Use this template"}
           </Button>
         </div>
       }

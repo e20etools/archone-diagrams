@@ -3924,6 +3924,16 @@ var diagramSchema = objectType({
 	notation: enumType(NOTATIONS).optional(),
 	/** Missing when the diagram has none. */
 	flows: arrayType(flowSchema).optional(),
+	/** Set while the diagram is archived; its history of archiving and restoring stays, with the reasons. */
+	archive: objectType({
+		archived: booleanType(),
+		history: arrayType(objectType({
+			action: enumType(["archived", "restored"]),
+			at: stringType(),
+			by: stringType(),
+			reason: stringType()
+		}))
+	}).optional(),
 	createdAt: stringType(),
 	updatedAt: stringType()
 });
@@ -3942,6 +3952,8 @@ var proposedObjectSchema = objectType({
 	decision: enumType(DECISIONS),
 	/** An existing object with the same name; when set, accepting reuses it instead of creating a duplicate. */
 	matchId: stringType().nullable(),
+	/** The library component it is, when the draft knows it exactly. */
+	componentId: stringType().optional(),
 	owner: stringType().optional(),
 	lifecycle: enumType(LIFECYCLES).optional(),
 	tags: arrayType(stringType()).optional(),
@@ -3986,7 +3998,11 @@ var proposalSchema = objectType({
 	]).optional(),
 	/** A spreadsheet fills the model without drawing anything; a diagram file becomes a diagram laid out as it was drawn. */
 	/** What a drafted proposal was drafted from, when it was not a description. */
-	sourceKind: enumType(["transcript"]).optional(),
+	sourceKind: enumType(["transcript", "voice"]).optional(),
+	/** The diagram the draft becomes, as chosen when it was started: its name and kind. */
+	diagramName: stringType().optional(),
+	diagramViewType: enumType(VIEW_TYPES).optional(),
+	diagramScopeId: stringType().optional(),
 	withoutDiagram: booleanType().optional(),
 	placeAsDrawn: booleanType().optional(),
 	source: stringType(),

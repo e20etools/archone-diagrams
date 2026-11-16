@@ -411,6 +411,82 @@ export function sortedObjects(ws: Workspace): ModelObject[] {
   return Object.values(ws.objects).sort((a, b) => a.name.localeCompare(b.name));
 }
 
+/** The diagrams in use, most recently changed first. Archived ones are left out. */
 export function sortedDiagrams(ws: Workspace): Diagram[] {
-  return Object.values(ws.diagrams).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  return Object.values(ws.diagrams)
+    .filter((d) => !d.archive?.archived)
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+}
+
+export const isArchived = (d: Pick<Diagram, "archive"> | undefined) => !!d?.archive?.archived;
+
+export function archivedDiagrams(ws: Workspace): Diagram[] {
+  return Object.values(ws.diagrams)
+    .filter((d) => d.archive?.archived)
+    .sort((a, b) => (b.archive!.history.at(-1)?.at ?? "").localeCompare(a.archive!.history.at(-1)?.at ?? ""));
+}
+
+/** Puts a diagram away without deleting it. A reason is required and kept. */
+export function archiveDiagram(ws: Workspace, id: string, by: string, reason: string): Workspace {
+  if (!reason.trim() || !ws.diagrams[id] || isArchived(ws.diagrams[id])) return ws;
+  return patchDiagram(ws, id, (d) => ({ ...d, archive: { archived: true, history: [...(d.archive?.history ?? []), { action: "archived" as const, at: nowIso(), by: by.trim() || "Someone", reason: reason.trim().slice(0, 500) }].slice(-50) } }));
+}
+
+/** Brings an archived diagram back. A reason is required and kept. */
+export function restoreDiagram(ws: Workspace, id: string, by: string, reason: string): Workspace {
+  if (!reason.trim() || !isArchived(ws.diagrams[id])) return ws;
+  return patchDiagram(ws, id, (d) => ({ ...d, archive: { archived: false, history: [...(d.archive?.history ?? []), { action: "restored" as const, at: nowIso(), by: by.trim() || "Someone", reason: reason.trim().slice(0, 500) }].slice(-50) } }));
+}
+
+/**
+ * A new diagram made from an existing one; the original stays as it is. With separate objects,
+ * every box gets an object of its own (same component, technology and description, a new name
+ * ending in the label), so the copy can change without changing the model the original draws.
+ */
+export function copyDiagram(
+  ws: Workspace,
+  id: string,
+  options: { name: string; viewType?: Diagram["viewType"]; separate?: boolean; label?: string },
+): { ws: Workspace; diagram: Diagram | null } {
+  const source = ws.diagrams[id];
+  if (!source) return { ws, diagram: null };
+  let next = ws;
+  const map = new Map<string, string>();
+  if (options.separate) {
+    const label = options.label?.trim() || "copy";
+    for (const objectId of Object.keys(source.nodes)) {
+      const o = next.objects[objectId];
+      if (!o) continue;
+      const made = createObject(next, { typeId: o.typeId, name: `${o.name} (${label})`, description: o.description, technology: o.technology, owner: o.owner, lifecycle: o.lifecycle, tags: o.tags, fields: o.fields, componentId: o.componentId });
+      next = made.ws;
+      map.set(objectId, made.object.id);
+    }
+    for (const objectId of Object.keys(source.nodes)) {
+      const parentId = next.objects[objectId]?.parentId;
+      const copy = map.get(objectId);
+      if (copy && parentId && map.has(parentId)) next = updateObject(next, copy, { parentId: map.get(parentId)! });
+    }
+    for (const r of Object.values(ws.relationships)) {
+      const s = map.get(r.sourceId);
+      const t = map.get(r.targetId);
+      if (s && t) next = createRelationship(next, { sourceId: s, targetId: t, kind: r.kind, label: r.label, protocol: r.protocol, port: r.port, description: r.description }).ws;
+    }
+  }
+  const stamp = nowIso();
+  const nodes = Object.fromEntries(Object.entries(source.nodes).map(([objectId, p]) => [map.get(objectId) ?? objectId, p]));
+  const diagram: Diagram = {
+    ...source,
+    id: newId("dia"),
+    name: options.name.trim() || `${source.name} (copy)`,
+    viewType: options.viewType ?? source.viewType,
+    nodes,
+    hiddenRelationshipIds: map.size ? [] : source.hiddenRelationshipIds,
+    flows: map.size ? undefined : source.flows,
+    archive: undefined,
+    createdAt: stamp,
+    updatedAt: stamp,
+  };
+  if (!diagram.flows) delete diagram.flows;
+  delete diagram.archive;
+  return { ws: touch({ ...next, diagrams: { ...next.diagrams, [diagram.id]: diagram } }), diagram };
 }

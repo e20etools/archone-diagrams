@@ -1,7 +1,7 @@
 import { componentById } from "./library";
 import { createDiagram, createObject, createRelationship, findByName, newId, nowIso, placeNodes, updateDiagram } from "./model";
 import { CATALOG, type Perspective } from "./templateCatalog";
-import type { RelationKind, SavedTemplate, Workspace } from "./types";
+import type { RelationKind, SavedTemplate, ViewType, Workspace } from "./types";
 import { addObjectsToDiagram, relayout, visibleEdges } from "./views";
 
 export type { Perspective };
@@ -18,7 +18,7 @@ export const PERSPECTIVES: { id: Perspective; label: string; hint: string }[] = 
  * whose names the model already has are reused, so applying a template twice adds nothing.
  */
 
-interface TemplateObject {
+export interface TemplateObject {
   key: string;
   name: string;
   typeId: string;
@@ -231,10 +231,24 @@ export interface TemplateResult {
 }
 
 /** Puts a template into the model and draws one diagram of it. */
-export function applyTemplate(ws: Workspace, templateId: string): TemplateResult | null {
+export interface StartAs {
+  /** The new diagram's name; the template's own name when left out. */
+  name?: string;
+  /** The kind of diagram chosen for it; Custom when left out. */
+  viewType?: ViewType;
+  /** The object the diagram is about, for a C4 Level 1 or Level 2 diagram. */
+  scopeId?: string | null;
+}
+
+export function applyTemplate(ws: Workspace, templateId: string, start: StartAs = {}): TemplateResult | null {
   const own = ws.templates?.[templateId];
   const template = own ? fromSaved(own) : TEMPLATES.find((t) => t.id === templateId);
   if (!template) return null;
+  return applyTemplateValue(ws, template, start);
+}
+
+/** Puts a template, built in or made on the spot (by the wizard), into the model with one diagram of it. */
+export function applyTemplateValue(ws: Workspace, template: Template, start: StartAs = {}): TemplateResult {
   let next = ws;
   const ids: Record<string, string> = {};
   let added = 0;
@@ -258,9 +272,10 @@ export function applyTemplate(ws: Workspace, templateId: string): TemplateResult
     next = createRelationship(next, { sourceId, targetId, kind, label, protocol }).ws;
   }
   const taken = new Set(Object.values(next.diagrams).map((d) => d.name));
-  let name = template.name;
-  for (let n = 2; taken.has(name); n++) name = `${template.name} ${n}`;
-  const created = createDiagram(next, { name, viewType: "custom", description: template.about, direction: template.direction ?? "TB" });
+  const base = start.name?.trim() || template.name;
+  let name = base;
+  for (let n = 2; taken.has(name); n++) name = `${base} ${n}`;
+  const created = createDiagram(next, { name, viewType: start.viewType ?? "custom", scopeId: start.scopeId && next.objects[start.scopeId] ? start.scopeId : null, description: template.about, direction: template.direction ?? "TB" });
   next = template.notation ? updateDiagram(created.ws, created.diagram.id, { notation: template.notation }) : created.ws;
   // A box that holds others is left off: its parts are drawn, and the diagram reads better without a box around nothing.
   const hidden = containers(template);

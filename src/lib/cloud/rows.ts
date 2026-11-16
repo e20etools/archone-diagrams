@@ -1,4 +1,4 @@
-import type { Adr, CustomRule, SavedTemplate, Flow, ModelLink, ModelObject, NodePlacement, Notation, Proposal, Relationship } from "../types";
+import type { Adr, CustomRule, DiagramArchive, SavedTemplate, Flow, ModelLink, ModelObject, NodePlacement, Notation, Proposal, Relationship } from "../types";
 import { nodeKey, splitNodeKey, type DiagramMeta, type TableName } from "./tables";
 
 /** Database rows and the app's objects, converted in both directions. Column names match the migration. */
@@ -107,6 +107,8 @@ export function toRow(table: TableName, workspaceId: string, key: string, value:
         // Sent only once someone has chosen a notation, so a database without the column still saves plain diagrams.
         ...(d.notation ? { notation: d.notation } : {}),
         flows: d.flows?.length ? d.flows : null,
+        // Sent only once a diagram has been archived, so a database without the column still saves the rest.
+        ...(d.archive ? { archive: d.archive } : {}),
         created_at: d.createdAt,
         updated_at: d.updatedAt,
         deleted: false,
@@ -193,6 +195,7 @@ export function fromRow(table: TableName, row: Row): { key: string; value: unkno
         // Plain is the absence of a notation, so a diagram that never had one reads back as it was sent.
         ...((["archimate", "bpmn"] as const).some((n) => n === row.notation) ? { notation: row.notation as Notation } : {}),
         ...flowsOf(row.flows),
+        ...(row.archive && typeof row.archive === "object" && Array.isArray((row.archive as DiagramArchive).history) ? { archive: row.archive as DiagramArchive } : {}),
         createdAt: iso(row.created_at),
         updatedAt: iso(row.updated_at),
       };
