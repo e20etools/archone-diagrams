@@ -733,14 +733,35 @@ try {
   await page.click("[data-template-open]");
   await page.waitForSelector("[data-templates] [data-template]");
   const templatesOffered = await count(page, "[data-templates] [data-template]");
-  await page.click('[data-template="ai-agent"]');
+  const previews = await count(page, "[data-templates] [data-template] [data-template-preview] rect");
+  const firstCard = await page.$eval("[data-templates] [data-template]", (b) => ({ text: b.innerText.split("\n")[0], previewBelowName: b.querySelector("[data-template-preview]").getBoundingClientRect().top > b.querySelector("span").getBoundingClientRect().top }));
+  await shot(page, "27-template-picker");
+  const perspectiveCounts = await page.$$eval("[data-template-perspectives] [data-perspective]", (els) => els.map((e) => e.innerText));
+  await page.click('[data-perspective="infrastructure"]');
+  await sleep(200);
+  const infraOnly = await count(page, "[data-templates] [data-template]");
+  await page.type('input[aria-label="Search templates"]', "dmz");
+  await sleep(200);
+  const dmzFound = await page.$$eval("[data-templates] [data-template]", (els) => els.map((e) => e.getAttribute("data-template")));
+  check(
+    "the template picker shows 100 templates as small pictures under their names, by perspective and by search",
+    templatesOffered === 100 && previews > 400 && firstCard.previewBelowName && infraOnly === 30 && dmzFound.includes("dmz") && perspectiveCounts.length === 5,
+    `${templatesOffered} templates, ${previews} boxes drawn, infrastructure ${infraOnly}, search ${dmzFound.join(",")} :: ${perspectiveCounts.join(" / ")}`,
+  );
+  await page.$eval('input[aria-label="Search templates"]', (e) => e.select());
+  await page.keyboard.press("Backspace");
+  await page.click('[data-perspective="all"]');
+  await page.$eval('[data-template="ai-agent"]', (b) => b.click());
+  await page.waitForSelector('[data-template-picked="ai-agent"]');
+  check("picking a template shows what it holds before it is used", (await page.$eval("[data-template-picked]", (e) => e.innerText)).includes("AI agent with tools"));
+  await page.$eval("[data-template-use]", (b) => b.click());
   await page.waitForFunction(() => location.pathname.startsWith("/diagram/"));
   await page.waitForSelector(".object-node");
   await sleep(500);
   const templated = await stored();
   check(
     "a template adds its objects to the model and opens a diagram of them",
-    templatesOffered >= 5 && Object.keys(templated.objects).length === templateBase + 7 && (await count(page, ".object-node")) === 6 && Object.values(templated.diagrams).some((d) => d.name === "AI agent with tools"),
+    Object.keys(templated.objects).length === templateBase + 7 && (await count(page, ".object-node")) === 6 && Object.values(templated.diagrams).some((d) => d.name === "AI agent with tools"),
     `${templatesOffered} templates, ${Object.keys(templated.objects).length - templateBase} objects added, ${await count(page, ".object-node")} boxes`,
   );
   await page.click(".object-node");

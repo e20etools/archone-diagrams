@@ -1,6 +1,16 @@
-import { createDiagram, createObject, createRelationship, findByName } from "./model";
+import { componentById } from "./library";
+import { createDiagram, createObject, createRelationship, findByName, updateDiagram } from "./model";
+import { CATALOG, type Perspective } from "./templateCatalog";
 import type { RelationKind, Workspace } from "./types";
-import { addObjectsToDiagram } from "./views";
+import { addObjectsToDiagram, relayout } from "./views";
+
+export type { Perspective };
+export const PERSPECTIVES: { id: Perspective; label: string; hint: string }[] = [
+  { id: "applications", label: "Applications", hint: "How software is built and connected" },
+  { id: "data", label: "Data", hint: "Where data lives, moves and is used" },
+  { id: "infrastructure", label: "Infrastructure", hint: "Networks, servers, cloud, security and sites" },
+  { id: "business", label: "Business", hint: "Capabilities, processes, people and change" },
+];
 
 /**
  * Starting points: a small, typical architecture put into the model with one diagram of it.
@@ -15,18 +25,32 @@ interface TemplateObject {
   inside?: string;
   technology?: string;
   description?: string;
+  /** The library component it is, for its icon and its basic information. */
+  componentId?: string;
 }
 export interface Template {
   id: string;
   name: string;
+  perspective: Perspective;
   about: string;
+  direction?: "TB" | "LR";
+  notation?: "bpmn" | "archimate";
+  tags?: string;
   objects: TemplateObject[];
   relationships: [from: string, to: string, kind: RelationKind, label?: string, protocol?: string][];
 }
 
-export const TEMPLATES: Template[] = [
+/** "key component-id Name" into an object of the component's type. */
+function fromCatalog(line: string): TemplateObject {
+  const [key, component, ...name] = line.split(" ");
+  const c = componentById(component);
+  return { key, name: name.join(" "), typeId: c?.kind ?? "application", componentId: c?.id };
+}
+
+const STARTERS: Template[] = [
   {
     id: "three-tier",
+    perspective: "applications",
     name: "Three-tier web application",
     about: "A browser front end, an API behind a gateway, and a database, with sign-in from an identity provider.",
     objects: [
@@ -42,6 +66,7 @@ export const TEMPLATES: Template[] = [
   },
   {
     id: "event-driven",
+    perspective: "applications",
     name: "Event-driven services",
     about: "Services that publish and consume events on one bus, each with its own store.",
     objects: [
@@ -58,6 +83,7 @@ export const TEMPLATES: Template[] = [
   },
   {
     id: "data-platform",
+    perspective: "data",
     name: "Data platform",
     about: "Source systems feed a warehouse through ingestion, and reports read from it.",
     objects: [
@@ -73,6 +99,7 @@ export const TEMPLATES: Template[] = [
   },
   {
     id: "ai-agent",
+    perspective: "applications",
     name: "AI agent with tools",
     about: "An agent that calls a model and reaches company data through an MCP server. Fill in what it reads and where it can send.",
     objects: [
@@ -88,6 +115,7 @@ export const TEMPLATES: Template[] = [
   },
   {
     id: "cloud-landing",
+    perspective: "infrastructure",
     name: "Cloud workload behind a load balancer",
     about: "A container workload in one cloud region: load balancer, cluster, managed database, object storage and a cache.",
     objects: [
@@ -103,6 +131,45 @@ export const TEMPLATES: Template[] = [
     relationships: [["user", "lb", "calls", "", "HTTPS"], ["lb", "app", "routes_to", "", "HTTPS"], ["app", "cluster", "hosted_on"], ["app", "db", "reads_writes", "", "TLS"], ["app", "cache", "reads_writes", "", "TLS"], ["app", "files", "reads_writes", "", "HTTPS"]],
   },
 ];
+
+/** The first templates were written before the library; each box gets the component its type usually is. */
+const USUAL_COMPONENT: Record<string, string> = {
+  actor: "people.user",
+  "web-app": "applications.web-application",
+  application: "applications.custom-application",
+  service: "applications.back-end-service",
+  gateway: "platforms.api-gateway",
+  database: "data.relational-database",
+  queue: "integration.event-bus",
+  cache: "data.cache",
+  storage: "storage.object-storage",
+  cluster: "containers.kubernetes-cluster",
+  "external-system": "external.external-system",
+  "ai-agent": "ai.ai-agent",
+  "ai-model": "ai.large-language-model",
+  "mcp-server": "ai.mcp-server",
+};
+
+export const TEMPLATES: Template[] = [
+  ...STARTERS.map((t) => ({ ...t, objects: t.objects.map((o) => (o.componentId || !USUAL_COMPONENT[o.typeId] ? o : { ...o, componentId: USUAL_COMPONENT[o.typeId] })) })),
+  ...CATALOG.map((t) => ({ ...t, objects: t.objects.map(fromCatalog) })),
+];
+
+export const templatesIn = (perspective: Perspective | null) => TEMPLATES.filter((t) => !perspective || t.perspective === perspective);
+
+/** Templates whose name, description, tags or box names contain every word typed. */
+export function searchTemplates(query: string, perspective: Perspective | null = null): Template[] {
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+  const pool = templatesIn(perspective);
+  if (!words.length) return pool;
+  return pool.filter((t) => {
+    const hay = `${t.name} ${t.about} ${t.tags ?? ""} ${t.objects.map((o) => o.name).join(" ")}`.toLowerCase();
+    return words.every((w) => hay.includes(w));
+  });
+}
+
+/** Objects that hold others are drawn as their parts, not as a box around nothing. */
+export const containers = (t: Template) => new Set(t.objects.map((o) => o.inside).filter((k): k is string => !!k));
 
 export interface TemplateResult {
   ws: Workspace;
@@ -126,7 +193,7 @@ export function applyTemplate(ws: Workspace, templateId: string): TemplateResult
       reused += 1;
       continue;
     }
-    const made = createObject(next, { name: o.name, typeId: o.typeId, parentId: o.inside ? (ids[o.inside] ?? null) : null, technology: o.technology ?? "", description: o.description ?? "" });
+    const made = createObject(next, { name: o.name, typeId: o.typeId, parentId: o.inside ? (ids[o.inside] ?? null) : null, technology: o.technology ?? "", description: o.description ?? "", ...(o.componentId ? { componentId: o.componentId } : {}) });
     next = made.ws;
     ids[o.key] = made.object.id;
     added += 1;
@@ -140,9 +207,11 @@ export function applyTemplate(ws: Workspace, templateId: string): TemplateResult
   const taken = new Set(Object.values(next.diagrams).map((d) => d.name));
   let name = template.name;
   for (let n = 2; taken.has(name); n++) name = `${template.name} ${n}`;
-  const created = createDiagram(next, { name, viewType: "custom", description: template.about });
-  // The system box is left off: its parts are drawn, and the diagram reads better without a box around nothing.
-  const shown = template.objects.filter((o) => o.typeId !== "system").map((o) => ids[o.key]);
-  next = addObjectsToDiagram(created.ws, created.diagram.id, shown);
+  const created = createDiagram(next, { name, viewType: "custom", description: template.about, direction: template.direction ?? "TB" });
+  next = template.notation ? updateDiagram(created.ws, created.diagram.id, { notation: template.notation }) : created.ws;
+  // A box that holds others is left off: its parts are drawn, and the diagram reads better without a box around nothing.
+  const hidden = containers(template);
+  const shown = template.objects.filter((o) => !hidden.has(o.key)).map((o) => ids[o.key]);
+  next = relayout(addObjectsToDiagram(next, created.diagram.id, shown), created.diagram.id, false);
   return { ws: next, diagramId: created.diagram.id, added, reused };
 }

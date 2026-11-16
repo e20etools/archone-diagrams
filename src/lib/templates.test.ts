@@ -3,19 +3,32 @@ import { OBJECT_TYPES } from "./catalog";
 import { runChecks } from "./checks/checks";
 import { CLOUD_SERVICES, cloudService, cloudSuggestions } from "./cloudCatalog";
 import { canSetParent, emptyWorkspace } from "./model";
-import { TEMPLATES, applyTemplate } from "./templates";
+import { componentById, normalizeComponentName } from "./library";
+import { templatePreview } from "./templatePreview";
+import { PERSPECTIVES, TEMPLATES, applyTemplate, containers, searchTemplates, templatesIn } from "./templates";
 import { RELATION_KINDS } from "./types";
 
 const kinds = new Set(OBJECT_TYPES.map((t) => t.id));
 
 describe("templates", () => {
   it("are each a valid small model: known kinds, nesting the model allows, and ends that exist", () => {
-    expect(TEMPLATES.length).toBeGreaterThanOrEqual(5);
+    expect(TEMPLATES.length).toBeGreaterThanOrEqual(100);
+    for (const p of PERSPECTIVES) expect(templatesIn(p.id).length, p.id).toBeGreaterThanOrEqual(20);
+    const ids = TEMPLATES.map((t) => t.id);
+    expect(ids.filter((id, i) => ids.indexOf(id) !== i)).toEqual([]);
+    const names = TEMPLATES.map((t) => normalizeComponentName(t.name));
+    expect(names.filter((n, i) => names.indexOf(n) !== i)).toEqual([]);
     for (const t of TEMPLATES) {
       const keys = new Set(t.objects.map((o) => o.key));
       expect(keys.size, t.id).toBe(t.objects.length);
+      expect(t.objects.length, t.id).toBeGreaterThanOrEqual(5);
+      expect(t.objects.length, t.id).toBeLessThanOrEqual(12);
+      const objectNames = t.objects.map((o) => o.name.toLowerCase());
+      expect(objectNames.filter((n, i) => objectNames.indexOf(n) !== i), t.id).toEqual([]);
       for (const o of t.objects) {
         expect(kinds.has(o.typeId), `${t.id}: ${o.name}`).toBe(true);
+        expect(o.name.trim(), `${t.id}: ${o.key}`).not.toBe("");
+        if (o.componentId !== undefined) expect(componentById(o.componentId), `${t.id}: ${o.name}`).toBeDefined();
         if (o.inside) expect(keys.has(o.inside), `${t.id}: ${o.name}`).toBe(true);
       }
       for (const [from, to, kind] of t.relationships) {
@@ -41,11 +54,39 @@ describe("templates", () => {
       const diagram = made.ws.diagrams[made.diagramId];
       expect(diagram.name).toBe(t.name);
       const placed = Object.values(diagram.nodes);
-      expect(placed).toHaveLength(t.objects.filter((o) => o.typeId !== "system").length);
+      expect(placed).toHaveLength(t.objects.length - containers(t).size);
+      if (t.notation) expect(diagram.notation, t.id).toBe(t.notation);
+      if (t.direction) expect(diagram.direction, t.id).toBe(t.direction);
       // Laid out, not stacked on one spot.
       expect(new Set(placed.map((p) => `${p.x},${p.y}`)).size, t.id).toBe(placed.length);
       // A template does not start life breaking the security rules.
       expect(runChecks(made.ws, null, ["security"]).filter((f) => f.severity === "high"), t.id).toEqual([]);
+    }
+  });
+
+  it("draw library components with their icons and ask for their information", () => {
+    const made = applyTemplate(emptyWorkspace("T"), "dmz")!;
+    const waf = Object.values(made.ws.objects).find((o) => o.name === "WAF")!;
+    expect(waf).toMatchObject({ componentId: "security.web-application-firewall", typeId: "gateway" });
+    const catalogued = TEMPLATES.filter((t) => t.objects.every((o) => o.componentId));
+    expect(catalogued.length).toBeGreaterThanOrEqual(95);
+  });
+
+  it("are found by words and by perspective", () => {
+    expect(searchTemplates("kyc").map((t) => t.id)).toContain("customer-onboarding");
+    expect(searchTemplates("dmz").map((t) => t.id)).toContain("dmz");
+    expect(searchTemplates("zatca").map((t) => t.id)).toContain("e-invoicing");
+    expect(searchTemplates("firewall", "business")).toEqual([]);
+    expect(searchTemplates("", "data")).toEqual(templatesIn("data"));
+  });
+
+  it("each have a small preview with every box in its place and no two boxes on one spot", () => {
+    for (const t of TEMPLATES) {
+      const p = templatePreview(t);
+      expect(p.boxes.length, t.id).toBe(t.objects.length - containers(t).size);
+      expect(new Set(p.boxes.map((b) => `${b.x},${b.y}`)).size, t.id).toBe(p.boxes.length);
+      expect(p.width > 0 && p.height > 0, t.id).toBe(true);
+      expect(templatePreview(t)).toBe(p);
     }
   });
 

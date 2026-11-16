@@ -742,16 +742,39 @@ forbids, and can file the ones the model does not know as a proposal that names 
 request. `gate/README.md` has the file format, the options and a GitHub Actions workflow.
 It checks the declaration, not the code.
 
-### Templates and cloud service names
+### Templates
 
-- Diagrams → **Template** offers five starting points (three-tier web application,
-  event-driven services, data platform, AI agent with tools, cloud workload). Using one
-  adds its objects and relationships to the model and draws one diagram. Objects whose
-  names the model already has are reused. It is one step in the undo history.
-- The Technology field of an object offers the technologies already in the model, then
-  about a hundred AWS, Azure and Google Cloud service names, those of the object's kind
-  first, so one service is spelled one way. Names only: the providers' icons are not
-  included.
+100 templates for the most common diagrams, under Start from a template on the Diagrams
+page: 25 for applications, 20 for data, 30 for infrastructure and 25 for business. Each is a
+small first draft (five to eleven boxes) of a common situation, built from the component
+library so every box has its icon and its basic information.
+
+- **Applications:** single-page app, mobile back end, microservices, saga, CQRS, event
+  sourcing, serverless, strangler migration, multi-tenant SaaS, online shop, card payments,
+  digital banking, government e-service, ZATCA e-invoicing, ERP integration, contact centre,
+  ITSM, hospital systems and more.
+- **Data:** modern data stack, lakehouse, enterprise warehouse, streaming analytics, change
+  data capture, MDM, data mesh, BI, ML platform, retrieval-augmented generation, governance,
+  database high availability, migration, partner sharing, IoT data and 3-2-1 backup.
+- **Infrastructure:** data centre network, leaf-spine, DMZ, SD-WAN, campus, remote access,
+  virtualisation, SAN, power and cooling, active-standby and active-active recovery, hybrid
+  cloud, landing zone, Kubernetes, CI/CD, observability, end-user computing, VDI, security
+  operations, zero trust, PKI, privileged access, hybrid identity, OT network, retail store,
+  mainframe, segmentation and internet edge protection.
+- **Business:** capability map, capabilities to applications, value stream, customer
+  journey, BPMN processes (order to cash, procure to pay, hire to retire, incident, change,
+  KYC onboarding, insurance claim, loan origination, patient visit, permit application),
+  organisation, stakeholders, system context, application landscape, current and target
+  state, roadmap, business services, partners, sites, policies and controls, product lines.
+
+The picker shows each template as a small picture of its boxes and lines, with its name
+above it. Search by any word (DMZ, KYC, ZATCA) or by perspective; a click shows what it
+holds, Use (or a double click) puts it in the model and opens its diagram. Process templates
+open in BPMN, left to right. Objects whose names the model already has are reused. No
+template starts with a high-severity security finding; a test holds this.
+
+The technology field still offers common cloud service names, so the same service is
+spelled the same way across the model.
 
 ### ArchiMate 4
 
@@ -926,9 +949,9 @@ build does not reload.
 ## Check it
 
 ```bash
-npm test                   # 386 tests: model, the component library, flows, links, protected live links, decisions, arranging, health, CALM, scenario merging, the trust page, the document, your own rules, large models, templates, the pull-request gate, the APM import, AI, questions, checks, MCP, import readers, sync engine, comparison, and the database rules and the API on a real Postgres
+npm test                   # 389 tests: model, the component library, flows, links, protected live links, decisions, arranging, health, CALM, scenario merging, the trust page, the document, your own rules, large models, templates, the pull-request gate, the APM import, AI, questions, checks, MCP, import readers, sync engine, comparison, and the database rules and the API on a real Postgres
 npm run build              # type-check and production build into dist/
-npm run test:browser       # 155 end-to-end checks of browser-only mode (run after a build)
+npm run test:browser       # 157 end-to-end checks of browser-only mode (run after a build)
 npm run test:browser:cloud # 87 end-to-end checks of hosted mode with several people
 ```
 
