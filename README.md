@@ -676,6 +676,65 @@ what order, and which sections follow them.
 - The pictures are images, not editable shapes. Both files have been opened with
   LibreOffice here; they have not been opened in Microsoft Word or PowerPoint.
 
+### Your own rules and journey tests
+
+Checks → **Your rules** holds rules the workspace writes for itself. They run with the
+built-in checks wherever those run: on the whole model, on one diagram, in a scenario, in
+the Document export and in a review's evidence pack. Each rule has its own switch.
+
+A rule is one of three things:
+
+- **Something every chosen object must have**: an owner, a description, a technology, a
+  data classification, a region, a tag (or not a tag), a field, or one of some lifecycles.
+- **How two sets of objects may connect**: never, the first set only to the second, or
+  only over certain protocols.
+- **A journey test**: on every way from one set of objects to another, following the
+  arrows from source to target, a third set is never passed through, or always is. For
+  example: "Traffic from customers to databases must pass through a gateway".
+
+A set of objects is chosen by kind, tag, part of the name, lifecycle, what it sits inside,
+whether it holds personal data, and its classification.
+
+**Writing a rule as a sentence.** Type the rule in English or Arabic and press Read it. The
+form below is filled in from the sentence, "Read as" says the rule back in fixed words, and
+the page lists what the rule would find in the model as it is now, before it is kept.
+
+What you should know:
+
+- The sentence is read by recognising words, with no AI model: kinds of object, tags,
+  lifecycles, names of objects in the model, and ways of saying must, never, only and
+  through. It does not understand the sentence. Words it did not use are listed, and a
+  sentence it cannot read at all leaves the form for you to fill in. The Arabic reading
+  covers fewer phrasings than the English one.
+- A journey follows relationships in their direction and ignores nesting: a relationship
+  drawn on a parent is not followed for its children.
+- A rule that goes wrong all over the model reports its first 60 findings.
+- In hosted mode only owners write rules, and the database enforces that; every member's
+  checks run them. A scenario starts with the rules of the model it was copied from.
+  Versions do not hold rules: an evidence pack runs today's rules against the reviewed
+  version, and says so.
+- A workspace can have 200 rules of its own.
+
+### Large models
+
+Measured on the build machine with a generated model (domains of systems of services and
+databases, about 1.8 relationships per object). Each figure is one run, in milliseconds:
+
+| Objects | All built-in checks | A journey rule | One edit | What to save | Compare two copies | Impact of one object | Arrows of a landscape view |
+|--------:|--------:|--------:|--------:|--------:|--------:|--------:|--------:|
+| 500 | 17 | 5 | 0 | 0 | 4 | 1 | 1 |
+| 2,000 | 35 | 26 | 2 | 1 | 11 | 3 | 5 |
+| 5,000 | 65 | 137 | 4 | 2 | 31 | 9 | 13 |
+
+`src/lib/perf.test.ts` repeats this with loose limits, to catch something becoming many
+times slower.
+
+On the canvas, a diagram with more than 150 boxes draws only the boxes in view; a picture
+export draws all of them first. In the browser check a diagram of 400 boxes opened in under
+a second and, zoomed in, drew 80 of them. Not measured: diagrams of thousands of boxes,
+automatic layout of a very large diagram, loading a large workspace from the hosted
+database, and several people editing one at once.
+
 ## Run it
 
 Needs Node.js 20.19 or newer.
@@ -694,10 +753,10 @@ build does not reload.
 ## Check it
 
 ```bash
-npm test                   # 316 tests: model, decisions, arranging, health, CALM, scenario merging, the trust page, the document, AI, questions, checks, MCP, import readers, sync engine, comparison, and the database rules and the API on a real Postgres
+npm test                   # 333 tests: model, decisions, arranging, health, CALM, scenario merging, the trust page, the document, your own rules, large models, AI, questions, checks, MCP, import readers, sync engine, comparison, and the database rules and the API on a real Postgres
 npm run build              # type-check and production build into dist/
-npm run test:browser       # 119 end-to-end checks of browser-only mode (run after a build)
-npm run test:browser:cloud # 83 end-to-end checks of hosted mode with several people
+npm run test:browser       # 126 end-to-end checks of browser-only mode (run after a build)
+npm run test:browser:cloud # 85 end-to-end checks of hosted mode with several people
 ```
 
 `test:browser` serves the production build, including `api/ai.js`, and walks through the
@@ -781,7 +840,8 @@ src/lib/            the model and all logic, free of React (tested in *.test.ts)
   share.ts          share-link packing and encryption
   exporters.ts      CSV, JSON, Mermaid, PlantUML
   repository.ts     where the workspace is stored (the seam for the phase 2 database)
-  checks/           rule packs, the data fields and the data map
+  checks/           rule packs, the data fields and the data map; custom.ts and parseRule.ts
+                    hold the workspace's own rules and the reader of rules written as sentences
   trust.ts          the public trust page: what it says and what may leave the workspace
   document/         the architecture as a Word file or slides
   mcp/              the MCP server for assistants

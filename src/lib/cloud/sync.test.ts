@@ -80,7 +80,7 @@ describe("rows and tables", () => {
     const tables = toTables(demoWorkspace("Sara"));
     for (const table of TABLE_NAMES) {
       const entries = Object.entries(tables[table]);
-      expect(entries.length).toBeGreaterThan(table === "proposals" || table === "adrs" ? -1 : 0);
+      expect(entries.length).toBeGreaterThan(table === "proposals" || table === "adrs" || table === "rules" ? -1 : 0);
       for (const [key, value] of entries) {
         const row = JSON.parse(JSON.stringify(toRow(table, "ws", key, value)));
         const back = fromRow(table, row);

@@ -343,6 +343,7 @@ export function ReviewPage() {
   const role = useSession((s) => s.role);
   const people = useSession((s) => s.people);
   const versions = useSession((s) => s.versions);
+  const ownRules = useWorkspace().rules;
   const workspaceName = useWorkspace().name;
   const nameOf = useNames();
   const review = reviews.find((r) => r.id === id);
@@ -408,6 +409,7 @@ export function ReviewPage() {
                   tables: candidate.tables,
                   base: review.baseVersionId ? (base.tables ?? null) : null,
                   people,
+                  rules: ownRules,
                   generatedBy: me?.name || me?.email || "A member",
                   generatedAt: new Date().toISOString(),
                 });

@@ -1,4 +1,4 @@
-import type { Adr, ModelObject, NodePlacement, Notation, Proposal, Relationship } from "../types";
+import type { Adr, CustomRule, ModelObject, NodePlacement, Notation, Proposal, Relationship } from "../types";
 import { nodeKey, splitNodeKey, type DiagramMeta, type TableName } from "./tables";
 
 /** Database rows and the app's objects, converted in both directions. Column names match the migration. */
@@ -10,6 +10,7 @@ export const SQL_TABLE: Record<TableName, string> = {
   nodes: "diagram_nodes",
   proposals: "proposals",
   adrs: "decision_records",
+  rules: "custom_rules",
 };
 
 export type Row = Record<string, unknown>;
@@ -97,6 +98,10 @@ export function toRow(table: TableName, workspaceId: string, key: string, value:
       const a = value as Adr;
       return { workspace_id: workspaceId, id: a.id, status: a.status, data: a, created_at: a.createdAt, deleted: false };
     }
+    case "rules": {
+      const r = value as CustomRule;
+      return { workspace_id: workspaceId, id: r.id, data: r, created_at: r.createdAt, deleted: false };
+    }
   }
 }
 
@@ -166,6 +171,8 @@ export function fromRow(table: TableName, row: Row): { key: string; value: unkno
       return { key, value: row.data as Proposal };
     case "adrs":
       return { key, value: row.data as Adr };
+    case "rules":
+      return { key, value: row.data as CustomRule };
   }
 }
 
@@ -177,6 +184,7 @@ export const KEY_COLUMNS: Record<TableName, string[]> = {
   nodes: ["workspace_id", "diagram_id", "object_id"],
   proposals: ["workspace_id", "id"],
   adrs: ["workspace_id", "id"],
+  rules: ["workspace_id", "id"],
 };
 
 /** Timestamps are normalised on the way in, so an object that went to the database and back compares equal. */

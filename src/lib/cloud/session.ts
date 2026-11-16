@@ -121,6 +121,11 @@ export function startSession(): void {
   setChangeGuard((before, after) => {
     const { workspaceId, workspaces, role } = get();
     const domains = role === "editor" ? (workspaces.find((w) => w.id === workspaceId)?.domains ?? null) : null;
+    // The workspace's rules are its policy; the database lets only owners write them.
+    if (before.rules !== after.rules && role !== "owner") {
+      set({ notice: "Only an owner can change the workspace's rules." });
+      return true;
+    }
     const refusal = scopeRefusal(before, after, domains);
     if (refusal) set({ notice: refusal });
     return !!refusal;
@@ -373,7 +378,7 @@ export async function revertToVersion(version: VersionInfo): Promise<void> {
   const tables = withoutDangling(await versionTablesOf(version.id));
   await backend.saveVersion(workspaceId, `Before reverting to "${version.name}"`.slice(0, 120), "Saved automatically so that the revert can be taken back.", true);
   const current = useStore.getState().ws;
-  useStore.getState().replace({ ...current, ...fromTables({ ...tables, proposals: toTables(current).proposals, adrs: toTables(current).adrs }), updatedAt: nowIso() });
+  useStore.getState().replace({ ...current, ...fromTables({ ...tables, proposals: toTables(current).proposals, adrs: toTables(current).adrs, rules: toTables(current).rules }), updatedAt: nowIso() });
   await engine?.flush().catch(() => undefined);
   await refreshCollab();
 }

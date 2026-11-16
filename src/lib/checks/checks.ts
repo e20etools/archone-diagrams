@@ -1,5 +1,6 @@
 import { objectType } from "../catalog";
 import { toCsv } from "../exporters";
+import { describeRule, runCustomCheck } from "./custom";
 import { TRUTH_FIELDS, truthMatters, truthOf } from "../freshness";
 import { handshakeState } from "../handshake";
 import { ancestorsOf } from "../model";
@@ -526,19 +527,32 @@ export function runChecks(ws: Workspace, diagram: Diagram | null, packs: PackId[
     all,
   };
   const order = { high: 0, medium: 1, low: 2 };
+  // The workspace's own rules are its policy: they run whichever packs are ticked, each with its own switch.
+  const own = Object.values(ws.rules ?? {})
+    .filter((rule) => rule.enabled)
+    .flatMap((rule) => runCustomCheck(ws, rule.check, scope.objects, scope.relationships).map((f) => ({ ...f, ruleId: rule.id, severity: rule.severity })));
   return RULES.filter((rule) => rule.packs.some((p) => packs.includes(p)))
-    .flatMap((rule) => rule.run(scope).map((f) => ({ ...f, ruleId: rule.id, severity: rule.severity })))
+    .flatMap((rule) => rule.run(scope).map((f): Finding => ({ ...f, ruleId: rule.id, severity: rule.severity })))
+    .concat(own)
     .sort((a, b) => order[a.severity] - order[b.severity] || a.ruleId.localeCompare(b.ruleId) || a.message.localeCompare(b.message));
 }
 export const rulesOf = (packs: PackId[]) => RULES.filter((rule) => rule.packs.some((p) => packs.includes(p)));
-export const ruleById = (id: string) => RULES.find((r) => r.id === id);
+/** How many rules a run covers: the ticked packs, and the workspace's own rules that are switched on. */
+export const rulesRun = (packs: PackId[], ws?: Pick<Workspace, "rules">) => rulesOf(packs).length + Object.values(ws?.rules ?? {}).filter((r) => r.enabled).length;
+/** A built-in rule, or one of the workspace's own when the workspace is given. */
+export function ruleById(id: string, ws?: Pick<Workspace, "objects" | "rules">): Pick<Rule, "id" | "title" | "why" | "severity"> | undefined {
+  const builtIn = RULES.find((r) => r.id === id);
+  if (builtIn || !ws?.rules?.[id]) return builtIn;
+  const own = ws.rules[id];
+  return { id, title: own.title, why: `One of this workspace's own rules. ${describeRule(ws, own.check)}`, severity: own.severity };
+}
 
 export function findingsCsv(ws: Workspace, findings: Finding[]): string {
   return toCsv([
     ["Severity", "Rule", "Finding", "Objects", "Owners"],
     ...findings.map((f) => [
       f.severity,
-      ruleById(f.ruleId)?.title ?? f.ruleId,
+      ruleById(f.ruleId, ws)?.title ?? f.ruleId,
       f.message,
       f.objectIds.map((id) => ws.objects[id]?.name ?? id).join("; "),
       [...new Set(f.objectIds.map((id) => ws.objects[id]?.owner.trim()).filter(Boolean))].join("; "),

@@ -206,6 +206,53 @@ export const adrSchema = z.object({
 });
 export type Adr = z.infer<typeof adrSchema>;
 
+/**
+ * Which objects a rule of the workspace's own is about. Every part that is filled in has to
+ * hold; a selector with nothing filled in means every object.
+ */
+export const selectorSchema = z.object({
+  types: z.array(z.string()).default([]),
+  tags: z.array(z.string()).default([]),
+  lifecycle: z.array(z.enum(LIFECYCLES)).default([]),
+  /** Only objects that hold personal data. */
+  personal: z.boolean().default(false),
+  classification: z.array(z.string()).default([]),
+  /** Part of the name, any case. */
+  name: z.string().default(""),
+  /** The id of an object: only what sits inside it, at any depth. */
+  inside: z.string().nullable().default(null),
+});
+export type Selector = z.infer<typeof selectorSchema>;
+
+export const OBJECT_REQUIREMENTS = ["owner", "description", "technology", "classification", "residency", "tag", "no-tag", "field", "lifecycle"] as const;
+export type ObjectRequirement = (typeof OBJECT_REQUIREMENTS)[number];
+
+/** What a rule checks. A journey is every way from one set of objects to another, following the arrows. */
+export const ruleCheckSchema = z.discriminatedUnion("kind", [
+  /** Every object the selector picks has something, or is something. `value` names the tag, the field (or "field=value") or the lifecycles allowed. */
+  z.object({ kind: z.literal("object"), subject: selectorSchema, require: z.enum(OBJECT_REQUIREMENTS), value: z.string().default("") }),
+  /** Between two sets of objects: never connected, connected only to each other, or connected over one of the protocols in `value`. */
+  z.object({ kind: z.literal("connection"), from: selectorSchema, to: selectorSchema, mode: z.enum(["never", "only", "protocol"]), value: z.string().default("") }),
+  /** On the way from one set to another: never through a third set, or always through it. */
+  z.object({ kind: z.literal("journey"), from: selectorSchema, to: selectorSchema, through: selectorSchema, mode: z.enum(["never", "always"]) }),
+]);
+export type RuleCheck = z.infer<typeof ruleCheckSchema>;
+
+/** A rule the workspace wrote for itself, run with the built-in checks. */
+export const customRuleSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  /** The sentence the rule was written as, kept so the next person can see what was meant. */
+  text: z.string(),
+  severity: z.enum(["high", "medium", "low"]),
+  enabled: z.boolean(),
+  check: ruleCheckSchema,
+  author: z.string(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+export type CustomRule = z.infer<typeof customRuleSchema>;
+
 export const workspaceSchema = z.object({
   version: z.literal(1),
   name: z.string(),
@@ -216,6 +263,8 @@ export const workspaceSchema = z.object({
   proposals: z.record(proposalSchema),
   /** Missing in workspaces saved before decisions existed. */
   adrs: z.record(adrSchema).default({}),
+  /** The workspace's own rules. Missing in workspaces saved before they existed. */
+  rules: z.record(customRuleSchema).default({}),
   updatedAt: z.string(),
 });
 export type Workspace = z.infer<typeof workspaceSchema>;

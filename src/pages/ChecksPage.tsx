@@ -2,7 +2,7 @@ import { Download } from "lucide-react";
 import { Fragment, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { Badge, Button, EmptyState, Select, Tabs } from "@/components/ui";
-import { PACKS, SEVERITIES, dataMap, dataMapCsv, findingsCsv, ruleById, rulesOf, runChecks, type Finding, type PackId, type Severity } from "@/lib/checks/checks";
+import { PACKS, SEVERITIES, dataMap, dataMapCsv, findingsCsv, ruleById, rulesRun, runChecks, type Finding, type PackId, type Severity } from "@/lib/checks/checks";
 import { downloadText, slugify } from "@/lib/exporters";
 import { sortedDiagrams } from "@/lib/model";
 import { useWorkspace } from "@/lib/store";
@@ -49,7 +49,7 @@ function Findings({ ws, findings }: { ws: Workspace; findings: Finding[] }) {
   return (
     <ul className="mt-4 space-y-3" data-findings>
       {[...groups.entries()].map(([ruleId, list]) => {
-        const rule = ruleById(ruleId)!;
+        const rule = ruleById(ruleId, ws)!;
         return (
           <li key={ruleId} className="rounded-lg border border-line bg-surface" data-rule={ruleId}>
             <div className="px-4 py-3 border-b border-line-soft flex items-start justify-between gap-3">
@@ -171,6 +171,7 @@ export function ChecksPage() {
     }
   };
   const empty = Object.keys(ws.objects).length === 0;
+  const ownOn = Object.values(ws.rules).filter((r) => r.enabled).length;
 
   return (
     <div className="max-w-5xl mx-auto px-6 py-7">
@@ -231,19 +232,22 @@ export function ChecksPage() {
                         {pack.name}
                       </label>
                     ))}
+                    <Link to="/checks/rules" className="flex items-center h-9 font-medium text-blueprint hover:underline" data-own-rules>
+                      Your rules ({ownOn} on)
+                    </Link>
                   </div>
                 </fieldset>
               </div>
-              {packs.length === 0 ? (
-                <p className="mt-6 text-ink-soft">Choose at least one rule pack.</p>
+              {packs.length === 0 && ownOn === 0 ? (
+                <p className="mt-6 text-ink-soft">Choose at least one rule pack, or write a rule of your own.</p>
               ) : findings.length === 0 ? (
                 <div className="mt-5 rounded-lg border border-line bg-surface">
-                  <EmptyState title="No findings" text={`${rulesOf(packs).length} rules were run against ${diagram ? `the diagram "${diagram.name}"` : "the whole model"} and none of them found anything.`} />
+                  <EmptyState title="No findings" text={`${rulesRun(packs, ws)} rules were run against ${diagram ? `the diagram "${diagram.name}"` : "the whole model"} and none of them found anything.`} />
                 </div>
               ) : (
                 <>
                   <p className="mt-4 text-[13px] text-ink-soft" data-findings-summary>
-                    {rulesOf(packs).length} rules run against {diagram ? `the diagram "${diagram.name}"` : "the whole model"}: {counts.map((c) => `${c.n} ${c.severity}`).join(", ")}.
+                    {rulesRun(packs, ws)} rules run against {diagram ? `the diagram "${diagram.name}"` : "the whole model"}: {counts.map((c) => `${c.n} ${c.severity}`).join(", ")}.
                   </p>
                   <Findings ws={ws} findings={findings} />
                 </>

@@ -640,6 +640,92 @@ try {
   await page.waitForSelector("[data-freshness]");
   check("freshness says nothing is due in a model that was just made", await hasText(page, "Nothing is due."));
 
+  // A rule of the workspace's own: written as a sentence, read back, tried, then run with the checks.
+  await page.goto(`${base}/checks/rules`, { waitUntil: "networkidle0" });
+  await page.waitForSelector("[data-rule-new]");
+  await page.click("[data-rule-new]");
+  await page.type("[data-rule-text]", "Traffic from customers to databases must pass through a gateway");
+  await page.click("[data-rule-read]");
+  await page.waitForFunction(() => document.querySelector("[data-rule-kind]")?.value === "journey");
+  const journeyRead = await page.$eval("[data-rule-sentence]", (e) => e.textContent.trim());
+  check("a journey test written as a sentence is read into a rule and shown back", journeyRead === "Every way from people to databases passes through gateways." && (await count(page, "[data-selector]")) === 3, journeyRead);
+  await page.$eval("[data-rule-text]", (e) => e.select());
+  await page.keyboard.press("Backspace");
+  await page.type("[data-rule-text]", "Every database in the blue zone must have an owner");
+  await page.click("[data-rule-read]");
+  await page.waitForFunction(() => document.querySelector("[data-rule-kind]")?.value === "object");
+  const ownerRule = await page.evaluate(() => ({ sentence: document.querySelector("[data-rule-sentence]").textContent.trim(), found: document.querySelector("[data-rule-found]").textContent.trim(), unread: document.querySelector("[data-rule-unread]")?.textContent ?? "" }));
+  const wouldFind = Number(/would find (\d+) thing/.exec(ownerRule.found)?.[1] ?? 0);
+  check("before it is kept, a rule says what it would find and which words it did not read", ownerRule.sentence === "All databases must have an owner." && wouldFind > 0 && ownerRule.unread.includes("blue zone"), `${ownerRule.found} ${ownerRule.unread}`);
+  await page.evaluate(() => document.querySelector("[data-rule-editor]").scrollIntoView());
+  await shot(page, "16-rule-editor");
+  await page.click("[data-rule-save]");
+  await page.waitForSelector("[data-rules] [data-rule-row]");
+  await sleep(450);
+  const keptRule = Object.values((await stored()).rules)[0];
+  check("the rule is kept with the sentence it was written as", keptRule?.title === "All databases must have an owner." && keptRule.text.includes("blue zone") && (await page.$eval("[data-rule-count]", (e) => e.textContent.trim())) === `${wouldFind} findings`);
+  await shot(page, "15-own-rules");
+  await page.goto(`${base}/checks`, { waitUntil: "networkidle0" });
+  await page.waitForSelector(`[data-rule="${keptRule.id}"]`);
+  check("it runs with the built-in checks, under its own name", (await count(page, `[data-rule="${keptRule.id}"] li`)) === wouldFind && (await page.$eval("[data-own-rules]", (e) => e.textContent.trim())) === "Your rules (1 on)");
+  await page.goto(`${base}/checks/rules`, { waitUntil: "networkidle0" });
+  await page.waitForSelector("[data-rule-row] input[type=checkbox]");
+  await page.click("[data-rule-row] input[type=checkbox]");
+  await page.goto(`${base}/checks`, { waitUntil: "networkidle0" });
+  await page.waitForSelector("[data-findings]");
+  check("switched off, it no longer runs", (await count(page, `[data-rule="${keptRule.id}"]`)) === 0);
+  await page.goto(`${base}/checks/rules`, { waitUntil: "networkidle0" });
+  await page.waitForSelector("[data-rule-row]");
+  await page.click('[data-rule-row] button[aria-label^="Delete"]');
+  await sleep(450);
+
+  // A diagram of 400 boxes: only what is in view is drawn, and a picture still shows all of it.
+  {
+    const at = new Date().toISOString();
+    const big = { version: 1, name: "Large", userName: "", objects: {}, relationships: {}, diagrams: {}, proposals: {}, adrs: {}, rules: {}, updatedAt: at };
+    const nodes = {};
+    for (let i = 0; i < 400; i++) {
+      const id = `big_${i}`;
+      big.objects[id] = { id, typeId: i % 3 ? "service" : "database", name: `Service ${i}`, description: "", owner: "", lifecycle: "active", tags: [], parentId: null, technology: "", fields: {}, provenance: { origin: "manual" }, createdAt: at, updatedAt: at };
+      nodes[id] = { x: (i % 20) * 280, y: Math.floor(i / 20) * 140, pinned: true };
+      if (i) big.relationships[`bigr_${i}`] = { id: `bigr_${i}`, sourceId: `big_${i - 1}`, targetId: id, kind: "calls", label: "", protocol: "", port: "", description: "", provenance: { origin: "manual" }, createdAt: at, updatedAt: at };
+    }
+    big.diagrams.bigd = { id: "bigd", name: "Four hundred", description: "", viewType: "custom", scopeId: null, direction: "LR", hiddenRelationshipIds: [], edgeKinds: null, colorBy: "type", nodes, createdAt: at, updatedAt: at };
+    // Another origin for the same server, so this model does not replace the one the rest of the run uses.
+    const other = base.replace("127.0.0.1", "localhost");
+    const large = await newPage(browser, errors);
+    await large.evaluateOnNewDocument((json) => {
+      if (!sessionStorage.getItem("seeded")) {
+        localStorage.setItem("archone.workspace.v1", json);
+        sessionStorage.setItem("seeded", "1");
+      }
+    }, JSON.stringify(big));
+    const started = Date.now();
+    await large.goto(`${other}/diagram/bigd`, { waitUntil: "domcontentloaded" });
+    await large.waitForSelector(".object-node");
+    const opened = Date.now() - started;
+    await sleep(600);
+    const fitted = await count(large, ".object-node");
+    // Fitted to the window every box is in view; zoomed in, most of them are not.
+    for (let i = 0; i < 6; i++) await large.click(".react-flow__controls-zoomin");
+    await sleep(700);
+    const drawn = await count(large, ".object-node");
+    check("a diagram of 400 boxes opens quickly, and zoomed in draws only the boxes in view", fitted === 400 && drawn > 0 && drawn < 200 && opened < 8000, `${drawn} of 400 drawn when zoomed in, opened in ${opened} ms`);
+    for (const f of await readdir(downloads)) if (f.endsWith(".png")) await rm(join(downloads, f));
+    await clickText(large, "Export");
+    await clickText(large, "PNG image", "[role=menuitem]");
+    let bigPng;
+    for (let i = 0; i < 60 && !bigPng; i++) {
+      await sleep(500);
+      bigPng = (await readdir(downloads)).find((f) => f.endsWith(".png"));
+    }
+    await sleep(500);
+    const bigWidth = bigPng ? (await readFile(join(downloads, bigPng))).readUInt32BE(16) : 0;
+    check("its picture still shows the whole diagram", bigWidth >= 10000, `${bigWidth} pixels wide`);
+    if (bigPng) await rm(join(downloads, bigPng));
+    await large.close();
+  }
+
   // The architecture as a Word document and as slides, written in the browser.
   await page.goto(`${base}/document`, { waitUntil: "networkidle0" });
   await page.waitForSelector("[data-document-diagrams] li");

@@ -397,12 +397,15 @@ export function ExportMenu({ ws, diagram, canvas, onNotice }: { ws: Workspace; d
     if (!handle || !element) return;
     const stamp = stamped ? stampFor(diagram, ws.name, ws.userName, window.location.origin) : undefined;
     try {
+      await handle.whole(true);
       if (kind === "png") await exportPng(element, handle.nodes(), file, stamp);
       if (kind === "svg") await exportSvg(element, handle.nodes(), file);
       if (kind === "pdf") await exportPdf(element, handle.nodes(), file, diagram.name, stamp);
       onNotice(`Exported ${file}.${kind}`);
     } catch (e) {
       onNotice(e instanceof Error ? e.message : "The export failed.");
+    } finally {
+      void handle.whole(false);
     }
   };
   const items: { group: string; label: string; run: () => void }[] = [

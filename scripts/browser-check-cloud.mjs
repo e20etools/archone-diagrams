@@ -764,6 +764,27 @@ try {
   check("switching the page off closes its address", (await count(reader, "[data-trust-content]")) === 0);
   await reader.close();
 
+  // The workspace's own rules: an owner writes them, every member's checks run them.
+  await visit(ana, `${base}/checks/rules`, "[data-rule-new]");
+  await ana.$eval("[data-rule-new]", (e) => e.click());
+  await ana.waitForSelector("[data-rule-text]");
+  await ana.type("[data-rule-text]", "External systems must have an owner");
+  await ana.$eval("[data-rule-read]", (e) => e.click());
+  await until(ana, () => document.querySelector("[data-rule-sentence]")?.textContent.trim() === "All external systems must have an owner.", 5000);
+  await ana.$eval("[data-rule-save]", (e) => e.click());
+  await ana.waitForSelector("[data-rules] [data-rule-row]");
+  await saved(ana);
+  const ruleFindings = await ana.$eval("[data-rule-count]", (e) => e.textContent.trim());
+  await visit(ben, `${base}/checks/rules`, "[data-rules-page]");
+  await ben.waitForSelector("[data-rules] [data-rule-row]");
+  check(
+    "a rule an owner writes reaches the other members, who can read it and not change it",
+    (await hasText(ben, "All external systems must have an owner.")) && (await count(ben, "[data-rule-new]")) === 0 && (await hasText(ben, "Only an owner can add or change rules.")) && (await ben.$eval("[data-rule-row] input[type=checkbox]", (e) => e.disabled)),
+    ruleFindings,
+  );
+  await visit(ben, `${base}/checks`, "[data-own-rules]");
+  check("the rule runs in that member's checks too", (await ben.$eval("[data-own-rules]", (e) => e.textContent.trim())) === "Your rules (1 on)" && (/^\d+ finding/.test(ruleFindings) ? await hasText(ben, "All external systems must have an owner.") : true));
+
   // The owner deletes the shared workspace while someone else has it open.
   await visit(vera, `${base}/settings`);
   check("someone who is not an owner is not offered deleting the workspace", (await hasText(vera, "Workspace name")) && !(await hasText(vera, "Delete this workspace")));

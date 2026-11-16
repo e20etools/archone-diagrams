@@ -113,6 +113,14 @@ export function createDemoBackend(): Backend {
         else if (Object.keys(fields).length) log(db, workspaceId, entity, rowId, name, "updated", fields);
       }
     }
+    for (const [rowId, after] of Object.entries(change.rules ?? {})) {
+      const old = before.rules?.[rowId];
+      if (!after) {
+        if (old) log(db, workspaceId, "rule", rowId, old.title, "deleted");
+      } else if (!old) log(db, workspaceId, "rule", rowId, after.title, "created", { severity: after.severity });
+      else if (old.enabled !== after.enabled) log(db, workspaceId, "rule", rowId, after.title, after.enabled ? "switched on" : "switched off");
+      else log(db, workspaceId, "rule", rowId, after.title, "updated");
+    }
     for (const [rowId, after] of Object.entries(change.adrs ?? {})) {
       const old = before.adrs?.[rowId];
       if (!after) {
@@ -153,7 +161,7 @@ export function createDemoBackend(): Backend {
       diagrams: Object.keys(tables.diagrams).length,
       createdBy: me().id,
       createdAt: new Date().toISOString(),
-      tables: { ...(JSON.parse(JSON.stringify(tables)) as Tables), proposals: {}, adrs: {} },
+      tables: { ...(JSON.parse(JSON.stringify(tables)) as Tables), proposals: {}, adrs: {}, rules: {} },
     };
     versionsOf(db, workspaceId).unshift(version);
     return version.id;
@@ -368,6 +376,7 @@ export function createDemoBackend(): Backend {
       const db = read();
       requireRole(db, workspaceId, canEditRole);
       refuseOutsideDomains(db, workspaceId, change);
+      if (Object.keys(change.rules ?? {}).length && roleOf(db, workspaceId, me().id) !== "owner") throw new BackendError("forbidden", "Only an owner can change the workspace's rules.");
       logChanges(db, workspaceId, db.rows[workspaceId] ?? emptyTables(), change);
       db.rows[workspaceId] = patchTables(db.rows[workspaceId] ?? emptyTables(), change);
       write(db);
@@ -664,7 +673,8 @@ export function createDemoBackend(): Backend {
       db.workspaces[scenarioId] = { id: scenarioId, name: name.trim(), scenarioOf: workspaceId, scenarioNote: note, createdAt: new Date().toISOString() };
       for (const m of db.members.filter((x) => x.workspaceId === workspaceId && canEditRole(x.role))) db.members.push({ workspaceId: scenarioId, userId: m.userId, role: m.role });
       const source = db.rows[workspaceId] ?? emptyTables();
-      db.rows[scenarioId] = { ...(JSON.parse(JSON.stringify(source)) as Tables), proposals: {}, adrs: {} };
+      // A scenario is judged by the same rules as the model it came from.
+      db.rows[scenarioId] = { ...(JSON.parse(JSON.stringify(source)) as Tables), proposals: {}, adrs: {}, rules: JSON.parse(JSON.stringify(source.rules ?? {})) as Tables["rules"] };
       log(db, workspaceId, "scenario", scenarioId, name.trim(), "created");
       log(db, scenarioId, "scenario", scenarioId, name.trim(), "created", { "copied from": db.workspaces[workspaceId].name });
       write(db);

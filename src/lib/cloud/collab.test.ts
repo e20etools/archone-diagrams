@@ -55,7 +55,7 @@ describe("versions", () => {
     const back = snapshotToTables(JSON.parse(JSON.stringify(snapshot)));
     for (const table of TABLE_NAMES) {
       // Drafts and decisions are not part of a version.
-      if (table === "proposals" || table === "adrs") expect(back[table]).toEqual({});
+      if (table === "proposals" || table === "adrs" || table === "rules") expect(back[table]).toEqual({});
       else expect(sameValue(back[table], tables[table])).toBe(true);
     }
     expect(snapshotToTables(null).objects).toEqual({});

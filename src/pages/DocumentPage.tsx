@@ -234,7 +234,7 @@ export function DocumentPage() {
       {staged && (
         // Laid out at full size so the boxes are measured, and kept out of sight and out of reach.
         <div aria-hidden className="fixed left-0 top-0 w-[1600px] h-[1000px] opacity-0 pointer-events-none -z-10" data-document-stage>
-          <DiagramCanvas key={staged.id} ws={ws} diagram={staged} readOnly canvasRef={canvas} />
+          <DiagramCanvas key={staged.id} ws={ws} diagram={staged} readOnly renderAll canvasRef={canvas} />
         </div>
       )}
     </div>

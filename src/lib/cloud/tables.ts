@@ -1,4 +1,4 @@
-import type { Adr, Diagram, ModelObject, NodePlacement, Proposal, Relationship, Workspace } from "../types";
+import type { Adr, CustomRule, Diagram, ModelObject, NodePlacement, Proposal, Relationship, Workspace } from "../types";
 
 /**
  * The model as flat tables, one entry per database row. The hosted backend stores and syncs
@@ -15,9 +15,10 @@ export interface Tables {
   nodes: Record<string, NodePlacement>;
   proposals: Record<string, Proposal>;
   adrs: Record<string, Adr>;
+  rules: Record<string, CustomRule>;
 }
 
-export const TABLE_NAMES = ["objects", "relationships", "diagrams", "nodes", "proposals", "adrs"] as const;
+export const TABLE_NAMES = ["objects", "relationships", "diagrams", "nodes", "proposals", "adrs", "rules"] as const;
 export type TableName = (typeof TABLE_NAMES)[number];
 
 /** A set of row changes. null means the row was deleted. */
@@ -30,12 +31,12 @@ export const splitNodeKey = (key: string): [string, string] => {
   return [key.slice(0, at), key.slice(at + 1)];
 };
 
-export const emptyTables = (): Tables => ({ objects: {}, relationships: {}, diagrams: {}, nodes: {}, proposals: {}, adrs: {} });
+export const emptyTables = (): Tables => ({ objects: {}, relationships: {}, diagrams: {}, nodes: {}, proposals: {}, adrs: {}, rules: {} });
 
 // A diagram that did not change keeps the same meta and node objects, so comparing stays cheap.
 const split = new WeakMap<Diagram, { meta: DiagramMeta; nodes: [string, NodePlacement][] }>();
 
-export function toTables(ws: Pick<Workspace, "objects" | "relationships" | "diagrams" | "proposals" | "adrs">): Tables {
+export function toTables(ws: Pick<Workspace, "objects" | "relationships" | "diagrams" | "proposals" | "adrs" | "rules">): Tables {
   const diagrams: Record<string, DiagramMeta> = {};
   const nodes: Record<string, NodePlacement> = {};
   for (const diagram of Object.values(ws.diagrams)) {
@@ -48,18 +49,18 @@ export function toTables(ws: Pick<Workspace, "objects" | "relationships" | "diag
     diagrams[diagram.id] = parts.meta;
     for (const [key, placement] of parts.nodes) nodes[key] = placement;
   }
-  return { objects: ws.objects, relationships: ws.relationships, diagrams, nodes, proposals: ws.proposals, adrs: ws.adrs };
+  return { objects: ws.objects, relationships: ws.relationships, diagrams, nodes, proposals: ws.proposals, adrs: ws.adrs, rules: ws.rules };
 }
 
 /** Rebuilds the nested collections. A box whose diagram is missing is dropped. */
-export function fromTables(tables: Tables): Pick<Workspace, "objects" | "relationships" | "diagrams" | "proposals" | "adrs"> {
+export function fromTables(tables: Tables): Pick<Workspace, "objects" | "relationships" | "diagrams" | "proposals" | "adrs" | "rules"> {
   const diagrams: Record<string, Diagram> = {};
   for (const meta of Object.values(tables.diagrams)) diagrams[meta.id] = { ...meta, nodes: {} };
   for (const [key, placement] of Object.entries(tables.nodes)) {
     const [diagramId, objectId] = splitNodeKey(key);
     if (diagrams[diagramId]) diagrams[diagramId].nodes[objectId] = placement;
   }
-  return { objects: tables.objects, relationships: tables.relationships, diagrams, proposals: tables.proposals, adrs: tables.adrs ?? {} };
+  return { objects: tables.objects, relationships: tables.relationships, diagrams, proposals: tables.proposals, adrs: tables.adrs ?? {}, rules: tables.rules ?? {} };
 }
 
 /** Deep equality that ignores key order and treats a missing key like undefined (the database reorders JSON keys). */
@@ -83,8 +84,9 @@ export function sameValue(a: unknown, b: unknown): boolean {
 export function diffTables(from: Tables, to: Tables): ChangeSet {
   const out: ChangeSet = {};
   for (const table of TABLE_NAMES) {
-    const before = from[table] as Record<string, unknown>;
-    const after = to[table] as Record<string, unknown>;
+    // A copy stored before a table existed simply has none of its rows.
+    const before = (from[table] ?? {}) as Record<string, unknown>;
+    const after = (to[table] ?? {}) as Record<string, unknown>;
     if (before === after) continue;
     let changes: Record<string, unknown> | undefined;
     for (const key of Object.keys(after)) {
@@ -106,7 +108,7 @@ export function patchTables(tables: Tables, change: ChangeSet): Tables {
   for (const table of TABLE_NAMES) {
     const rows = change[table];
     if (!rows || Object.keys(rows).length === 0) continue;
-    const next = { ...(tables[table] as Record<string, unknown>) };
+    const next = { ...((tables[table] ?? {}) as Record<string, unknown>) };
     for (const [key, value] of Object.entries(rows)) {
       if (value === null) delete next[key];
       else next[key] = value;

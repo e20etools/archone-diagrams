@@ -17,6 +17,7 @@ import { HealthPage } from "@/pages/HealthPage";
 import { ModelPage } from "@/pages/ModelPage";
 import { PresentPage } from "@/pages/PresentPage";
 import { ReviewPage, ReviewsPage } from "@/pages/ReviewsPages";
+import { RulesPage } from "@/pages/RulesPage";
 import { ScenariosPage } from "@/pages/ScenariosPage";
 import { SettingsPage } from "@/pages/SettingsPage";
 import { SharedViewPage } from "@/pages/SharedViewPage";
@@ -44,6 +45,7 @@ export default function App() {
         <Route path="/ask" element={<AskPage />} />
         <Route path="/health" element={<HealthPage />} />
         <Route path="/checks" element={<ChecksPage />} />
+        <Route path="/checks/rules" element={<RulesPage />} />
         <Route path="/document" element={<DocumentPage />} />
         <Route path="/decisions" element={<DecisionsPage />} />
         <Route path="/decisions/:id" element={<DecisionsPage />} />

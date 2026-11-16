@@ -100,6 +100,7 @@ export function payloadToWorkspace(payload: SharePayload): Workspace {
     diagrams: { [payload.diagram.id]: { ...payload.diagram, hiddenRelationshipIds: [], edgeKinds: null } },
     proposals: {},
     adrs: {},
+    rules: {},
     updatedAt: payload.sharedAt,
   };
 }

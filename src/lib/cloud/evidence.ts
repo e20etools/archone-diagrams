@@ -24,6 +24,8 @@ export interface EvidenceInput {
   /** The published model it was compared with, or null when there was none. */
   base: Tables | null;
   people: Person[];
+  /** The workspace's own rules as they are now. A version does not hold rules. */
+  rules?: Workspace["rules"];
   generatedBy: string;
   generatedAt: string;
 }
@@ -73,7 +75,8 @@ const table = (head: string[], rows: string[][]) =>
 export function evidenceHtml(input: EvidenceInput): string {
   const { review, version, people } = input;
   const who = (userId: string | null | undefined) => personLabel(people.find((p) => p.userId === userId));
-  const model = asWorkspace(input.workspaceName, input.tables);
+  const model: Workspace = { ...asWorkspace(input.workspaceName, input.tables), rules: input.rules ?? {} };
+  const own = Object.values(model.rules).filter((r) => r.enabled).length;
   const packs = PACKS.map((p) => p.id) as PackId[];
   const findings = runChecks(model, null, packs);
   const diagrams = Object.values(model.diagrams).sort((a, b) => a.name.localeCompare(b.name));
@@ -112,7 +115,7 @@ export function evidenceHtml(input: EvidenceInput): string {
           changeList("Diagrams changed", changes.diagrams.changed.map((c) => c.after.name)),
         ].join("");
 
-  const findingRows = findings.map((f) => [esc(f.severity), esc(ruleById(f.ruleId)?.title ?? f.ruleId), esc(f.message)]);
+  const findingRows = findings.map((f) => [esc(f.severity), esc(ruleById(f.ruleId, model)?.title ?? f.ruleId), esc(f.message)]);
   const counts = (["high", "medium", "low"] as const).map((s) => `${findings.filter((f) => f.severity === s).length} ${s}`).join(", ");
 
   return `<!DOCTYPE html>
@@ -155,7 +158,7 @@ ${history.join("") || '<p class="muted">This review had no stages.</p>'}
 ${changed}
 
 <h2>Findings of the checks</h2>
-<p class="muted">${rulesOf(packs).length} rules from the packs ${PACKS.map((p) => esc(p.name)).join(", ")} were run against the reviewed version: ${counts}. The rules read only what the model records; a clean result is not a certificate of compliance.</p>
+<p class="muted">${rulesOf(packs).length} rules from the packs ${PACKS.map((p) => esc(p.name)).join(", ")}${own ? `, and ${own} of the workspace's own ${own === 1 ? "rule" : "rules"} as ${own === 1 ? "it stands" : "they stand"} today,` : ""} were run against the reviewed version: ${counts}. The rules read only what the model records; a clean result is not a certificate of compliance.</p>
 ${findingRows.length ? table(["Severity", "Rule", "Finding"], findingRows) : "<p>No findings.</p>"}
 
 <h2>Diagrams as reviewed</h2>

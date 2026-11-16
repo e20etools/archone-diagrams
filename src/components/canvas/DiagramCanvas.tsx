@@ -39,7 +39,15 @@ export interface CanvasHandle {
   nodes: () => Node[];
   element: () => HTMLElement | null;
   fit: () => void;
+  /**
+   * A large diagram draws only the boxes in view. Before taking a picture of all of it, ask
+   * for the whole diagram and wait; afterwards hand it back.
+   */
+  whole: (on: boolean) => Promise<void>;
 }
+
+/** From this many boxes on, only what is in view is drawn. */
+export const LARGE_DIAGRAM = 150;
 
 export interface CanvasSelection {
   objectId: string | null;
@@ -57,6 +65,8 @@ interface Props {
   /** Open comment threads per object, drawn as a small marker on the box. */
   comments?: Record<string, number>;
   minimap?: boolean;
+  /** Draw every box even on a large diagram, for a canvas that exists to be photographed. */
+  renderAll?: boolean;
   onSelect?: (selection: CanvasSelection) => void;
   /** A Shift-click on a box. */
   onPick?: (objectId: string) => void;
@@ -216,6 +226,7 @@ function Inner({
   highlight,
   comments,
   minimap,
+  renderAll,
   onSelect,
   onPick,
   onMove,
@@ -228,6 +239,7 @@ function Inner({
   const flow = useReactFlow();
   const wrapper = useRef<HTMLDivElement>(null);
   const [connecting, setConnecting] = useState(false);
+  const [whole, setWhole] = useState(false);
 
   const derived = useMemo<Node[]>(() => {
     const list: Node[] = [];
@@ -332,6 +344,17 @@ function Inner({
       nodes: () => flow.getNodes().filter((n) => n.id !== BOUNDARY_ID),
       element: () => wrapper.current,
       fit: () => void flow.fitView({ padding: 0.08, duration: 200 }),
+      whole: async (on) => {
+        const count = flow.getNodes().length;
+        if (count <= LARGE_DIAGRAM) return;
+        setWhole(on);
+        if (!on) return;
+        // Boxes that were out of view have to be drawn before they can be photographed.
+        const started = Date.now();
+        do await new Promise((done) => setTimeout(done, 80));
+        while (Date.now() - started < 5000 && (wrapper.current?.querySelectorAll(".react-flow__node").length ?? 0) < count);
+        await new Promise((done) => setTimeout(done, 120));
+      },
     }),
     [flow],
   );
@@ -356,6 +379,7 @@ function Inner({
         className={`${readOnly ? "read-only" : ""} ${connecting ? "connecting" : ""}`}
         nodes={allNodes}
         edges={edges}
+        onlyRenderVisibleElements={allNodes.length > LARGE_DIAGRAM && !whole && !renderAll}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         onNodesChange={onNodesChange}

@@ -4002,6 +4002,76 @@ var adrSchema = objectType({
 	createdAt: stringType(),
 	updatedAt: stringType()
 });
+/**
+* Which objects a rule of the workspace's own is about. Every part that is filled in has to
+* hold; a selector with nothing filled in means every object.
+*/
+var selectorSchema = objectType({
+	types: arrayType(stringType()).default([]),
+	tags: arrayType(stringType()).default([]),
+	lifecycle: arrayType(enumType(LIFECYCLES)).default([]),
+	/** Only objects that hold personal data. */
+	personal: booleanType().default(false),
+	classification: arrayType(stringType()).default([]),
+	/** Part of the name, any case. */
+	name: stringType().default(""),
+	/** The id of an object: only what sits inside it, at any depth. */
+	inside: stringType().nullable().default(null)
+});
+/** What a rule checks. A journey is every way from one set of objects to another, following the arrows. */
+var ruleCheckSchema = discriminatedUnionType("kind", [
+	objectType({
+		kind: literalType("object"),
+		subject: selectorSchema,
+		require: enumType([
+			"owner",
+			"description",
+			"technology",
+			"classification",
+			"residency",
+			"tag",
+			"no-tag",
+			"field",
+			"lifecycle"
+		]),
+		value: stringType().default("")
+	}),
+	objectType({
+		kind: literalType("connection"),
+		from: selectorSchema,
+		to: selectorSchema,
+		mode: enumType([
+			"never",
+			"only",
+			"protocol"
+		]),
+		value: stringType().default("")
+	}),
+	objectType({
+		kind: literalType("journey"),
+		from: selectorSchema,
+		to: selectorSchema,
+		through: selectorSchema,
+		mode: enumType(["never", "always"])
+	})
+]);
+/** A rule the workspace wrote for itself, run with the built-in checks. */
+var customRuleSchema = objectType({
+	id: stringType(),
+	title: stringType(),
+	/** The sentence the rule was written as, kept so the next person can see what was meant. */
+	text: stringType(),
+	severity: enumType([
+		"high",
+		"medium",
+		"low"
+	]),
+	enabled: booleanType(),
+	check: ruleCheckSchema,
+	author: stringType(),
+	createdAt: stringType(),
+	updatedAt: stringType()
+});
 objectType({
 	version: literalType(1),
 	name: stringType(),
@@ -4012,6 +4082,8 @@ objectType({
 	proposals: recordType(proposalSchema),
 	/** Missing in workspaces saved before decisions existed. */
 	adrs: recordType(adrSchema).default({}),
+	/** The workspace's own rules. Missing in workspaces saved before they existed. */
+	rules: recordType(customRuleSchema).default({}),
 	updatedAt: stringType()
 });
 // src/lib/ai/prompt.ts

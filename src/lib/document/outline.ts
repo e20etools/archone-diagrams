@@ -1,6 +1,6 @@
 import { ADR_STATUS_LABEL, adrLabel, sortedAdrs } from "../adr";
 import { LIFECYCLE_INFO, RELATION_KIND_INFO, VIEW_TYPE_INFO, objectType } from "../catalog";
-import { ruleById, rulesOf, runChecks, type PackId, type Severity } from "../checks/checks";
+import { ruleById, rulesRun as rulesRun_, runChecks, type PackId, type Severity } from "../checks/checks";
 import { diagramObjects, diagramRelationships } from "../exporters";
 import { trustFacts, type TrustFacts } from "../trust";
 import type { Workspace } from "../types";
@@ -77,8 +77,8 @@ export function buildOutline(ws: Workspace, options: DocOptions, at = new Date()
       entry.messages.push(f.message);
       byRule.set(f.ruleId, entry);
     }
-    findings = [...byRule].map(([ruleId, entry]) => ({ severity: entry.severity, title: ruleById(ruleId)?.title ?? ruleId, why: ruleById(ruleId)?.why ?? "", count: entry.messages.length, examples: entry.messages.slice(0, EXAMPLES) }));
-    rulesRun = rulesOf(options.packs).length;
+    findings = [...byRule].map(([ruleId, entry]) => ({ severity: entry.severity, title: ruleById(ruleId, ws)?.title ?? ruleId, why: ruleById(ruleId, ws)?.why ?? "", count: entry.messages.length, examples: entry.messages.slice(0, EXAMPLES) }));
+    rulesRun = rulesRun_(options.packs, ws);
   }
 
   const adrs = sortedAdrs(ws);
