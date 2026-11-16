@@ -516,6 +516,71 @@ try {
   await page.waitForSelector("[data-impact-links]");
   check("a library component is analysed through every object that uses it", new URL(page.url()).searchParams.has("component") && (await count(page, '[data-impact-stat]')) === 4);
 
+  // All diagrams on one map.
+  await page.goto(`${base}/map`, { waitUntil: "networkidle0" });
+  await page.waitForSelector("[data-map-node]");
+  await sleep(500);
+  const liveDiagrams = Object.values((await stored()).diagrams).filter((d) => !d.archive?.archived).length;
+  const mapNodes = await count(page, "[data-map-node]");
+  check("the map shows every diagram, with the links between them", mapNodes === liveDiagrams && (await count(page, ".react-flow__edge")) >= 1, `${mapNodes} diagrams, ${await count(page, ".react-flow__edge")} links`);
+  const mapIds = await page.$$eval("[data-map-node]", (els) => els.map((e) => e.getAttribute("data-map-node")));
+  await page.click(`[data-map-node="${mapIds[0]}"]`);
+  await page.waitForSelector("[data-map-selected]");
+  check("a diagram picked shows what it impacts and depends on, and dims the rest", (await hasText(page, "Impacts (")) && (await hasText(page, "Depends on (")) && (await count(page, '[data-map-node][data-highlight="focus"]')) === 1);
+  await page.keyboard.down("Shift");
+  await page.click(`[data-map-node="${mapIds[1]}"]`);
+  await page.keyboard.up("Shift");
+  await page.waitForSelector("[data-map-picked]");
+  check("shift-click picks several and lists the links between them", (await page.$eval("[data-map-picked]", (e) => e.getAttribute("data-map-picked"))) === "2" && (await hasText(page, "Links between them")));
+  await page.click("[data-map-only-selected]");
+  await sleep(300);
+  check("the map can show only the diagrams picked", (await count(page, "[data-map-node]")) === 2);
+  await page.click("[data-map-only-selected]");
+  await page.click("[data-map-clear]");
+  await sleep(200);
+  const toggle = await page.$("[data-map-toggle]");
+  if (toggle) {
+    await toggle.click();
+    await page.waitForSelector("[data-map-components] li");
+  }
+  check("a diagram opens to show the components that link it to others", !!toggle && (await count(page, "[data-map-components] li")) >= 1);
+  const mapCategories = await page.$$eval("[data-map-node]", (els) => els.length);
+  await page.click('[data-map-category="applications"]');
+  await sleep(300);
+  const withoutApps = await count(page, "[data-map-node]");
+  await page.click('[data-map-category="applications"]');
+  check("kinds of diagram can be hidden from the map", withoutApps < mapCategories, `${mapCategories} then ${withoutApps}`);
+  await page.click("[data-map-reset]");
+  await sleep(400);
+  await page.click("[data-map-export-open]");
+  await page.waitForSelector("[data-map-export-menu]");
+  const mapFiles = [];
+  for (const id of ["csv", "mermaid", "drawio", "png"]) {
+    if (!(await page.$("[data-map-export-menu]"))) await page.click("[data-map-export-open]");
+    await page.waitForSelector(`[data-map-export="${id}"]`);
+    await page.click(`[data-map-export="${id}"]`);
+    let got = "";
+    const ext = { csv: ".csv", mermaid: ".mmd", drawio: ".drawio", png: ".png" }[id];
+    for (let i = 0; i < 40 && !got; i++) {
+      await sleep(200);
+      got = (await readdir(downloads)).find((f) => f.startsWith("all-diagrams-") && f.endsWith(ext)) ?? "";
+    }
+    if (got) mapFiles.push(got);
+  }
+  const mapCsv = mapFiles.find((f) => f.endsWith(".csv"));
+  const mapCsvText = mapCsv ? await readFile(join(downloads, mapCsv), "utf8") : "";
+  check("the map exports as CSV, Mermaid, draw.io and PNG", mapFiles.length === 4 && mapCsvText.startsWith("From diagram,To diagram,Kind"), mapFiles.join(", "));
+  for (const f of mapFiles) await rm(join(downloads, f));
+  await page.click("[data-map-fullscreen]");
+  await sleep(500);
+  const wentFull = await page.evaluate(() => !!document.fullscreenElement);
+  if (wentFull) {
+    await page.click("[data-map-fullscreen]");
+    await sleep(300);
+  }
+  check("the map goes full screen and back", wentFull && !(await page.evaluate(() => !!document.fullscreenElement)));
+  await shot(page, "07d-all-diagrams");
+
   // AI draft from text, with no key: the built-in rules answer, and nothing is saved before review.
   await page.goto(`${base}/ai`, { waitUntil: "networkidle0" });
   const objectsBefore = await page.evaluate(() => Object.keys(JSON.parse(localStorage.getItem("archone.workspace.v1")).objects).length);

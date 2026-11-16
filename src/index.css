@@ -103,6 +103,101 @@
 .object-node[data-highlight="dim"] {
   opacity: 0.35;
 }
+/* ---------- the map of all diagrams ---------- */
+
+.map-node {
+  box-sizing: border-box;
+  width: 216px;
+  min-height: 78px;
+  padding: 10px 12px 8px 14px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-left: 4px solid var(--node-color, var(--color-blueprint));
+  border-radius: 8px;
+  box-shadow: 0 1px 0 rgba(22, 35, 58, 0.04);
+  cursor: pointer;
+  transition: box-shadow 120ms ease, opacity 160ms ease, outline-color 160ms ease;
+}
+.map-node:hover {
+  box-shadow: 0 4px 14px rgba(22, 35, 58, 0.1);
+}
+.map-node__icon {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  color: var(--node-color);
+  background: color-mix(in srgb, var(--node-color) 12%, white);
+}
+.map-node__name {
+  display: block;
+  font-weight: 600;
+  font-size: 13.5px;
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.map-node__meta {
+  display: block;
+  margin-top: 2px;
+  font-size: 11.5px;
+  color: var(--color-ink-soft);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.map-node__level {
+  flex: none;
+  padding: 0 5px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--color-paper);
+  color: var(--color-ink-soft);
+}
+.map-node__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-top: 6px;
+  font-size: 11.5px;
+  color: var(--color-blueprint);
+}
+.map-node__list {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--color-line-soft);
+  font-size: 12px;
+  display: grid;
+  gap: 3px;
+}
+.map-node[data-highlight="focus"] {
+  outline: 3px solid var(--color-blueprint);
+  outline-offset: 2px;
+}
+.map-node[data-highlight="picked"],
+.map-node[data-highlight="match"] {
+  outline: 2px solid var(--color-blueprint);
+  outline-offset: 2px;
+}
+.map-node[data-highlight="up"] {
+  outline: 2px solid #0e8a7d;
+  outline-offset: 2px;
+}
+.map-node[data-highlight="down"] {
+  outline: 2px solid var(--color-signal);
+  outline-offset: 2px;
+}
+.map-node[data-highlight="dim"] {
+  opacity: 0.32;
+}
+.map-node .react-flow__handle {
+  opacity: 0;
+}
+
 .object-node__icon {
   flex: none;
   width: 32px;

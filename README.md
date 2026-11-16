@@ -852,6 +852,27 @@ details in the Library.
   recovery runbook for a whole diagram, owners where there are none. Scenarios are kept in the
   browser and download as a Markdown report or CSV.
 
+### All diagrams on one map
+
+The All diagrams page draws every diagram as one box and the links between them. A diagram
+depends on another when one of its components needs (calls, depends on, reads or writes, is
+hosted on) a component shown only on the other, or when it shows the other as a diagram box; the
+arrow points to what is needed and moves along the line. Two diagrams that show the same
+component are joined by a dotted line that says how many they share. Labels carry how many links
+and the protocols on them.
+
+- Click a diagram to see what it impacts and what it depends on, level by level up to the fifth,
+  with the rest dimmed; the panel lists the direct links and the components behind each, and
+  opens the diagram, its impact analysis or a what-if scenario.
+- Shift-click to pick several: the panel lists the links between them and, for those not linked
+  directly, the shortest way through others; "Only the ones picked" leaves just them on the map.
+- A diagram's box opens to list the components that link it to the others.
+- Hide kinds of diagram (Applications, Data, Infrastructure, Business, Custom), dependencies or
+  shared components; find a diagram by name; drag boxes (kept in this browser); Reset layout;
+  Full screen.
+- Export what the map shows as PNG, SVG, PDF, an animated GIF, draw.io, Mermaid, CSV (every link
+  with the components behind it) or JSON.
+
 ### Network zones, connections, integrations and diagram boxes
 
 Four more sections in the library:

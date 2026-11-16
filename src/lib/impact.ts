@@ -13,10 +13,7 @@ import type { Diagram, ModelObject, Workspace } from "./types";
 
 export const MAX_LEVELS = 5;
 
-export type Subject =
-  | { kind: "object"; id: string }
-  | { kind: "diagram"; id: string }
-  | { kind: "component"; id: string };
+export type Subject = { kind: "object"; id: string } | { kind: "diagram"; id: string } | { kind: "component"; id: string };
 
 export interface Step {
   /** The object reached. */
@@ -67,84 +64,53 @@ function graphOf(ws: Workspace) {
     if (o.typeId !== "diagram" || !o.diagramId) continue;
     const d = ws.diagrams[o.diagramId];
     if (!d) continue;
-    for (const member of Object.keys(d.nodes))
-      if (member !== o.id) add(o.id, member, "shown on the diagram", []);
+    for (const member of Object.keys(d.nodes)) if (member !== o.id) add(o.id, member, "shown on the diagram", []);
   }
   return { needs, neededBy };
 }
 
 /** The objects a subject starts from: one object and what is inside it, a diagram's boxes and its own box, or every object of a component. */
 export function subjectStart(ws: Workspace, subject: Subject): string[] {
-  if (subject.kind === "object")
-    return ws.objects[subject.id]
-      ? [subject.id, ...descendantsOf(ws, subject.id)]
-      : [];
+  if (subject.kind === "object") return ws.objects[subject.id] ? [subject.id, ...descendantsOf(ws, subject.id)] : [];
   if (subject.kind === "diagram") {
     const d = ws.diagrams[subject.id];
     if (!d) return [];
     const box = Object.values(ws.objects)
       .filter((o) => o.typeId === "diagram" && o.diagramId === d.id)
       .map((o) => o.id);
-    return [
-      ...new Set([
-        ...Object.keys(d.nodes).filter((id) => ws.objects[id]),
-        ...box,
-      ]),
-    ];
+    return [...new Set([...Object.keys(d.nodes).filter((id) => ws.objects[id]), ...box])];
   }
   return objectsOfComponent(ws, subject.id).map((o) => o.id);
 }
 
 /** The objects that are one library component: linked to it, or, when linked to none, named as it is. */
-export function objectsOfComponent(
-  ws: Workspace,
-  componentId: string,
-): ModelObject[] {
-  return Object.values(ws.objects).filter((o) =>
-    o.componentId
-      ? o.componentId === componentId
-      : exactComponent(o.name)?.id === componentId,
-  );
+export function objectsOfComponent(ws: Workspace, componentId: string): ModelObject[] {
+  return Object.values(ws.objects).filter((o) => (o.componentId ? o.componentId === componentId : exactComponent(o.name)?.id === componentId));
 }
 
 /** The library components this model uses, with how many objects each. */
-export function componentsInUse(
-  ws: Workspace,
-): { id: string; count: number }[] {
+export function componentsInUse(ws: Workspace): { id: string; count: number }[] {
   const counts = new Map<string, number>();
   for (const o of Object.values(ws.objects)) {
     const id = o.componentId ?? exactComponent(o.name)?.id;
     if (id && componentById(id)) counts.set(id, (counts.get(id) ?? 0) + 1);
   }
-  return [...counts]
-    .map(([id, count]) => ({ id, count }))
-    .sort((a, b) => b.count - a.count);
+  return [...counts].map(([id, count]) => ({ id, count })).sort((a, b) => b.count - a.count);
 }
 
 export function subjectName(ws: Workspace, subject: Subject): string {
-  if (subject.kind === "object")
-    return ws.objects[subject.id]?.name ?? "A deleted object";
-  if (subject.kind === "diagram")
-    return ws.diagrams[subject.id]?.name ?? "A deleted diagram";
+  if (subject.kind === "object") return ws.objects[subject.id]?.name ?? "A deleted object";
+  if (subject.kind === "diagram") return ws.diagrams[subject.id]?.name ?? "A deleted diagram";
   return componentById(subject.id)?.name ?? "A component";
 }
 
 /** Everything reached from the start, nearest first, up to the given level. */
-export function walk(
-  ws: Workspace,
-  start: string[],
-  direction: "needs" | "neededBy",
-  levels = MAX_LEVELS,
-): Step[] {
+export function walk(ws: Workspace, start: string[], direction: "needs" | "neededBy", levels = MAX_LEVELS): Step[] {
   const graph = graphOf(ws)[direction];
   const seen = new Set(start);
   const out: Step[] = [];
   let frontier = start;
-  for (
-    let level = 1;
-    level <= Math.min(levels, MAX_LEVELS) && frontier.length;
-    level++
-  ) {
+  for (let level = 1; level <= Math.min(levels, MAX_LEVELS) && frontier.length; level++) {
     const next: string[] = [];
     for (const id of frontier) {
       for (const e of graph.get(id) ?? []) {
@@ -170,11 +136,7 @@ export function pathOf(ws: Workspace, steps: Step[], id: string): string[] {
   const byId = new Map(steps.map((s) => [s.id, s]));
   const names: string[] = [];
   const guard = new Set<string>();
-  for (
-    let cur: string | undefined = id;
-    cur && !guard.has(cur);
-    cur = byId.get(cur)?.from
-  ) {
+  for (let cur: string | undefined = id; cur && !guard.has(cur); cur = byId.get(cur)?.from) {
     guard.add(cur);
     names.unshift(ws.objects[cur]?.name ?? "?");
   }
@@ -192,11 +154,7 @@ export interface DiagramReach {
 }
 
 /** The diagrams the reached objects are on, with how much of each. */
-export function diagramsReached(
-  ws: Workspace,
-  steps: Step[],
-  exclude: string[] = [],
-): DiagramReach[] {
+export function diagramsReached(ws: Workspace, steps: Step[], exclude: string[] = []): DiagramReach[] {
   const out = new Map<string, DiagramReach>();
   for (const s of steps) {
     for (const d of diagramsUsing(ws, s.id)) {
@@ -214,12 +172,7 @@ export function diagramsReached(
         });
     }
   }
-  return [...out.values()].sort(
-    (a, b) =>
-      a.level - b.level ||
-      b.count - a.count ||
-      a.diagram.name.localeCompare(b.diagram.name),
-  );
+  return [...out.values()].sort((a, b) => a.level - b.level || b.count - a.count || a.diagram.name.localeCompare(b.diagram.name));
 }
 
 export interface Analysis {
@@ -230,11 +183,7 @@ export interface Analysis {
   diagramsImpacted: DiagramReach[];
 }
 
-export function analyse(
-  ws: Workspace,
-  subject: Subject,
-  levels = MAX_LEVELS,
-): Analysis {
+export function analyse(ws: Workspace, subject: Subject, levels = MAX_LEVELS): Analysis {
   const start = subjectStart(ws, subject);
   const dependencies = walk(ws, start, "needs", levels);
   const impact = walk(ws, start, "neededBy", levels);
@@ -303,18 +252,11 @@ export interface WhatIfResult {
   remedies: Remedy[];
 }
 
-const critical = (o: ModelObject) =>
-  o.tags.includes("tier-1") ||
-  /critical/i.test(o.fields["Business criticality"] ?? "");
-const important = (o: ModelObject) =>
-  /high/i.test(o.fields["Business criticality"] ?? "");
+const critical = (o: ModelObject) => o.tags.includes("tier-1") || /critical/i.test(o.fields["Business criticality"] ?? "");
+const important = (o: ModelObject) => /high/i.test(o.fields["Business criticality"] ?? "");
 
 /** What stops, and how badly, when the given objects and diagrams stop, up to the given level. */
-export function whatIf(
-  ws: Workspace,
-  stopped: Subject[],
-  levels = MAX_LEVELS,
-): WhatIfResult {
+export function whatIf(ws: Workspace, stopped: Subject[], levels = MAX_LEVELS): WhatIfResult {
   const start = [...new Set(stopped.flatMap((s) => subjectStart(ws, s)))];
   const steps = walk(ws, start, "neededBy", levels);
   const graph = graphOf(ws);
@@ -322,9 +264,7 @@ export function whatIf(
     const o = ws.objects[s.id];
     const reasons: string[] = [];
     let rank = s.level === 1 ? 1 : s.level === 2 ? 1 : s.level === 3 ? 2 : 3; // high, high, medium, low
-    reasons.push(
-      s.level === 1 ? "Depends on it directly" : `Reached in ${s.level} steps`,
-    );
+    reasons.push(s.level === 1 ? "Depends on it directly" : `Reached in ${s.level} steps`);
     if (critical(o)) {
       rank = 0;
       reasons.push("Marked critical (tier-1 or business criticality)");
@@ -351,57 +291,32 @@ export function whatIf(
     };
   });
   const order = (x: Severity) => SEVERITIES.indexOf(x);
-  affected.sort(
-    (a, b) =>
-      order(a.severity) - order(b.severity) ||
-      a.level - b.level ||
-      a.object.name.localeCompare(b.object.name),
-  );
+  affected.sort((a, b) => order(a.severity) - order(b.severity) || a.level - b.level || a.object.name.localeCompare(b.object.name));
   const stoppedObjects = start.map((id) => ws.objects[id]).filter(Boolean);
-  const stoppedDiagrams = stopped
-    .filter((s) => s.kind === "diagram")
-    .map((s) => s.id);
+  const stoppedDiagrams = stopped.filter((s) => s.kind === "diagram").map((s) => s.id);
   const diagrams = diagramsReached(ws, steps, stoppedDiagrams);
-  const people = affected
-    .filter((a) => a.object.typeId === "actor")
-    .map((a) => a.object.name);
+  const people = affected.filter((a) => a.object.typeId === "actor").map((a) => a.object.name);
   const counts = new Map<string, number>();
-  for (const a of affected)
-    counts.set(
-      a.object.owner.trim(),
-      (counts.get(a.object.owner.trim()) ?? 0) + 1,
-    );
-  const owners = [...counts]
-    .map(([owner, count]) => ({ owner, count }))
-    .sort((a, b) => b.count - a.count);
+  for (const a of affected) counts.set(a.object.owner.trim(), (counts.get(a.object.owner.trim()) ?? 0) + 1);
+  const owners = [...counts].map(([owner, count]) => ({ owner, count })).sort((a, b) => b.count - a.count);
 
   // The impact level, from what is hit.
-  const criticalCount =
-    affected.filter((a) => a.severity === "critical").length +
-    stoppedObjects.filter(critical).length;
-  const share = Object.keys(ws.objects).length
-    ? (affected.length + stoppedObjects.length) / Object.keys(ws.objects).length
-    : 0;
+  const criticalCount = affected.filter((a) => a.severity === "critical").length + stoppedObjects.filter(critical).length;
+  const share = Object.keys(ws.objects).length ? (affected.length + stoppedObjects.length) / Object.keys(ws.objects).length : 0;
   const impactReasons: string[] = [];
   let impact = affected.length === 0 ? 1 : affected.length < 3 ? 2 : 3;
-  impactReasons.push(
-    `${affected.length} ${affected.length === 1 ? "component is" : "components are"} affected`,
-  );
+  impactReasons.push(`${affected.length} ${affected.length === 1 ? "component is" : "components are"} affected`);
   if (diagrams.length >= 3) {
     impact = Math.max(impact, 4);
     impactReasons.push(`${diagrams.length} diagrams are affected`);
   }
   if (people.length) {
     impact = Math.max(impact, 4);
-    impactReasons.push(
-      `People cannot work: ${people.slice(0, 4).join(", ")}${people.length > 4 ? "…" : ""}`,
-    );
+    impactReasons.push(`People cannot work: ${people.slice(0, 4).join(", ")}${people.length > 4 ? "…" : ""}`);
   }
   if (criticalCount) {
     impact = 5;
-    impactReasons.push(
-      `${criticalCount} critical ${criticalCount === 1 ? "component" : "components"} stop or are affected`,
-    );
+    impactReasons.push(`${criticalCount} critical ${criticalCount === 1 ? "component" : "components"} stop or are affected`);
   }
   if (share >= 0.3) {
     impact = Math.max(impact, 4);
@@ -421,21 +336,11 @@ export function whatIf(
 }
 
 /** The risk of a scenario: how likely times how bad, on the usual five-by-five grid. */
-export function riskOf(
-  likelihood: number,
-  impact: number,
-): { score: number; level: Severity } {
+export function riskOf(likelihood: number, impact: number): { score: number; level: Severity } {
   const score = likelihood * impact;
   return {
     score,
-    level:
-      score >= 17
-        ? "critical"
-        : score >= 10
-          ? "high"
-          : score >= 5
-            ? "medium"
-            : "low",
+    level: score >= 17 ? "critical" : score >= 10 ? "high" : score >= 5 ? "medium" : "low",
   };
 }
 
@@ -443,24 +348,14 @@ const DATA = new Set(["database", "storage", "cache", "queue"]);
 const NETWORK = new Set(["network", "gateway", "zone", "cluster", "server"]);
 
 /** Ways to make the scenario hurt less, drawn from what stops and what it takes with it. */
-export function remediesFor(
-  ws: Workspace,
-  stopped: ModelObject[],
-  affected: Assessed[],
-  diagrams: DiagramReach[],
-): Remedy[] {
+export function remediesFor(ws: Workspace, stopped: ModelObject[], affected: Assessed[], diagrams: DiagramReach[]): Remedy[] {
   const out: Remedy[] = [];
   const graph = graphOf(ws);
   for (const o of stopped.slice(0, 12)) {
     const dependents = (graph.neededBy.get(o.id) ?? []).length;
     const twin = Object.values(ws.objects).some(
       (x) =>
-        x.id !== o.id &&
-        (o.componentId
-          ? x.componentId === o.componentId
-          : x.typeId === o.typeId) &&
-        x.name.toLowerCase().includes(o.name.toLowerCase().split(" ")[0]) &&
-        x.parentId === o.parentId,
+        x.id !== o.id && (o.componentId ? x.componentId === o.componentId : x.typeId === o.typeId) && x.name.toLowerCase().includes(o.name.toLowerCase().split(" ")[0]) && x.parentId === o.parentId,
     );
     const section = componentById(o.componentId)?.sectionId;
     if (dependents >= 2 && !twin)
@@ -512,32 +407,24 @@ export function remediesFor(
         about: [o.id],
       });
   }
-  const criticals = affected
-    .filter((a) => a.severity === "critical")
-    .map((a) => a.object);
+  const criticals = affected.filter((a) => a.severity === "critical").map((a) => a.object);
   if (criticals.length)
     out.push({
       priority: "now",
       text: `Put ${criticals
         .slice(0, 5)
         .map((o) => o.name)
-        .join(
-          ", ",
-        )}${criticals.length > 5 ? ` and ${criticals.length - 5} more` : ""} in the disaster recovery plan, and test their failover at least once a year.`,
+        .join(", ")}${criticals.length > 5 ? ` and ${criticals.length - 5} more` : ""} in the disaster recovery plan, and test their failover at least once a year.`,
       about: criticals.map((o) => o.id),
     });
-  const unowned = affected
-    .filter((a) => !a.object.owner.trim())
-    .map((a) => a.object);
+  const unowned = affected.filter((a) => !a.object.owner.trim()).map((a) => a.object);
   if (unowned.length)
     out.push({
       priority: "soon",
       text: `${unowned.length} affected ${unowned.length === 1 ? "component has" : "components have"} no owner, so nobody would be told. Name owners.`,
       about: unowned.map((o) => o.id),
     });
-  const clear = affected.filter(
-    (a) => a.level === 1 && a.object.typeId !== "actor",
-  ).length;
+  const clear = affected.filter((a) => a.level === 1 && a.object.typeId !== "actor").length;
   if (clear >= 5)
     out.push({
       priority: "soon",
@@ -567,5 +454,4 @@ export function remediesFor(
 }
 
 /** A short line for each type, as it is shown in tables. */
-export const typeLabel = (o: ModelObject) =>
-  componentById(o.componentId)?.name ?? objectType(o.typeId).label;
+export const typeLabel = (o: ModelObject) => componentById(o.componentId)?.name ?? objectType(o.typeId).label;

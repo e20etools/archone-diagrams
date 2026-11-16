@@ -53,7 +53,7 @@ export interface Picture {
 const PAD = 40;
 
 /** Where a line from the centre of a box towards a point leaves the box. */
-function border(cx: number, cy: number, w: number, h: number, tx: number, ty: number): [number, number] {
+export function border(cx: number, cy: number, w: number, h: number, tx: number, ty: number): [number, number] {
   const dx = tx - cx;
   const dy = ty - cy;
   if (!dx && !dy) return [cx, cy];
@@ -177,9 +177,11 @@ export function pictureSvg(p: Picture, options: SvgOptions = {}): string {
   for (const e of p.edges) {
     const on = options.highlight?.has(e.id);
     const marker = `url(#${on ? "arrow-on" : "arrow"})`;
-    const ends = `${e.flow !== "in" ? ` marker-end="${marker}"` : ""}${e.flow !== "out" ? ` marker-start="${marker}"` : ""}`;
+    // A shared component joins two diagrams without a direction.
+    const plain = e.kind === "shared";
+    const ends = plain ? ` stroke-dasharray="4 4"` : `${e.flow !== "in" ? ` marker-end="${marker}"` : ""}${e.flow !== "out" ? ` marker-start="${marker}"` : ""}`;
     // Inbound traffic moves from the target back to the source.
-    const moving = options.dash !== undefined ? ` stroke-dasharray="7 6" stroke-dashoffset="${e.flow === "in" ? options.dash : -options.dash}"` : "";
+    const moving = options.dash !== undefined && !plain ? ` stroke-dasharray="7 6" stroke-dashoffset="${e.flow === "in" ? options.dash : -options.dash}"` : "";
     out.push(`<line x1="${e.x1.toFixed(1)}" y1="${e.y1.toFixed(1)}" x2="${e.x2.toFixed(1)}" y2="${e.y2.toFixed(1)}" stroke="${on ? "#E0662B" : "#8A95A8"}" stroke-width="${on ? 3 : 1.4}"${on ? "" : moving}${ends}/>`);
     if (e.label) {
       const mx = (e.x1 + e.x2) / 2;
