@@ -25,8 +25,8 @@ interface TemplateObject {
   inside?: string;
   technology?: string;
   description?: string;
-  /** The library component it is, for its icon and its basic information. */
-  componentId?: string;
+  /** The library component it is. Every box of a template is one; its type is the component's. */
+  componentId: string;
 }
 export interface Template {
   id: string;
@@ -40,14 +40,22 @@ export interface Template {
   relationships: [from: string, to: string, kind: RelationKind, label?: string, protocol?: string][];
 }
 
-/** "key component-id Name" into an object of the component's type. */
-function fromCatalog(line: string): TemplateObject {
-  const [key, component, ...name] = line.split(" ");
-  const c = componentById(component);
-  return { key, name: name.join(" "), typeId: c?.kind ?? "application", componentId: c?.id };
+/** A template may only use what the library has. A name it does not know stops the app at start-up, and the tests, instead of drawing a box from nowhere. */
+function libraryComponent(id: string, where: string) {
+  const c = componentById(id);
+  if (!c) throw new Error(`Template ${where} uses "${id}", which is not in the component library.`);
+  return c;
 }
 
-const STARTERS: Template[] = [
+/** "key component-id Name" into an object of the component's type. */
+function fromCatalog(templateId: string, line: string): TemplateObject {
+  const [key, component, ...name] = line.split(" ");
+  const c = libraryComponent(component, templateId);
+  return { key, name: name.join(" "), typeId: c.kind, componentId: c.id };
+}
+
+type StarterObject = Omit<TemplateObject, "componentId"> & { componentId?: string };
+const STARTERS: (Omit<Template, "objects"> & { objects: StarterObject[] })[] = [
   {
     id: "three-tier",
     perspective: "applications",
@@ -134,6 +142,7 @@ const STARTERS: Template[] = [
 
 /** The first templates were written before the library; each box gets the component its type usually is. */
 const USUAL_COMPONENT: Record<string, string> = {
+  system: "applications.software-system",
   actor: "people.user",
   "web-app": "applications.web-application",
   application: "applications.custom-application",
@@ -151,8 +160,14 @@ const USUAL_COMPONENT: Record<string, string> = {
 };
 
 export const TEMPLATES: Template[] = [
-  ...STARTERS.map((t) => ({ ...t, objects: t.objects.map((o) => (o.componentId || !USUAL_COMPONENT[o.typeId] ? o : { ...o, componentId: USUAL_COMPONENT[o.typeId] })) })),
-  ...CATALOG.map((t) => ({ ...t, objects: t.objects.map(fromCatalog) })),
+  ...STARTERS.map((t) => ({
+    ...t,
+    objects: t.objects.map((o) => {
+      const c = libraryComponent(o.componentId ?? USUAL_COMPONENT[o.typeId] ?? "", t.id);
+      return { ...o, typeId: c.kind, componentId: c.id };
+    }),
+  })),
+  ...CATALOG.map((t) => ({ ...t, objects: t.objects.map((line) => fromCatalog(t.id, line)) })),
 ];
 
 export const templatesIn = (perspective: Perspective | null) => TEMPLATES.filter((t) => !perspective || t.perspective === perspective);
@@ -193,7 +208,7 @@ export function applyTemplate(ws: Workspace, templateId: string): TemplateResult
       reused += 1;
       continue;
     }
-    const made = createObject(next, { name: o.name, typeId: o.typeId, parentId: o.inside ? (ids[o.inside] ?? null) : null, technology: o.technology ?? "", description: o.description ?? "", ...(o.componentId ? { componentId: o.componentId } : {}) });
+    const made = createObject(next, { name: o.name, typeId: o.typeId, parentId: o.inside ? (ids[o.inside] ?? null) : null, technology: o.technology ?? "", description: o.description ?? "", componentId: o.componentId });
     next = made.ws;
     ids[o.key] = made.object.id;
     added += 1;

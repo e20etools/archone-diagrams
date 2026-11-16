@@ -744,10 +744,14 @@ It checks the declaration, not the code.
 
 ### Templates
 
-100 templates for the most common diagrams, under Start from a template on the Diagrams
-page: 25 for applications, 20 for data, 30 for infrastructure and 25 for business. Each is a
-small first draft (five to eleven boxes) of a common situation, built from the component
-library so every box has its icon and its basic information.
+115 templates for the most common diagrams, under Start from a template on the Diagrams
+page: 30 for applications, 20 for data, 40 for infrastructure and 25 for business. Each is a
+small first draft (five to eleven boxes) of a common situation.
+
+**Every box of every template is a component of the library.** Its type, icon and basic
+information are the component's; a template cannot bring in anything the library does not
+have. A template naming a component the library lacks stops the app from starting, and a
+test checks every box of every template, before and after it is put into a model.
 
 - **Applications:** single-page app, mobile back end, microservices, saga, CQRS, event
   sourcing, serverless, strangler migration, multi-tenant SaaS, online shop, card payments,
@@ -873,11 +877,11 @@ encrypted). SSO on links needs the paid sign-on features and is not done.
 
 ### The component library
 
-A library of 1,761 components to draw with, on its own page (Library) and in the panel on
+A library of 1,762 components to draw with, on its own page (Library) and in the panel on
 the left of every diagram. Search it, open a section, then drag a component onto the canvas
 or click it.
 
-- **General components (480 in 22 sections):** business and strategy, people, applications,
+- **General components (481 in 22 sections):** business and strategy, people, applications,
   platforms and middleware, integration, databases and data, hardware and compute, storage
   and backup, data centre and facilities, network, security, identity and access, end-user
   computing, communications, containers and Kubernetes, engineering and DevOps, monitoring

@@ -744,8 +744,8 @@ try {
   await sleep(200);
   const dmzFound = await page.$$eval("[data-templates] [data-template]", (els) => els.map((e) => e.getAttribute("data-template")));
   check(
-    "the template picker shows 100 templates as small pictures under their names, by perspective and by search",
-    templatesOffered === 100 && previews > 400 && firstCard.previewBelowName && infraOnly === 30 && dmzFound.includes("dmz") && perspectiveCounts.length === 5,
+    "the template picker shows 115 templates as small pictures under their names, by perspective and by search",
+    templatesOffered === 115 && previews > 450 && firstCard.previewBelowName && infraOnly === 40 && dmzFound.includes("dmz") && perspectiveCounts.length === 5,
     `${templatesOffered} templates, ${previews} boxes drawn, infrastructure ${infraOnly}, search ${dmzFound.join(",")} :: ${perspectiveCounts.join(" / ")}`,
   );
   await page.$eval('input[aria-label="Search templates"]', (e) => e.select());

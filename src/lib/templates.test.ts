@@ -12,7 +12,7 @@ const kinds = new Set(OBJECT_TYPES.map((t) => t.id));
 
 describe("templates", () => {
   it("are each a valid small model: known kinds, nesting the model allows, and ends that exist", () => {
-    expect(TEMPLATES.length).toBeGreaterThanOrEqual(100);
+    expect(TEMPLATES.length).toBe(115);
     for (const p of PERSPECTIVES) expect(templatesIn(p.id).length, p.id).toBeGreaterThanOrEqual(20);
     const ids = TEMPLATES.map((t) => t.id);
     expect(ids.filter((id, i) => ids.indexOf(id) !== i)).toEqual([]);
@@ -28,7 +28,10 @@ describe("templates", () => {
       for (const o of t.objects) {
         expect(kinds.has(o.typeId), `${t.id}: ${o.name}`).toBe(true);
         expect(o.name.trim(), `${t.id}: ${o.key}`).not.toBe("");
-        if (o.componentId !== undefined) expect(componentById(o.componentId), `${t.id}: ${o.name}`).toBeDefined();
+        // Only what the library has: every box is a library component, and of the component's type.
+        const component = componentById(o.componentId);
+        expect(component, `${t.id}: ${o.name} (${o.componentId})`).toBeDefined();
+        expect(o.typeId, `${t.id}: ${o.name}`).toBe(component!.kind);
         if (o.inside) expect(keys.has(o.inside), `${t.id}: ${o.name}`).toBe(true);
       }
       for (const [from, to, kind] of t.relationships) {
@@ -68,8 +71,12 @@ describe("templates", () => {
     const made = applyTemplate(emptyWorkspace("T"), "dmz")!;
     const waf = Object.values(made.ws.objects).find((o) => o.name === "WAF")!;
     expect(waf).toMatchObject({ componentId: "security.web-application-firewall", typeId: "gateway" });
-    const catalogued = TEMPLATES.filter((t) => t.objects.every((o) => o.componentId));
-    expect(catalogued.length).toBeGreaterThanOrEqual(95);
+    // Every box of every template, the first five included, comes from the library.
+    expect(TEMPLATES.flatMap((t) => t.objects).filter((o) => !componentById(o.componentId))).toEqual([]);
+    for (const t of TEMPLATES) {
+      const made = applyTemplate(emptyWorkspace("T"), t.id)!;
+      expect(Object.values(made.ws.objects).filter((o) => !componentById(o.componentId)).map((o) => o.name), t.id).toEqual([]);
+    }
   });
 
   it("are found by words and by perspective", () => {
@@ -77,6 +84,7 @@ describe("templates", () => {
     expect(searchTemplates("dmz").map((t) => t.id)).toContain("dmz");
     expect(searchTemplates("zatca").map((t) => t.id)).toContain("e-invoicing");
     expect(searchTemplates("firewall", "business")).toEqual([]);
+    expect(searchTemplates("smart building").map((t) => t.id)).toContain("smart-building");
     expect(searchTemplates("", "data")).toEqual(templatesIn("data"));
   });
 

@@ -87,6 +87,7 @@ export const GENERIC_SECTIONS: GenericSection[] = [
     kind: "application",
     profile: "application",
     items: [
+      ["Software system", "Boxes", "system", undefined, "system boundary product platform"],
       ["ERP system", "Factory", "system", undefined, "enterprise resource planning SAP Oracle EBS"],
       ["CRM system", "Contact", "system", undefined, "customer relationship management Salesforce Dynamics"],
       ["HR system", "IdCard", "system", undefined, "HRMS HCM human resources"],

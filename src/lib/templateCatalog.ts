@@ -1,8 +1,9 @@
 import type { RelationKind } from "./types";
 
 /**
- * The template catalogue, written compactly. Each object is "key component-id Name"; the
- * component decides the object's type and icon. Each relationship is
+ * The template catalogue, written compactly. Each object is "key component-id Name": every
+ * box of every template is a component of the library, which decides its type, its icon and
+ * its basic information. A template cannot bring in a kind of thing the library does not have. Each relationship is
  * [from, to, kind, label?, protocol?]. Templates are first drafts of common situations, kept
  * small (five to eleven boxes) so they are quick to read and to reshape.
  */
@@ -215,6 +216,49 @@ export const CATALOG: CatalogTemplate[] = [
     about: "One service sends email, SMS and push for every application, with templates and preferences.",
     objects: ["apps applications.back-end-service Applications", "q integration.message-queue Notification requests", "ns applications.microservice Notification service", "pref data.key-value-store Preferences", "mail external.email-delivery-provider Email provider", "sms external.sms-provider SMS provider", "push communications.push-notification-service Push service"],
     relationships: [["apps", "q", "flows_to", "requests", T], ["q", "ns", "flows_to"], ["ns", "pref", "reads_writes", "", T], ["ns", "mail", "calls", "", H], ["ns", "sms", "calls", "", H], ["ns", "push", "calls", "", H]],
+  },
+
+  {
+    id: "cms-website",
+    name: "Content-managed website",
+    perspective: "applications",
+    about: "Editors publish through a CMS; visitors get the site from a CDN with search and forms.",
+    objects: ["ed people.employee Editor", "cms applications.content-management-system CMS", "db data.relational-database Content database", "media storage.object-storage Media library", "site applications.public-website Website", "cdn network.content-delivery-network CDN", "v people.user Visitor"],
+    relationships: [["ed", "cms", "calls", "publishes", H], ["cms", "db", "reads_writes", "", T], ["cms", "media", "reads_writes", "", H], ["cms", "site", "flows_to", "renders"], ["v", "cdn", "calls", "", H], ["cdn", "site", "routes_to", "", H]],
+  },
+  {
+    id: "lms",
+    name: "Learning platform",
+    perspective: "applications",
+    about: "An LMS with single sign-on, video, and grades sent to the student information system.",
+    objects: ["s people.user Learner", "t people.employee Teacher", "lms applications.learning-management-system LMS", "sso identity.single-sign-on Single sign-on", "vid communications.video-conferencing Video classes", "sis applications.custom-application Student information system", "files storage.object-storage Course files"],
+    relationships: [["s", "lms", "calls", "learns", H], ["t", "lms", "calls", "teaches", H], ["lms", "sso", "depends_on", "", "SAML"], ["lms", "vid", "calls", "", H], ["lms", "sis", "flows_to", "grades", H], ["lms", "files", "reads_writes", "", H]],
+    tags: "education university school",
+  },
+  {
+    id: "search-service",
+    name: "Search over business data",
+    perspective: "applications",
+    about: "Changes from the source database are indexed and served by a search API.",
+    objects: ["app applications.web-application Web app", "api applications.back-end-service Search API", "idx data.search-index Search index", "src data.relational-database Source database", "cdc integration.change-data-capture Change capture", "ix applications.batch-job Indexer"],
+    relationships: [["app", "api", "calls", "searches", H], ["api", "idx", "reads_writes", "queries", H], ["cdc", "src", "reads_writes", "reads changes", T], ["cdc", "ix", "flows_to"], ["ix", "idx", "reads_writes", "indexes", H]],
+  },
+  {
+    id: "low-code",
+    name: "Low-code business apps",
+    perspective: "applications",
+    about: "Apps built on a low-code platform, with workflows and connectors to core systems.",
+    objects: ["u people.employee Employee", "lc platforms.low-code-platform Low-code platform", "app1 applications.workflow-application Approval app", "app2 applications.workflow-application Request tracker", "con integration.adapter-or-connector Connectors", "erp applications.erp-system ERP", "dir identity.directory-service Directory"],
+    relationships: [["u", "app1", "calls", "", H], ["u", "app2", "calls", "", H], ["app1", "lc", "hosted_on"], ["app2", "lc", "hosted_on"], ["lc", "con", "calls", "", H], ["con", "erp", "calls", "", H], ["lc", "dir", "depends_on", "", "LDAPS"]],
+    tags: "Power Apps citizen developer",
+  },
+  {
+    id: "rpa",
+    name: "Robotic process automation",
+    perspective: "applications",
+    about: "Software robots work through legacy screens and email, coordinated by an orchestrator.",
+    objects: ["orch platforms.robotic-process-automation RPA orchestrator", "bot people.service-account Robot account", "legacy applications.legacy-application Legacy application", "mail communications.email-service Mailbox", "erp applications.erp-system ERP", "q integration.message-queue Work queue", "op people.employee Operator"],
+    relationships: [["op", "orch", "calls", "monitors", H], ["orch", "q", "reads_writes", "", T], ["bot", "orch", "depends_on"], ["bot", "legacy", "calls", "keys in"], ["bot", "mail", "calls", "reads", "IMAPS"], ["bot", "erp", "calls", "posts", H]],
   },
 
   /* ---------------- Data ---------------- */
@@ -642,6 +686,91 @@ export const CATALOG: CatalogTemplate[] = [
     about: "Traffic scrubbed for DDoS, cached at a CDN and filtered by a WAF before it reaches the origin.",
     objects: ["u network.internet Internet", "ddos security.ddos-protection DDoS scrubbing", "cdn network.content-delivery-network CDN", "waf security.web-application-firewall WAF", "lb network.load-balancer Load balancer", "org platforms.web-server Origin servers"],
     relationships: [["u", "ddos", "routes_to", "", H], ["ddos", "cdn", "routes_to", "", H], ["cdn", "waf", "routes_to", "", H], ["waf", "lb", "routes_to", "", H], ["lb", "org", "routes_to", "", H]],
+  },
+
+  {
+    id: "hci",
+    name: "Hyperconverged infrastructure",
+    perspective: "infrastructure",
+    about: "Compute and storage in the same nodes, pooled across the cluster.",
+    objects: ["n1 compute.hyperconverged-node Node 1", "n2 compute.hyperconverged-node Node 2", "n3 compute.hyperconverged-node Node 3", "sw network.data-centre-switch Top-of-rack switches", "mgmt platforms.virtualisation-manager Cluster manager", "vm compute.virtual-machine Workloads"],
+    relationships: [["n1", "sw", "routes_to"], ["n2", "sw", "routes_to"], ["n3", "sw", "routes_to"], ["mgmt", "n1", "depends_on", "", H], ["vm", "n2", "hosted_on"]],
+    tags: "Nutanix vSAN",
+  },
+  {
+    id: "rack-layout",
+    name: "One rack",
+    perspective: "infrastructure",
+    about: "What is in one rack: switches at the top, servers and storage, and the power behind them.",
+    objects: ["rack datacenter.rack Rack A01", "tor network.data-centre-switch Top-of-rack switch", "pp datacenter.patch-panel Patch panel", "s1 compute.rack-server Server 1", "s2 compute.rack-server Server 2", "nas storage.nas NAS", "pdu datacenter.power-distribution-unit PDU", "kvm datacenter.kvm-switch KVM"],
+    relationships: [["tor", "rack", "hosted_on"], ["s1", "rack", "hosted_on"], ["s2", "rack", "hosted_on"], ["nas", "rack", "hosted_on"], ["s1", "tor", "routes_to"], ["s2", "tor", "routes_to"], ["tor", "pp", "routes_to"], ["s1", "pdu", "depends_on"], ["kvm", "s1", "depends_on"]],
+  },
+  {
+    id: "colo-connectivity",
+    name: "Colocation and carriers",
+    perspective: "infrastructure",
+    about: "Racks in a colocation site connected through the meet-me room to carriers and cloud on-ramps.",
+    objects: ["colo datacenter.colocation-site Colocation site", "cage datacenter.cage Our cage", "mmr datacenter.meet-me-room Meet-me room", "c1 external.internet-service-provider Carrier 1", "c2 external.internet-service-provider Carrier 2", "cloud cloud.direct-connection Cloud on-ramp", "rtr network.router Edge routers"],
+    relationships: [["cage", "colo", "hosted_on"], ["rtr", "cage", "hosted_on"], ["rtr", "mmr", "routes_to"], ["mmr", "c1", "routes_to"], ["mmr", "c2", "routes_to"], ["mmr", "cloud", "routes_to"]],
+  },
+  {
+    id: "wifi-guest",
+    name: "Guest and visitor Wi-Fi",
+    perspective: "infrastructure",
+    about: "Visitors join through a captive portal on their own network, kept apart from staff systems.",
+    objects: ["v people.user Visitor", "ap network.wireless-access-point Access points", "wlc network.wireless-controller Wireless controller", "portal applications.web-application Captive portal", "gv network.vlan Guest network", "fw security.firewall Guest firewall", "inet network.internet Internet", "sms external.sms-provider SMS codes"],
+    relationships: [["v", "ap", "calls"], ["wlc", "ap", "depends_on", "manages"], ["ap", "gv", "routes_to"], ["gv", "portal", "routes_to", "", H], ["portal", "sms", "calls", "sends code", H], ["gv", "fw", "routes_to"], ["fw", "inet", "routes_to"]],
+  },
+  {
+    id: "dns-dhcp",
+    name: "Core network services",
+    perspective: "infrastructure",
+    about: "DNS, DHCP and time served from redundant servers, with IP addresses tracked centrally.",
+    objects: ["dns1 network.dns-server DNS primary", "dns2 network.dns-server DNS secondary", "dhcp network.dhcp-server DHCP", "ntp network.ntp-server Time servers", "ipam network.ip-address-management IP address management", "clients end-user.laptop Clients", "ext network.internet Public DNS"],
+    relationships: [["clients", "dns1", "calls", "", "DNS over TLS"], ["clients", "dhcp", "calls"], ["clients", "ntp", "calls"], ["dns1", "dns2", "replicates_to", "", T], ["dns1", "ext", "calls", "forwards", "DNS over HTTPS"], ["ipam", "dns1", "depends_on", "", H], ["ipam", "dhcp", "depends_on", "", H]],
+    tags: "DDI DNS DHCP NTP",
+  },
+  {
+    id: "smart-building",
+    name: "Smart building",
+    perspective: "infrastructure",
+    about: "Cameras, access control, sensors and HVAC on a separate network, managed by the BMS.",
+    objects: ["bms iot.building-management-system Building management", "cam iot.ip-camera Cameras", "nvr iot.network-video-recorder Video recorder", "acc datacenter.physical-access-control Door access", "env iot.sensor Environment sensors", "gw iot.iot-gateway Building gateway", "vlan network.vlan Building network", "sec people.team Security team"],
+    relationships: [["cam", "nvr", "flows_to", "", "RTSPS"], ["acc", "bms", "flows_to", "", T], ["env", "gw", "flows_to", "", "BACnet/SC"], ["gw", "bms", "flows_to", "", T], ["cam", "vlan", "routes_to"], ["sec", "nvr", "calls", "views", H], ["sec", "bms", "calls", "", H]],
+  },
+  {
+    id: "gpu-cluster",
+    name: "AI training cluster",
+    perspective: "infrastructure",
+    about: "GPU servers on a fast fabric with parallel storage, a scheduler and a model registry.",
+    objects: ["sched platforms.scheduler Job scheduler", "g1 compute.gpu-server GPU node 1", "g2 compute.gpu-server GPU node 2", "fab network.data-centre-switch High-speed fabric", "fs storage.nas Parallel file system", "reg ai.model-registry Model registry", "ds people.team Researchers"],
+    relationships: [["ds", "sched", "calls", "submits", H], ["sched", "g1", "calls"], ["sched", "g2", "calls"], ["g1", "fab", "routes_to", "", "RDMA"], ["g2", "fab", "routes_to", "", "RDMA"], ["g1", "fs", "reads_writes", "", "NFS over TLS"], ["g1", "reg", "flows_to", "trained models", H]],
+    tags: "HPC GPU InfiniBand",
+  },
+  {
+    id: "service-mesh",
+    name: "Service mesh",
+    perspective: "infrastructure",
+    about: "Services talk through sidecar proxies that add mutual TLS, retries and tracing.",
+    objects: ["gw containers.ingress-controller Mesh gateway", "mesh containers.service-mesh Service mesh control plane", "a containers.pod Service A", "b containers.pod Service B", "c containers.pod Service C", "trace operations.tracing Tracing"],
+    relationships: [["gw", "a", "routes_to", "", "mTLS"], ["a", "b", "calls", "", "mTLS"], ["b", "c", "calls", "", "mTLS"], ["mesh", "a", "depends_on", "configures"], ["mesh", "b", "depends_on", "configures"], ["a", "trace", "flows_to", "spans", T]],
+    tags: "Istio Linkerd",
+  },
+  {
+    id: "unified-comms",
+    name: "Unified communications",
+    perspective: "infrastructure",
+    about: "Phones, meetings and chat on one platform, with a voice gateway to the carrier.",
+    objects: ["u people.employee Staff", "phone end-user.ip-phone Desk phones", "room end-user.meeting-room-system Meeting rooms", "uc communications.team-chat Chat and meetings", "pbx communications.phone-system Phone system", "sbc communications.voice-gateway Voice gateway", "carrier external.internet-service-provider Carrier"],
+    relationships: [["u", "uc", "calls", "", H], ["phone", "pbx", "calls", "", "SIP TLS"], ["room", "uc", "calls", "", H], ["uc", "pbx", "calls", "", "SIP TLS"], ["pbx", "sbc", "routes_to", "", "SIP TLS"], ["sbc", "carrier", "routes_to", "", "SIP TLS"]],
+  },
+  {
+    id: "email-infra",
+    name: "Email with protection",
+    perspective: "infrastructure",
+    about: "Inbound mail filtered by an email security gateway before the mail service; outbound signed and checked.",
+    objects: ["ext network.internet Internet senders", "seg security.email-security-gateway Email security gateway", "mail communications.email-service Mail service", "u people.employee Staff", "dlp security.data-loss-prevention DLP", "arch storage.archive-storage Mail archive"],
+    relationships: [["ext", "seg", "flows_to", "", "SMTP STARTTLS"], ["seg", "mail", "flows_to", "", "SMTP STARTTLS"], ["u", "mail", "calls", "", H], ["mail", "dlp", "calls", "outbound", T], ["mail", "arch", "reads_writes", "", T]],
   },
 
   /* ---------------- Business ---------------- */
