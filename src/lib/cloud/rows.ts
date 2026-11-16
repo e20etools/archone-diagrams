@@ -1,4 +1,4 @@
-import type { Adr, CustomRule, ModelObject, NodePlacement, Notation, Proposal, Relationship } from "../types";
+import type { Adr, CustomRule, Flow, ModelLink, ModelObject, NodePlacement, Notation, Proposal, Relationship } from "../types";
 import { nodeKey, splitNodeKey, type DiagramMeta, type TableName } from "./tables";
 
 /** Database rows and the app's objects, converted in both directions. Column names match the migration. */
@@ -22,6 +22,27 @@ const iso = (value: unknown): string => {
 };
 const text = (value: unknown) => (typeof value === "string" ? value : "");
 const list = (value: unknown): string[] => (Array.isArray(value) ? value.map(String) : []);
+const record = (value: unknown): Record<string, unknown> => (value && typeof value === "object" ? (value as Record<string, unknown>) : {});
+/** Read defensively: the column is free-form JSON and an API client or an old row may hold anything. */
+const linksOf = (value: unknown): { links?: ModelLink[] } => {
+  const links = (Array.isArray(value) ? value : []).map(record).filter((l) => typeof l.url === "string" && l.url).map((l) => ({ label: text(l.label), url: text(l.url) }));
+  return links.length ? { links } : {};
+};
+const flowsOf = (value: unknown): { flows?: Flow[] } => {
+  const flows = (Array.isArray(value) ? value : [])
+    .map(record)
+    .filter((f) => typeof f.id === "string" && f.id)
+    .map((f) => ({
+      id: text(f.id),
+      name: text(f.name),
+      description: text(f.description),
+      steps: (Array.isArray(f.steps) ? f.steps : [])
+        .map(record)
+        .filter((s) => typeof s.id === "string" && typeof s.fromId === "string" && typeof s.toId === "string")
+        .map((s) => ({ id: text(s.id), fromId: text(s.fromId), toId: text(s.toId), text: text(s.text) })),
+    }));
+  return flows.length ? { flows } : {};
+};
 
 export function toRow(table: TableName, workspaceId: string, key: string, value: unknown): Row {
   switch (table) {
@@ -39,6 +60,8 @@ export function toRow(table: TableName, workspaceId: string, key: string, value:
         parent_id: o.parentId,
         technology: o.technology,
         fields: o.fields,
+        // Always sent, so that removing the last link clears the column.
+        links: o.links?.length ? o.links : null,
         provenance: o.provenance,
         created_at: o.createdAt,
         updated_at: o.updatedAt,
@@ -59,6 +82,7 @@ export function toRow(table: TableName, workspaceId: string, key: string, value:
         description: r.description,
         // Always sent, so that taking a confirmation back clears it. Needs the column from the phase 4 migration.
         acknowledged: r.acknowledgement ?? null,
+        links: r.links?.length ? r.links : null,
         provenance: r.provenance,
         created_at: r.createdAt,
         updated_at: r.updatedAt,
@@ -80,6 +104,7 @@ export function toRow(table: TableName, workspaceId: string, key: string, value:
         color_by: d.colorBy,
         // Sent only once someone has chosen a notation, so a database without the column still saves plain diagrams.
         ...(d.notation ? { notation: d.notation } : {}),
+        flows: d.flows?.length ? d.flows : null,
         created_at: d.createdAt,
         updated_at: d.updatedAt,
         deleted: false,
@@ -122,6 +147,7 @@ export function fromRow(table: TableName, row: Row): { key: string; value: unkno
         parentId: typeof row.parent_id === "string" ? row.parent_id : null,
         technology: text(row.technology),
         fields: (row.fields ?? {}) as Record<string, string>,
+        ...linksOf(row.links),
         provenance: (row.provenance ?? { origin: "manual" }) as ModelObject["provenance"],
         createdAt: iso(row.created_at),
         updatedAt: iso(row.updated_at),
@@ -139,6 +165,7 @@ export function fromRow(table: TableName, row: Row): { key: string; value: unkno
         port: text(row.port),
         description: text(row.description),
         ...(row.acknowledged && typeof row.acknowledged === "object" ? { acknowledgement: row.acknowledged as NonNullable<Relationship["acknowledgement"]> } : {}),
+        ...linksOf(row.links),
         provenance: (row.provenance ?? { origin: "manual" }) as Relationship["provenance"],
         createdAt: iso(row.created_at),
         updatedAt: iso(row.updated_at),
@@ -158,6 +185,7 @@ export function fromRow(table: TableName, row: Row): { key: string; value: unkno
         colorBy: (["type", "lifecycle", "owner"] as const).find((c) => c === row.color_by) ?? "type",
         // Plain is the absence of a notation, so a diagram that never had one reads back as it was sent.
         ...((["archimate", "bpmn"] as const).some((n) => n === row.notation) ? { notation: row.notation as Notation } : {}),
+        ...flowsOf(row.flows),
         createdAt: iso(row.created_at),
         updatedAt: iso(row.updated_at),
       };

@@ -214,6 +214,19 @@
   stroke: var(--color-blueprint);
   stroke-width: 2.25;
 }
+/* A step of a flow: its arrow is drawn forward, the others step back. */
+.react-flow__edge.flow-edge .react-flow__edge-path {
+  stroke: var(--color-blueprint) !important;
+  stroke-width: 2.75;
+}
+.react-flow__edge.dim-edge {
+  opacity: 0.2;
+}
+@media (prefers-reduced-motion: reduce) {
+  .react-flow__edge.flow-edge .react-flow__edge-path {
+    animation: none;
+  }
+}
 .edge-label {
   position: absolute;
   max-width: 190px;

@@ -25,6 +25,12 @@ export type TrustPageInput = Omit<TrustPage, "token">;
 const isExternal = (o: ModelObject) => o.typeId === "external-system";
 const holdsPersonal = (o: ModelObject) => dataLens(o).personal === "yes";
 
+/** A flow's steps are written for the team; the public page shows the picture without them. */
+function withoutFlows<T extends { flows?: unknown }>(diagram: T): T {
+  const { flows: _flows, ...rest } = diagram;
+  return rest as T;
+}
+
 /** The model cut down to what the public page may show. Proposals and decisions never leave. */
 export function redactForTrust(tables: Tables, diagramId: string | null): Tables {
   const diagram = diagramId ? tables.diagrams[diagramId] : undefined;
@@ -109,7 +115,7 @@ export function redactForTrust(tables: Tables, diagramId: string | null): Tables
 
   const nodes: Tables["nodes"] = {};
   if (diagram) for (const id of visible) if (tables.nodes[nodeKey(diagram.id, id)]) nodes[nodeKey(diagram.id, id)] = tables.nodes[nodeKey(diagram.id, id)];
-  return { objects, relationships, diagrams: diagram ? { [diagram.id]: { ...diagram, description: "" } } : {}, nodes, proposals: {}, adrs: {}, rules: {} };
+  return { objects, relationships, diagrams: diagram ? { [diagram.id]: withoutFlows({ ...diagram, description: "" }) } : {}, nodes, proposals: {}, adrs: {}, rules: {} };
 }
 
 export interface TrustFacts {

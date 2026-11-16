@@ -62,6 +62,8 @@ interface Props {
   /** Boxes picked together with Shift, to arrange or move as a group. When set, these are the selected ones. */
   picked?: string[];
   highlight?: Record<string, Highlight>;
+  /** One step of a flow: these boxes and arrows are brought forward and the rest is dimmed. Wins over `highlight`. */
+  spotlight?: { nodes: string[]; edges: string[] } | null;
   /** Open comment threads per object, drawn as a small marker on the box. */
   comments?: Record<string, number>;
   minimap?: boolean;
@@ -186,7 +188,7 @@ const LabelledEdge = memo(function LabelledEdge({
   data,
   selected,
   interactionWidth,
-}: EdgeProps<Edge<{ slot: number }>>) {
+}: EdgeProps<Edge<{ slot: number; dim?: boolean }>>) {
   const [path] = getSmoothStepPath({ sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition, borderRadius: 8 });
   const slot = data?.slot ?? 0;
   const vertical = targetPosition === Position.Top;
@@ -199,7 +201,7 @@ const LabelledEdge = memo(function LabelledEdge({
       <BaseEdge id={id} path={path} markerStart={markerStart} markerEnd={markerEnd} style={style} interactionWidth={interactionWidth} />
       {label && (
         <EdgeLabelRenderer>
-          <div className="edge-label" data-selected={selected || undefined} style={{ transform }}>
+          <div className="edge-label" data-selected={selected || undefined} style={{ transform, opacity: data?.dim ? 0.25 : undefined }}>
             {label}
           </div>
         </EdgeLabelRenderer>
@@ -224,6 +226,7 @@ function Inner({
   selection,
   picked,
   highlight,
+  spotlight,
   comments,
   minimap,
   renderAll,
@@ -252,7 +255,7 @@ function Inner({
         notation: diagram.notation,
         childCount: childrenOf(ws, id).length,
         direction: diagram.direction,
-        highlight: highlight?.[id],
+        highlight: spotlight ? (spotlight.nodes.includes(id) ? "focus" : "dim") : highlight?.[id],
         comments: comments?.[id],
         onOpen,
       };
@@ -268,7 +271,7 @@ function Inner({
       });
     }
     return list;
-  }, [ws, diagram, highlight, comments, readOnly, selection?.objectId, picked, onOpen]);
+  }, [ws, diagram, highlight, spotlight, comments, readOnly, selection?.objectId, picked, onOpen]);
 
   // React Flow owns positions while a node is being dragged; the store is updated when the drag ends.
   const [nodes, setNodes] = useState<Node[]>(derived);
@@ -301,8 +304,10 @@ function Inner({
     // and several arrows that say the same thing about one box ("hosted on") share a single label.
     const slots = new Map<string, number>();
     const said = new Set<string>();
+    const lit = spotlight ? new Set(spotlight.edges) : null;
     return visibleEdges(ws, diagram).map((e) => {
-        const color = e.implied ? "#93a0b4" : "#5b6b84";
+        const inStep = lit?.has(e.id) ?? false;
+        const color = inStep ? "#2447d6" : e.implied ? "#93a0b4" : "#5b6b84";
         // In a notation the line itself says what kind of relationship it is.
         const arrow = diagram.notation === "archimate" ? archimateArrow(e.kind) : diagram.notation === "bpmn" ? bpmnArrow(e.kind) : null;
         let text = e.label.trim() || (arrow ? arrow.name : e.kind === "calls" ? "" : RELATION_KIND_INFO[e.kind].verb);
@@ -317,7 +322,9 @@ function Inner({
           target: e.targetId,
           type: "labelled",
           label: text || undefined,
-          data: { slot },
+          data: { slot, dim: !!lit && !inStep },
+          className: lit ? (inStep ? "flow-edge" : "dim-edge") : undefined,
+          animated: inStep,
           ...(arrow
             ? {
                 [arrow.reversed ? "markerStart" : "markerEnd"]: { type: arrow.head === "open" ? MarkerType.Arrow : MarkerType.ArrowClosed, width: 16, height: 16, color },
@@ -330,7 +337,7 @@ function Inner({
           interactionWidth: 18,
         };
       });
-  }, [ws, diagram, selection?.edgeId]);
+  }, [ws, diagram, selection?.edgeId, spotlight]);
 
   const onNodesChange = useCallback((changes: NodeChange[]) => {
     // Selection and removal are decided by the page, not by React Flow.

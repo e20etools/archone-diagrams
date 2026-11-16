@@ -881,6 +881,132 @@ try {
   check("a meeting transcript becomes a draft whose items quote the sentence and the speaker", evidence.some((e) => e.startsWith('Sam: "The partner portal will call the order service')) && evidence.some((e) => e.startsWith("Priya:")) && !!meeting && meeting.status === "pending" && meeting.objects.some((o) => o.name.toLowerCase() === "order service" && o.matchId), `${evidence.join(" / ")} :: ${meeting ? meeting.objects.map((o) => o.name + (o.matchId ? "*" : "")).join(", ") : "none"}`.slice(0, 500));
   await shot(page, "21-meeting-draft");
 
+  // Flows: a use case told step by step over a diagram, written by clicking its arrows.
+  await page.goto(`${base}/diagram/${landscapeId}`, { waitUntil: "networkidle0" });
+  await page.waitForSelector(".object-node");
+  await sleep(500);
+  const flowsOfDiagram = async () => (await stored()).diagrams[landscapeId].flows ?? [];
+  check("a diagram starts without flows, and without the strip that walks through them", (await flowsOfDiagram()).length === 0 && (await count(page, "[data-flow-bar]")) === 0);
+  await page.click("[data-flows-button]");
+  await page.waitForSelector("[data-flows-panel]");
+  await clickText(page, "New flow");
+  await page.waitForSelector('input[aria-label="Flow name"]');
+  await page.$eval('input[aria-label="Flow name"]', (e) => e.select());
+  await page.type('input[aria-label="Flow name"]', "A customer places an order");
+  await page.keyboard.press("Enter");
+  await sleep(300);
+  // A click on an arrow adds it as the next step instead of opening the arrow's details.
+  const arrowEnds = await page.$eval(".react-flow__edge", (e) => {
+    e.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    return e.getAttribute("data-id");
+  });
+  await page.waitForSelector('[data-flow-step-row="1"]');
+  await sleep(350);
+  const firstFlow = (await flowsOfDiagram())[0];
+  const firstEdge = (await stored()).relationships[arrowEnds];
+  check(
+    "clicking an arrow while a flow is open adds it as a step, from the arrow's start to its end",
+    firstFlow.name === "A customer places an order" && firstFlow.steps.length === 1 && (!firstEdge || (firstFlow.steps[0].fromId === firstEdge.sourceId && firstFlow.steps[0].toId === firstEdge.targetId)) && (await count(page, 'aside[aria-label="Details"]')) === 0,
+    JSON.stringify({ name: firstFlow.name, steps: firstFlow.steps, edge: firstEdge && [firstEdge.sourceId, firstEdge.targetId], details: await count(page, 'aside[aria-label="Details"]') }),
+  );
+  await page.click('textarea[aria-label="What happens in step 1"]');
+  await page.keyboard.type("The customer sends the basket");
+  await page.click('[data-flow-add] button');
+  await page.waitForSelector('[data-flow-step-row="2"]');
+  await sleep(350);
+  const twoSteps = (await flowsOfDiagram())[0].steps;
+  check("a step keeps what was written about it, and a second one can be added from the two lists", twoSteps.length === 2 && twoSteps[0].text === "The customer sends the basket" && twoSteps[1].fromId in (await stored()).diagrams[landscapeId].nodes, JSON.stringify(twoSteps));
+  await page.click('[data-flow-step-row="1"] button[title="Show this step on the diagram"]');
+  await sleep(300);
+  const lit = async (p = page) => ({
+    focus: await count(p, '.object-node[data-highlight="focus"]'),
+    dim: await count(p, '.object-node[data-highlight="dim"]'),
+    edges: await count(p, ".react-flow__edge.flow-edge"),
+    dimEdges: await count(p, ".react-flow__edge.dim-edge"),
+    text: await p.$eval("[data-flow-step]", (e) => e.innerText).catch(() => ""),
+    at: await p.$eval("[data-flow-count]", (e) => e.textContent.trim()).catch(() => ""),
+  });
+  const stepOne = await lit();
+  check("a step brings its two boxes and its arrow forward and dims the rest", stepOne.focus === 2 && stepOne.dim >= 1 && stepOne.edges >= 1 && stepOne.dimEdges >= 1 && stepOne.at === "1 of 2" && stepOne.text.includes("The customer sends the basket"), JSON.stringify(stepOne));
+  await shot(page, "22-flow-step");
+  await page.evaluate(() => document.activeElement?.blur());
+  await page.keyboard.press("ArrowRight");
+  await sleep(250);
+  const stepTwo = await lit();
+  await page.keyboard.press("ArrowRight");
+  await sleep(200);
+  check("the arrow keys walk through the steps and stop at the last one", stepTwo.at === "2 of 2" && (await lit()).at === "2 of 2");
+  await page.click('[data-flow-step-row="2"] button[aria-label="Move step 2 up"]');
+  await sleep(350);
+  check("steps can be put in another order", (await flowsOfDiagram())[0].steps[1].text === "The customer sends the basket");
+  await page.click('button[aria-label="Undo (Ctrl Z)"]');
+  await sleep(350);
+  check("one undo takes the reordering back", (await flowsOfDiagram())[0].steps[0].text === "The customer sends the basket");
+  await page.keyboard.press("Escape");
+  await sleep(250);
+  check("Escape stops the walk and the diagram is shown as usual", (await count(page, ".object-node[data-highlight]")) === 0 && (await count(page, ".react-flow__edge.flow-edge")) === 0);
+
+  // The same flow for someone presenting, and for someone holding a snapshot link.
+  await clickText(page, "Present");
+  await page.waitForSelector("[data-present]");
+  await page.waitForSelector("[data-flow-bar]");
+  await page.select('select[aria-label="Flow to walk through"]', (await flowsOfDiagram())[0].id);
+  await sleep(300);
+  const shownBefore = await presented();
+  await page.keyboard.press("ArrowRight");
+  await sleep(300);
+  const presentedStep = await lit();
+  check("while presenting, an open flow takes the arrow keys and the diagram stays", (await presented()) === shownBefore && presentedStep.at === "2 of 2" && presentedStep.focus >= 1, JSON.stringify(presentedStep));
+  await shot(page, "23-flow-present");
+  await page.keyboard.press("Escape");
+  await sleep(200);
+  await page.keyboard.press("Escape");
+  await page.waitForSelector('nav[aria-label="Main"]');
+  await clickText(page, "Share");
+  await waitText(page, "Create link");
+  await clickText(page, "Create link");
+  await page.waitForSelector('input[aria-label="Share link"]');
+  const flowLink = await page.$eval('input[aria-label="Share link"]', (e) => e.value);
+  await clickText(page, "Done");
+  const flowViewer = await newPage(await browser.createBrowserContext(), errors);
+  await flowViewer.goto(flowLink, { waitUntil: "networkidle0" });
+  await flowViewer.waitForSelector("[data-flow-bar]");
+  await flowViewer.select('select[aria-label="Flow to walk through"]', (await flowsOfDiagram())[0].id);
+  await sleep(300);
+  const sharedStep = await lit(flowViewer);
+  check("a shared link carries the flows, to walk through without an account", sharedStep.at === "1 of 2" && sharedStep.focus === 2 && sharedStep.text.includes("The customer sends the basket"), JSON.stringify(sharedStep));
+  await flowViewer.close();
+
+  // Links to the real thing, on an object and on a connection.
+  const linked = await objectNamed("Order service");
+  await page.goto(`${base}/model?object=${linked.id}`, { waitUntil: "networkidle0" });
+  await page.waitForSelector("[data-links]");
+  await page.type('[data-links] input[aria-label="Web address of the link"]', "javascript:alert(1)");
+  await page.click("[data-links] button:last-of-type");
+  await sleep(250);
+  const refused = (await hasText(page, "Enter a web address")) && !(await stored()).objects[linked.id].links;
+  await page.$eval('[data-links] input[aria-label="Web address of the link"]', (e) => e.select());
+  await page.type('[data-links] input[aria-label="Web address of the link"]', "github.com/example/order-service");
+  await page.type('[data-links] input[aria-label="Name of the link"]', "Repository");
+  await page.keyboard.press("Enter");
+  await page.waitForSelector("[data-links] a");
+  await sleep(350);
+  const anchor = await page.$eval("[data-links] a", (a) => ({ href: a.href, target: a.target, rel: a.rel, text: a.textContent.trim() }));
+  const savedLinks = (await stored()).objects[linked.id].links;
+  check(
+    "an object links to where it really lives; only web addresses are taken, and they open apart from this page",
+    refused && anchor.href === "https://github.com/example/order-service" && anchor.target === "_blank" && anchor.rel.includes("noopener") && anchor.rel.includes("noreferrer") && anchor.text === "Repository" && savedLinks.length === 1 && savedLinks[0].url === anchor.href,
+    JSON.stringify({ refused, anchor, savedLinks }),
+  );
+  await shot(page, "24-links");
+  await page.click('[data-links] button[aria-label="Remove the link to Repository"]');
+  await sleep(350);
+  check("removing the last link leaves the object as it was before it had any", !("links" in (await stored()).objects[linked.id]));
+  await page.click('button[aria-label="Undo (Ctrl Z)"]');
+  await sleep(350);
+  const shareWithLink = await page.evaluate(() => JSON.stringify(JSON.parse(localStorage.getItem("archone.workspace.v1")).objects));
+  check("undo brings the link back", shareWithLink.includes("github.com/example/order-service"));
+
   // Settings and backup.
   await page.goto(`${base}/settings`, { waitUntil: "networkidle0" });
   await waitText(page, "No AI model connected");

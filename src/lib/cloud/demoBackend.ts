@@ -3,7 +3,7 @@ import { scopeRefusal } from "./scope";
 import type { TrustPage } from "../trust";
 import type { Workspace } from "../types";
 import { AUDIT_PAGE_SIZE, matchesQuery, type AuditEntry } from "./audit";
-import { BackendError, canCommentRole, canEditRole, type ApiKeyInfo, type Backend, type LiveLink, type WebhookInfo, type CloudUser, type LiveHandlers, type Peer, type Role } from "./backend";
+import { BackendError, LIVE_LINK_MIN_PASSWORD, canCommentRole, canEditRole, type ApiKeyInfo, type Backend, type LiveLink, type WebhookInfo, type CloudUser, type LiveHandlers, type Peer, type Role } from "./backend";
 import type { Comment, Review, ReviewSettings, VersionInfo } from "./collab";
 import { DEMO_DB_KEY } from "./config";
 import { emptyTables, patchTables, sameValue, splitNodeKey, type ChangeSet, type Tables } from "./tables";
@@ -29,7 +29,8 @@ interface Db {
   settings?: Record<string, ReviewSettings>;
   apiKeys?: Record<string, ApiKeyInfo[]>;
   webhooks?: Record<string, WebhookInfo[]>;
-  liveLinks?: (LiveLink & { workspaceId: string })[];
+  /** The demo keeps a link's password as written; the real database stores a salted hash. */
+  liveLinks?: (LiveLink & { workspaceId: string; password?: string; failed?: number; lockedUntil?: string })[];
   trustPages?: Record<string, TrustPage>;
   /** A stand-in for the audit log the real database writes with triggers. It covers the model, members and invitations. */
   audit?: Record<string, AuditEntry[]>;
@@ -711,12 +712,26 @@ export function createDemoBackend(): Backend {
     async listLiveLinks(workspaceId, diagramId) {
       const db = read();
       if (!canEditRole(roleOf(db, workspaceId, me().id))) return [];
-      return (db.liveLinks ?? []).filter((l) => l.workspaceId === workspaceId && l.diagramId === diagramId).map(({ workspaceId: _ws, ...link }) => link);
+      return (db.liveLinks ?? []).filter((l) => l.workspaceId === workspaceId && l.diagramId === diagramId).map(({ workspaceId: _ws, password: _p, failed: _f, lockedUntil: _l, ...link }) => ({ ...link, protected: link.protected === true, expiresAt: link.expiresAt ?? null }));
     },
-    async createLiveLink(workspaceId, diagramId) {
+    async createLiveLink(workspaceId, diagramId, options) {
       const db = read();
       if (!canEditRole(roleOf(db, workspaceId, me().id))) throw new BackendError("forbidden", "Only owners and editors can create a live link.");
-      (db.liveLinks ??= []).push({ id: id("link"), token: `${id("live")}${id("x")}`.replace(/_/g, ""), workspaceId, diagramId, createdBy: me().id, createdAt: new Date().toISOString() });
+      const password = options?.password ?? "";
+      if (password && password.length < LIVE_LINK_MIN_PASSWORD) throw new BackendError("invalid", `Use a password of at least ${LIVE_LINK_MIN_PASSWORD} characters.`);
+      const expiresAt = options?.expiresAt ?? null;
+      if (expiresAt && new Date(expiresAt).getTime() <= Date.now()) throw new BackendError("invalid", "Choose a date in the future for the link to stop working.");
+      (db.liveLinks ??= []).push({
+        id: id("link"),
+        token: `${id("live")}${id("x")}`.replace(/_/g, ""),
+        workspaceId,
+        diagramId,
+        createdBy: me().id,
+        createdAt: new Date().toISOString(),
+        protected: !!password,
+        expiresAt,
+        ...(password ? { password } : {}),
+      });
       write(db);
     },
     async revokeLiveLink(workspaceId, linkId) {

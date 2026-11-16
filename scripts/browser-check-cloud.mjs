@@ -487,6 +487,38 @@ try {
   check("switching a live link off stops it for everyone who has it", (await count(visitor, ".object-node")) === 0);
   await visitor.close();
 
+  // A live link that asks for a password and has a last day.
+  await clickText(ben, "Share");
+  await ben.waitForSelector("[data-live-link-new]");
+  await ben.type('input[aria-label="Password for the live link"]', "short");
+  const refusedShort = (await hasText(ben, "At least 8 characters.")) && (await ben.$eval("[data-live-link-new] button", (b) => b.disabled));
+  await ben.$eval('input[aria-label="Password for the live link"]', (e) => e.select());
+  await ben.type('input[aria-label="Password for the live link"]', "harbour-light-7");
+  await ben.select('select[aria-label="When the live link stops working"]', "7");
+  await clickText(ben, "Create a live link");
+  await ben.waitForSelector('[data-live-link="protected"] input[aria-label="Live link"]');
+  const lockedUrl = await ben.$eval('[data-live-link="protected"] input[aria-label="Live link"]', (e) => e.value);
+  const dialogText = await ben.$eval("[data-live-links]", (e) => e.innerText);
+  check(
+    "a live link can be given a password and a last day, and the password is not shown again",
+    refusedShort && dialogText.includes("Asks for a password") && dialogText.includes("Works until") && !dialogText.includes("harbour-light-7") && (await ben.$eval('input[aria-label="Password for the live link"]', (e) => e.value)) === "",
+    dialogText.slice(0, 200),
+  );
+  await clickText(ben, "Done");
+  const guest = await open();
+  await visit(guest, lockedUrl, "[data-embed-locked]");
+  const shutAtFirst = (await count(guest, ".object-node")) === 0 && (await hasText(guest, "This diagram is protected"));
+  await guest.type("[data-embed-locked] input[type=password]", "not the password");
+  await clickText(guest, "Open diagram");
+  await waitText(guest, "That password does not open this link");
+  const stillShut = (await count(guest, ".object-node")) === 0;
+  await guest.type("[data-embed-locked] input[type=password]", "harbour-light-7");
+  await clickText(guest, "Open diagram");
+  await guest.waitForSelector(".object-node");
+  check("a protected live link shows nothing until the right password is given", shutAtFirst && stillShut && (await count(guest, ".object-node")) > 0 && !guest.url().includes("harbour"), guest.url());
+  await shot(guest, "31-protected-live-link");
+  await guest.close();
+
   const integrations = 'section[aria-label="API and webhooks"]';
   await visit(ana, `${base}/settings`, integrations);
   await ana.type(`${integrations} input[placeholder^="For example: CMDB"]`, "CMDB sync");

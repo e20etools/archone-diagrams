@@ -2,6 +2,7 @@ import { ADR_STATUS_LABEL, adrLabel, sortedAdrs } from "../adr";
 import { LIFECYCLE_INFO, RELATION_KIND_INFO, VIEW_TYPE_INFO, objectType } from "../catalog";
 import { ruleById, rulesRun as rulesRun_, runChecks, type PackId, type Severity } from "../checks/checks";
 import { diagramObjects, diagramRelationships } from "../exporters";
+import { flowsOf, stepRoute } from "../flows";
 import { trustFacts, type TrustFacts } from "../trust";
 import type { Workspace } from "../types";
 
@@ -28,6 +29,8 @@ export interface DocDiagram {
   description: string;
   elements: { name: string; type: string; owner: string; description: string }[];
   connections: { from: string; to: string; what: string }[];
+  /** The use cases told over this diagram, each as its steps in order. */
+  flows: { name: string; description: string; steps: { route: string; text: string }[] }[];
 }
 export interface DocOutline {
   title: string;
@@ -65,6 +68,9 @@ export function buildOutline(ws: Workspace, options: DocOptions, at = new Date()
           what: [RELATION_KIND_INFO[r.kind].label, r.label.trim(), r.protocol.trim()].filter(Boolean).join(", "),
         }))
         .sort((a, b) => a.from.localeCompare(b.from) || a.to.localeCompare(b.to)),
+      flows: flowsOf(d)
+        .filter((f) => f.steps.length > 0)
+        .map((f) => ({ name: f.name, description: f.description, steps: f.steps.map((s) => ({ route: stepRoute(ws, s), text: s.text })) })),
     }));
 
   const objects = Object.values(ws.objects);

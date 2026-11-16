@@ -1,12 +1,14 @@
 import { NOTATION_INFO } from "@/lib/notation";
 import { NOTATIONS, type Notation } from "@/lib/types";
-import { AlignCenterHorizontal, AlignCenterVertical, AlignEndHorizontal, AlignEndVertical, AlignHorizontalSpaceAround, AlignStartHorizontal, AlignStartVertical, AlignVerticalSpaceAround, ChevronRight, EyeOff, LayoutDashboard, Presentation, MessageSquare, PanelLeftClose, PanelLeftOpen, Search, Share2, ShieldCheck, Shuffle, SlidersHorizontal, Sparkles, Trash2, Waypoints, X, ZoomIn } from "lucide-react";
+import { AlignCenterHorizontal, AlignCenterVertical, AlignEndHorizontal, AlignEndVertical, AlignHorizontalSpaceAround, AlignStartHorizontal, AlignStartVertical, AlignVerticalSpaceAround, ChevronRight, EyeOff, LayoutDashboard, Presentation, ListOrdered, MessageSquare, PanelLeftClose, PanelLeftOpen, Search, Share2, ShieldCheck, Shuffle, SlidersHorizontal, Sparkles, Trash2, Waypoints, X, ZoomIn } from "lucide-react";
 import { checkCopy } from "@/lib/freshness";
 import { alignNodes, distributeNodes, type AlignMode } from "@/lib/arrange";
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { DRAG_MIME, DiagramCanvas, type CanvasHandle, type CanvasSelection, type DragItem } from "@/components/canvas/DiagramCanvas";
 import { AiDraftDialog, ExportMenu, ShareDialog } from "@/components/dialogs";
+import { FlowBar, FlowsPanel, NO_FLOW, useFlowCursor, useFlowKeys } from "@/components/Flows";
+import { addStep, flowsOf } from "@/lib/flows";
 import { TypeIcon } from "@/components/icons";
 import { ObjectEditor, ProvenanceNote, RelationshipEditor, RelationshipList, UsedIn, DecisionsAbout } from "@/components/ObjectPanel";
 import { Button, CommitInput, EmptyState, Field, IconButton, Input, Modal, Select, Tabs, useNotice, formatDateTime } from "@/components/ui";
@@ -538,6 +540,8 @@ function Editor({ ws, diagram }: { ws: Workspace; diagram: Diagram }) {
   const navigate = useNavigate();
   const canvas = useRef<CanvasHandle | null>(null);
   const [selection, setSelectionOnly] = useState<CanvasSelection>(NONE);
+  const [flowsOpen, setFlowsOpen] = useState(false);
+  const flows = useFlowCursor(ws, diagram);
   // Boxes picked together with Shift-click, to line up, space out or drag as a group.
   const [picked, setPicked] = useState<string[]>([]);
   const setSelection = useCallback((next: CanvasSelection) => {
@@ -565,6 +569,20 @@ function Editor({ ws, diagram }: { ws: Workspace; diagram: Diagram }) {
   const { notify, view: notice } = useNotice();
   const canEdit = useCanEdit();
   const diagramId = diagram.id;
+  useFlowKeys(!!flows.flow, flows.move, () => flows.setCursor(NO_FLOW));
+  // While a flow is being written, a click on an arrow adds it as the next step instead of opening the arrow.
+  const writingFlow = flowsOpen && canEdit ? flows.flow : null;
+  const onCanvasSelect = (next: CanvasSelection) => {
+    if (writingFlow && next.edgeId) {
+      const edge = visibleEdges(ws, diagram).find((e) => e.id === next.edgeId);
+      if (edge) {
+        apply((w) => addStep(w, diagramId, writingFlow.id, edge.sourceId, edge.targetId).ws);
+        flows.setCursor({ flowId: writingFlow.id, index: writingFlow.steps.length });
+        return;
+      }
+    }
+    setSelection(next);
+  };
   // A link from a mention opens the comments with that thread in view.
   const [params, setParams] = useSearchParams();
   const focusThread = params.get("thread");
@@ -585,6 +603,7 @@ function Editor({ ws, diagram }: { ws: Workspace; diagram: Diagram }) {
   useEffect(() => {
     setSelection(NONE);
     setSettingsOpen(false);
+    setFlowsOpen(false);
   }, [diagramId, setSelection]);
   useEffect(() => {
     if (!focusThread) return;
@@ -753,13 +772,34 @@ function Editor({ ws, diagram }: { ws: Workspace; diagram: Diagram }) {
           >
             <SlidersHorizontal size={16} />
           </IconButton>
+          <Button
+            icon={<ListOrdered size={15} />}
+            aria-pressed={flowsOpen}
+            className={flowsOpen ? "!bg-blueprint-soft !text-blueprint-deep !border-transparent" : undefined}
+            title={flowsOpen ? "Close the flows" : "Tell a use case step by step over this diagram"}
+            data-flows-button
+            onClick={() => {
+              setFlowsOpen(!flowsOpen);
+              if (!flowsOpen) {
+                setCommentsOpen(false);
+                setSelection(NONE);
+              }
+            }}
+          >
+            Flows
+            {flowsOf(diagram).length > 0 && <span className="tabular-nums text-ink-soft">{flowsOf(diagram).length}</span>}
+          </Button>
           {cloudEnabled && (
             <Button
               icon={<MessageSquare size={15} />}
               aria-pressed={commentsOpen}
               className={commentsOpen ? "!bg-blueprint-soft !text-blueprint-deep !border-transparent" : undefined}
               title={commentsOpen ? "Close the comments" : "Read and write comments on this diagram"}
-              onClick={() => (commentsOpen ? closeComments() : setCommentsOpen(true))}
+              onClick={() => {
+                if (commentsOpen) return closeComments();
+                setFlowsOpen(false);
+                setCommentsOpen(true);
+              }}
             >
               Comments
               {openThreads > 0 && <span className="tabular-nums text-ink-soft">{openThreads}</span>}
@@ -825,8 +865,9 @@ function Editor({ ws, diagram }: { ws: Workspace; diagram: Diagram }) {
             onPick={canEdit ? onPick : undefined}
             minimap
             comments={commentMarks}
+            spotlight={flows.spotlight}
             readOnly={!canEdit}
-            onSelect={setSelection}
+            onSelect={onCanvasSelect}
             onMove={onMove}
             onConnect={onConnect}
             onDropItem={onDropItem}
@@ -855,6 +896,7 @@ function Editor({ ws, diagram }: { ws: Workspace; diagram: Diagram }) {
               </IconButton>
             </div>
           )}
+          {(flowsOpen || flows.flow) && !(canEdit && pickedHere.length >= 2) && <FlowBar ws={ws} diagram={diagram} cursor={flows.cursor} onCursor={flows.setCursor} />}
           {empty && (
             <div className="absolute inset-0 grid place-items-center pointer-events-none">
               <div className="pointer-events-auto rounded-lg border border-dashed border-ink-faint bg-surface/90 px-6 py-5 text-center max-w-sm">
@@ -878,6 +920,10 @@ function Editor({ ws, diagram }: { ws: Workspace; diagram: Diagram }) {
               onPick={(target) => setSelection(target.kind === "object" ? { objectId: target.id, edgeId: null } : target.kind === "relationship" ? { objectId: null, edgeId: target.id } : NONE)}
               onClose={closeComments}
             />
+          </aside>
+        ) : flowsOpen && !objectId && !shownEdge ? (
+          <aside className="w-[340px] shrink-0 bg-surface border-l border-line" aria-label="Flows">
+            <FlowsPanel ws={ws} diagram={diagram} cursor={flows.cursor} canEdit={canEdit} onCursor={flows.setCursor} onClose={() => setFlowsOpen(false)} />
           </aside>
         ) : (
           (objectId || shownEdge || settingsOpen) && (

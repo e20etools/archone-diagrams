@@ -1,9 +1,11 @@
 import { CLASSIFICATIONS, agentLens, dataLens, isDataField, withAgentField, withDataField } from "@/lib/checks/checks";
-import { ArrowRight, Plus, Trash2 } from "lucide-react";
+import { ArrowRight, ExternalLink, Plus, Trash2 } from "lucide-react";
+import { useState } from "react";
+import { MAX_LINKS, linkLabel, safeUrl } from "@/lib/links";
 import { ADR_STATUS_LABEL, adrLabel, adrsAbout } from "@/lib/adr";
 import { Link } from "react-router-dom";
 import { TypeIcon } from "@/components/icons";
-import { Badge, Button, CommitInput, Field, IconButton, Select, formatDateTime } from "@/components/ui";
+import { Badge, Button, CommitInput, Field, IconButton, Input, Select, formatDateTime } from "@/components/ui";
 import { CATEGORY_INFO, LIFECYCLE_INFO, OBJECT_TYPES, RELATION_KIND_INFO, objectType, type Category } from "@/lib/catalog";
 import { allOwners, diagramsUsing, possibleParents, relationshipsOf, updateObject, updateRelationship } from "@/lib/model";
 import { cloudSuggestions } from "@/lib/cloudCatalog";
@@ -13,7 +15,7 @@ import { TRUTH_STATE_LABEL, confirmTruth, truthMatters, truthOf } from "@/lib/fr
 import { confirmDependency, handshakeState, ownsTarget, withdrawConfirmation } from "@/lib/handshake";
 import { AVAILABILITY_FIELD, declaredAvailability } from "@/lib/resilience";
 import { apply } from "@/lib/store";
-import { LIFECYCLES, RELATION_KINDS, type Lifecycle, type ModelObject, type Provenance, type RelationKind, type Relationship, type Workspace } from "@/lib/types";
+import { LIFECYCLES, RELATION_KINDS, type Lifecycle, type ModelLink, type ModelObject, type Provenance, type RelationKind, type Relationship, type Workspace } from "@/lib/types";
 
 const CATEGORIES = Object.keys(CATEGORY_INFO) as Category[];
 
@@ -57,6 +59,70 @@ export function ProvenanceNote({ provenance }: { provenance: Provenance }) {
         <Link to={`/ai/${provenance.proposalId}`} className="mt-1 inline-block font-medium text-blueprint hover:underline">
           Open the reviewed draft
         </Link>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Links to the real thing: the repository, the runbook, the dashboard. Only web addresses are
+ * accepted, and each opens in a new tab without telling the other site where it was opened from.
+ */
+export function LinksEditor({ links, onChange, about }: { links: ModelLink[] | undefined; onChange: (links: ModelLink[]) => void; about: string }) {
+  const [url, setUrl] = useState("");
+  const [label, setLabel] = useState("");
+  const [problem, setProblem] = useState("");
+  const current = links ?? [];
+  const add = () => {
+    const safe = safeUrl(url);
+    if (!safe) return setProblem("Enter a web address, for example https://github.com/your-team/billing.");
+    if (current.some((l) => l.url === safe)) return setProblem("That address is already linked.");
+    if (current.length >= MAX_LINKS) return setProblem(`${MAX_LINKS} links is the most one item holds.`);
+    onChange([...current, { label: label.trim(), url: safe }]);
+    setUrl("");
+    setLabel("");
+    setProblem("");
+  };
+  return (
+    <div data-links>
+      <span className="block text-[13px] font-medium text-ink-soft mb-1">Links</span>
+      {current.length === 0 && <p className="text-xs text-ink-faint mb-1.5">None yet. Point to where {about} really lives: its repository, runbook or dashboard.</p>}
+      <ul className="space-y-1 mb-1.5">
+        {current.map((link) => (
+          <li key={link.url} className="flex items-center gap-1.5">
+            <ExternalLink size={13} className="shrink-0 text-ink-faint" aria-hidden />
+            <a href={link.url} target="_blank" rel="noopener noreferrer" className="min-w-0 flex-1 truncate text-[13px] font-medium text-blueprint hover:underline" title={link.url}>
+              {linkLabel(link)}
+            </a>
+            <IconButton label={`Remove the link to ${linkLabel(link)}`} className="size-7" onClick={() => onChange(current.filter((l) => l.url !== link.url))}>
+              <Trash2 size={14} />
+            </IconButton>
+          </li>
+        ))}
+      </ul>
+      <div className="flex gap-1.5">
+        <Input
+          aria-label="Web address of the link"
+          className="min-w-0 flex-1"
+          inputMode="url"
+          placeholder="https://"
+          value={url}
+          aria-invalid={!!problem}
+          onChange={(e) => {
+            setUrl(e.target.value);
+            setProblem("");
+          }}
+          onKeyDown={(e) => e.key === "Enter" && add()}
+        />
+        <Input aria-label="Name of the link" className="w-[34%]" placeholder="Name" value={label} onChange={(e) => setLabel(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()} />
+        <Button size="sm" className="!h-9" disabled={!url.trim()} onClick={add}>
+          Add
+        </Button>
+      </div>
+      {problem && (
+        <p role="alert" className="mt-1 text-xs text-danger">
+          {problem}
+        </p>
       )}
     </div>
   );
@@ -197,6 +263,7 @@ export function ObjectEditor({ ws, object }: { ws: Workspace; object: ModelObjec
           }}
         />
       </Field>
+      <LinksEditor links={object.links} about="this object" onChange={(links) => patch({ links })} />
       <TruthLine object={object} />
       <div>
         <div className="flex items-center justify-between mb-1">
@@ -424,6 +491,7 @@ export function RelationshipEditor({ ws, relationship }: { ws: Workspace; relati
       <Field label="Description">
         <CommitInput multiline rows={2} value={relationship.description} onCommit={(description) => patch({ description })} />
       </Field>
+      <LinksEditor links={relationship.links} about="this connection" onChange={(links) => patch({ links })} />
       <Handshake ws={ws} relationship={relationship} />
     </div>
   );

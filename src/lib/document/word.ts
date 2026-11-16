@@ -85,6 +85,11 @@ export function wordDocument(outline: DocOutline, images: Record<string, DocImag
       body.push(h2("How the parts connect"));
       body.push(table(["From", "To", "Connection"], d.connections.map((c) => [c.from, c.to, c.what]), [3, 3, 4]));
     }
+    for (const flow of d.flows) {
+      body.push(h2(`Flow: ${flow.name}`));
+      body.push(...prose(flow.description));
+      body.push(table(["Step", "Between", "What happens"], flow.steps.map((s, i) => [String(i + 1), s.route, s.text]), [1, 4, 6]));
+    }
   });
 
   if (outline.inventory) {

@@ -40,6 +40,10 @@ export const provenanceSchema = z.object({
 });
 export type Provenance = z.infer<typeof provenanceSchema>;
 
+/** A pointer from the model to the real thing: the repository, the runbook, the dashboard. */
+export const linkSchema = z.object({ label: z.string(), url: z.string() });
+export type ModelLink = z.infer<typeof linkSchema>;
+
 export const modelObjectSchema = z.object({
   id: z.string(),
   typeId: z.string(),
@@ -51,6 +55,8 @@ export const modelObjectSchema = z.object({
   parentId: z.string().nullable(),
   technology: z.string(),
   fields: z.record(z.string()),
+  /** Missing when there are none, so an object without links reads back as it was sent. */
+  links: z.array(linkSchema).optional(),
   provenance: provenanceSchema,
   createdAt: z.string(),
   updatedAt: z.string(),
@@ -69,6 +75,7 @@ export const relationshipSchema = z.object({
   description: z.string(),
   /** Set when the owner of the target has confirmed that the source depends on it. */
   acknowledgement: z.object({ by: z.string(), at: z.string() }).optional(),
+  links: z.array(linkSchema).optional(),
   provenance: provenanceSchema,
   createdAt: z.string(),
   updatedAt: z.string(),
@@ -90,6 +97,24 @@ export type Notation = (typeof NOTATIONS)[number];
 export const COLOR_BY = ["type", "lifecycle", "owner"] as const;
 export type ColorBy = (typeof COLOR_BY)[number];
 
+/** One step of a flow: something passes from one box on the diagram to another, or happens inside one box. */
+export const flowStepSchema = z.object({
+  id: z.string(),
+  fromId: z.string(),
+  toId: z.string(),
+  text: z.string(),
+});
+export type FlowStep = z.infer<typeof flowStepSchema>;
+
+/** A use case told step by step over one diagram, for example "A customer pays an invoice". */
+export const flowSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  description: z.string(),
+  steps: z.array(flowStepSchema),
+});
+export type Flow = z.infer<typeof flowSchema>;
+
 /** A diagram is a view: a set of object references with positions, never a copy of the objects. */
 export const diagramSchema = z.object({
   id: z.string(),
@@ -106,6 +131,8 @@ export const diagramSchema = z.object({
   colorBy: z.enum(COLOR_BY),
   /** Missing means plain boxes and lines. */
   notation: z.enum(NOTATIONS).optional(),
+  /** Missing when the diagram has none. */
+  flows: z.array(flowSchema).optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });

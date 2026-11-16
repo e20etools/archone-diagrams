@@ -3830,6 +3830,11 @@ var provenanceSchema = objectType({
 	approvedBy: stringType().optional(),
 	approvedAt: stringType().optional()
 });
+/** A pointer from the model to the real thing: the repository, the runbook, the dashboard. */
+var linkSchema = objectType({
+	label: stringType(),
+	url: stringType()
+});
 var modelObjectSchema = objectType({
 	id: stringType(),
 	typeId: stringType(),
@@ -3841,6 +3846,8 @@ var modelObjectSchema = objectType({
 	parentId: stringType().nullable(),
 	technology: stringType(),
 	fields: recordType(stringType()),
+	/** Missing when there are none, so an object without links reads back as it was sent. */
+	links: arrayType(linkSchema).optional(),
 	provenance: provenanceSchema,
 	createdAt: stringType(),
 	updatedAt: stringType()
@@ -3860,6 +3867,7 @@ var relationshipSchema = objectType({
 		by: stringType(),
 		at: stringType()
 	}).optional(),
+	links: arrayType(linkSchema).optional(),
 	provenance: provenanceSchema,
 	createdAt: stringType(),
 	updatedAt: stringType()
@@ -3869,6 +3877,31 @@ var nodePlacementSchema = objectType({
 	y: numberType(),
 	/** True once a person has placed the node by hand; auto-layout then leaves it alone (PRD FR-09). */
 	pinned: booleanType()
+});
+/** How a diagram is drawn. The model behind it is the same in every notation. */
+var NOTATIONS = [
+	"plain",
+	"archimate",
+	"bpmn"
+];
+var COLOR_BY = [
+	"type",
+	"lifecycle",
+	"owner"
+];
+/** One step of a flow: something passes from one box on the diagram to another, or happens inside one box. */
+var flowStepSchema = objectType({
+	id: stringType(),
+	fromId: stringType(),
+	toId: stringType(),
+	text: stringType()
+});
+/** A use case told step by step over one diagram, for example "A customer pays an invoice". */
+var flowSchema = objectType({
+	id: stringType(),
+	name: stringType(),
+	description: stringType(),
+	steps: arrayType(flowStepSchema)
 });
 /** A diagram is a view: a set of object references with positions, never a copy of the objects. */
 var diagramSchema = objectType({
@@ -3883,17 +3916,11 @@ var diagramSchema = objectType({
 	hiddenRelationshipIds: arrayType(stringType()),
 	/** Null shows every relationship kind; a list restricts the view to those kinds. */
 	edgeKinds: arrayType(enumType(RELATION_KINDS)).nullable(),
-	colorBy: enumType([
-		"type",
-		"lifecycle",
-		"owner"
-	]),
+	colorBy: enumType(COLOR_BY),
 	/** Missing means plain boxes and lines. */
-	notation: enumType([
-		"plain",
-		"archimate",
-		"bpmn"
-	]).optional(),
+	notation: enumType(NOTATIONS).optional(),
+	/** Missing when the diagram has none. */
+	flows: arrayType(flowSchema).optional(),
 	createdAt: stringType(),
 	updatedAt: stringType()
 });

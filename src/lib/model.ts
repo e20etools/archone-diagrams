@@ -1,7 +1,9 @@
 import { DEFAULT_TYPE_ID, isKnownType, objectType } from "./catalog";
+import { cleanLinks } from "./links";
 import type {
   Diagram,
   Lifecycle,
+  ModelLink,
   ModelObject,
   NodePlacement,
   Provenance,
@@ -134,6 +136,13 @@ export function createObject(ws: Workspace, input: ObjectInput): { ws: Workspace
   return { ws: touch({ ...ws, objects: { ...ws.objects, [object.id]: object } }), object };
 }
 
+/** An empty list is stored as no list at all, so "no links" has one spelling. */
+function setLinks(target: { links?: ModelLink[] }, links: ModelLink[] | undefined): void {
+  const clean = cleanLinks(links ?? []);
+  if (clean.length) target.links = clean;
+  else delete target.links;
+}
+
 export type ObjectPatch = Partial<Omit<ModelObject, "id" | "createdAt" | "updatedAt" | "provenance">>;
 
 export function updateObject(ws: Workspace, id: string, patch: ObjectPatch): Workspace {
@@ -143,6 +152,7 @@ export function updateObject(ws: Workspace, id: string, patch: ObjectPatch): Wor
   if (patch.typeId !== undefined && !isKnownType(patch.typeId)) next.typeId = current.typeId;
   if (patch.tags) next.tags = cleanTags(patch.tags);
   if (patch.name !== undefined) next.name = patch.name.trim() || current.name;
+  if ("links" in patch) setLinks(next, patch.links);
 
   let objects = { ...ws.objects, [id]: next };
   // A new parent or a new type can break the level rule; repair instead of leaving an invalid tree.
@@ -180,13 +190,16 @@ export function deleteObject(ws: Workspace, id: string): Workspace {
   for (const d of Object.values(ws.diagrams)) {
     const hasNode = id in d.nodes;
     const hidden = d.hiddenRelationshipIds.filter((r) => !removedRelationships.has(r));
-    if (!hasNode && d.scopeId !== id && hidden.length === d.hiddenRelationshipIds.length) {
+    const inFlow = d.flows?.some((f) => f.steps.some((s) => s.fromId === id || s.toId === id)) ?? false;
+    if (!hasNode && !inFlow && d.scopeId !== id && hidden.length === d.hiddenRelationshipIds.length) {
       diagrams[d.id] = d;
       continue;
     }
     const nodes = { ...d.nodes };
     delete nodes[id];
-    diagrams[d.id] = { ...d, nodes, hiddenRelationshipIds: hidden, scopeId: d.scopeId === id ? null : d.scopeId };
+    // A step about a deleted object has nothing left to point at.
+    const flows = inFlow ? d.flows!.map((f) => ({ ...f, steps: f.steps.filter((s) => s.fromId !== id && s.toId !== id) })) : d.flows;
+    diagrams[d.id] = { ...d, nodes, hiddenRelationshipIds: hidden, scopeId: d.scopeId === id ? null : d.scopeId, ...(flows ? { flows } : {}) };
   }
   return touch({ ...ws, objects, relationships, diagrams });
 }
@@ -244,18 +257,18 @@ export function createRelationship(
   };
 }
 
-export type RelationshipPatch = Partial<Pick<Relationship, "kind" | "label" | "protocol" | "port" | "description">>;
+export type RelationshipPatch = Partial<Pick<Relationship, "kind" | "label" | "protocol" | "port" | "description" | "links">>;
 
 export function updateRelationship(ws: Workspace, id: string, patch: RelationshipPatch): Workspace {
   const current = ws.relationships[id];
   if (!current) return ws;
   // The target's owner confirmed the relationship as it was; a changed one has to be confirmed again.
   const { acknowledgement, ...kept } = current;
-  const changed = (Object.keys(patch) as (keyof RelationshipPatch)[]).some((key) => patch[key] !== undefined && patch[key] !== current[key]);
-  return touch({
-    ...ws,
-    relationships: { ...ws.relationships, [id]: { ...(changed ? kept : current), ...patch, updatedAt: nowIso() } },
-  });
+  // A link is a pointer to documentation, not part of what was confirmed.
+  const changed = (Object.keys(patch) as (keyof RelationshipPatch)[]).some((key) => key !== "links" && patch[key] !== undefined && patch[key] !== current[key]);
+  const next: Relationship = { ...(changed ? kept : current), ...patch, updatedAt: nowIso() };
+  if ("links" in patch) setLinks(next, patch.links);
+  return touch({ ...ws, relationships: { ...ws.relationships, [id]: next } });
 }
 
 export function deleteRelationship(ws: Workspace, id: string): Workspace {

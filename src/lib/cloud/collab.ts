@@ -130,6 +130,7 @@ const OBJECT_FIELDS: [keyof ModelObject, string][] = [
   ["tags", "Tags"],
   ["parentId", "Inside"],
   ["fields", "Details"],
+  ["links", "Links"],
 ];
 const RELATIONSHIP_FIELDS: [keyof Relationship, string][] = [
   ["sourceId", "From"],
@@ -139,6 +140,7 @@ const RELATIONSHIP_FIELDS: [keyof Relationship, string][] = [
   ["protocol", "Protocol"],
   ["port", "Port"],
   ["description", "Description"],
+  ["links", "Links"],
 ];
 const DIAGRAM_FIELDS: [keyof DiagramMeta, string][] = [
   ["name", "Name"],
@@ -150,11 +152,21 @@ const DIAGRAM_FIELDS: [keyof DiagramMeta, string][] = [
   ["notation", "Notation"],
   ["hiddenRelationshipIds", "Hidden arrows"],
   ["edgeKinds", "Arrow kinds shown"],
+  ["flows", "Flows"],
 ];
+
+/** A link reads as its label and address, a flow as its name and length; anything else as itself. */
+const showItem = (item: unknown): string => {
+  if (!item || typeof item !== "object") return String(item);
+  const o = item as Record<string, unknown>;
+  if (typeof o.url === "string") return o.label ? `${String(o.label)} (${o.url})` : o.url;
+  if (Array.isArray(o.steps)) return `${String(o.name || "Unnamed flow")} (${o.steps.length} ${o.steps.length === 1 ? "step" : "steps"}: ${o.steps.map((s) => String((s as Record<string, unknown>).text ?? "")).join(" / ")})`;
+  return JSON.stringify(item);
+};
 
 const show = (value: unknown): string => {
   if (value === null || value === undefined || value === "") return "nothing";
-  if (Array.isArray(value)) return value.length ? value.join(", ") : "nothing";
+  if (Array.isArray(value)) return value.length ? value.map(showItem).join(", ") : "nothing";
   if (typeof value === "object") {
     const entries = Object.entries(value as Record<string, unknown>).filter(([, v]) => v !== "");
     return entries.length ? entries.map(([k, v]) => `${k}: ${String(v)}`).join(", ") : "nothing";

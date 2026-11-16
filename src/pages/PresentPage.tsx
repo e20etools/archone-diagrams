@@ -2,10 +2,14 @@ import { ArrowLeft, ArrowRight, Maximize2, Minimize2, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { DiagramCanvas, type CanvasHandle } from "@/components/canvas/DiagramCanvas";
+import { FlowBar, NO_FLOW, useFlowCursor, useFlowKeys } from "@/components/Flows";
 import { Button, EmptyState, IconButton } from "@/components/ui";
+import type { Diagram } from "@/lib/types";
 import { VIEW_TYPE_INFO } from "@/lib/catalog";
 import { sortedDiagrams } from "@/lib/model";
 import { useWorkspace } from "@/lib/store";
+
+const NOTHING: Diagram = { id: "", name: "", description: "", viewType: "custom" as const, scopeId: null, direction: "TB" as const, nodes: {}, hiddenRelationshipIds: [], edgeKinds: null, colorBy: "type" as const, createdAt: "", updatedAt: "" };
 
 /**
  * A diagram on its own, for a meeting room or a shared screen: nothing can be changed, the
@@ -18,6 +22,10 @@ export function PresentPage() {
   const diagrams = sortedDiagrams(ws);
   const index = diagrams.findIndex((d) => d.id === id);
   const diagram = diagrams[index];
+  // Hooks run before the "no such diagram" exit below, so they are given an empty diagram to hold.
+  const flows = useFlowCursor(ws, diagram ?? NOTHING);
+  // While a flow is open the arrow keys walk its steps; with none open they move between diagrams.
+  useFlowKeys(!!flows.flow, flows.move, () => flows.setCursor(NO_FLOW));
   const canvas = useRef<CanvasHandle>(null);
   const frame = useRef<HTMLDivElement>(null);
   const [full, setFull] = useState(false);
@@ -130,8 +138,9 @@ export function PresentPage() {
           </IconButton>
         </div>
       </header>
-      <div className="min-h-0 flex-1">
-        <DiagramCanvas ws={ws} diagram={diagram} readOnly canvasRef={canvas} onOpen={inside} />
+      <div className="relative min-h-0 flex-1">
+        <DiagramCanvas ws={ws} diagram={diagram} readOnly canvasRef={canvas} onOpen={inside} spotlight={flows.spotlight} />
+        <FlowBar ws={ws} diagram={diagram} cursor={flows.cursor} onCursor={flows.setCursor} />
       </div>
     </div>
   );

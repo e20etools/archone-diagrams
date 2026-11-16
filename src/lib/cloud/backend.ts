@@ -89,7 +89,17 @@ export interface LiveLink {
   diagramId: string;
   createdBy: string | null;
   createdAt: string;
+  /** The link asks for a password before it shows anything. The password itself is never read back. */
+  protected: boolean;
+  /** When the link stops working by itself, or null for never. */
+  expiresAt: string | null;
 }
+/** What may be asked of a new live link. Both are optional. */
+export interface LiveLinkOptions {
+  password?: string;
+  expiresAt?: string | null;
+}
+export const LIVE_LINK_MIN_PASSWORD = 8;
 
 export type BackendErrorCode = "credentials" | "forbidden" | "network" | "invalid" | "unknown";
 export class BackendError extends Error {
@@ -173,7 +183,7 @@ export interface Backend {
   testWebhook(workspaceId: string, webhookId: string): Promise<void>;
 
   listLiveLinks(workspaceId: string, diagramId: string): Promise<LiveLink[]>;
-  createLiveLink(workspaceId: string, diagramId: string): Promise<void>;
+  createLiveLink(workspaceId: string, diagramId: string, options?: LiveLinkOptions): Promise<void>;
   revokeLiveLink(workspaceId: string, linkId: string): Promise<void>;
 
   /** Limits an editor to the given domains, or lifts the limit with null. Owners only. */

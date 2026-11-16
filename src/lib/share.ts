@@ -43,7 +43,9 @@ const PBKDF2_ROUNDS = 150_000;
 
 /** Viewers get what the diagram shows, not the prompts or files an item was drafted from. */
 function publicObject(o: ModelObject): ModelObject {
-  return { ...o, provenance: { origin: o.provenance.origin } };
+  // Links often point at internal tools, so they stay with people who are signed in.
+  const { links: _links, ...shown } = o;
+  return { ...shown, provenance: { origin: o.provenance.origin } };
 }
 
 /**
@@ -53,7 +55,10 @@ function publicObject(o: ModelObject): ModelObject {
 function sharedRelationships(ws: Workspace, diagram: Diagram): Relationship[] {
   return visibleEdges(ws, diagram).map((edge) => {
     const stored = edge.implied ? undefined : ws.relationships[edge.id];
-    if (stored) return { ...stored, provenance: { origin: stored.provenance.origin } };
+    if (stored) {
+      const { links: _links, ...shown } = stored;
+      return { ...shown, provenance: { origin: stored.provenance.origin } };
+    }
     return {
       id: edge.id,
       sourceId: edge.sourceId,

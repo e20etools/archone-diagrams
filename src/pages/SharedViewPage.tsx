@@ -1,6 +1,7 @@
 import { X } from "lucide-react";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { DiagramCanvas, type CanvasSelection } from "@/components/canvas/DiagramCanvas";
+import { FlowBar, NO_FLOW, useFlowCursor, useFlowKeys } from "@/components/Flows";
 import { TypeIcon } from "@/components/icons";
 import { Badge, Button, Field, IconButton, Input, formatDate } from "@/components/ui";
 import { LIFECYCLE_INFO, RELATION_KIND_INFO, VIEW_TYPE_INFO, objectType } from "@/lib/catalog";
@@ -98,6 +99,8 @@ export function SharedViewPage() {
 /** A diagram to look at, with the details of whichever box is selected. Used by snapshot links and live links. */
 export function DiagramViewer({ ws, diagram, subtitle, note, badge = "View only" }: { ws: Workspace; diagram: Diagram; subtitle: string; note: string; badge?: string }) {
   const [selection, setSelection] = useState<CanvasSelection>({ objectId: null, edgeId: null });
+  const flows = useFlowCursor(ws, diagram);
+  useFlowKeys(!!flows.flow, flows.move, () => flows.setCursor(NO_FLOW));
   const object = selection.objectId ? ws.objects[selection.objectId] : undefined;
   // Only what the diagram draws: a live link also carries bare ids of nested objects, which have no name to show.
   const drawn = (id: string) => id in diagram.nodes;
@@ -116,8 +119,9 @@ export function DiagramViewer({ ws, diagram, subtitle, note, badge = "View only"
         </div>
       </header>
       <div className="min-h-0 flex-1 flex">
-        <div className="min-w-0 flex-1">
-          <DiagramCanvas ws={ws} diagram={diagram} readOnly minimap selection={selection} onSelect={setSelection} />
+        <div className="relative min-w-0 flex-1">
+          <DiagramCanvas ws={ws} diagram={diagram} readOnly minimap selection={selection} onSelect={setSelection} spotlight={flows.spotlight} />
+          <FlowBar ws={ws} diagram={diagram} cursor={flows.cursor} onCursor={flows.setCursor} />
         </div>
         {object && links && (
           <aside className="w-[320px] shrink-0 overflow-y-auto bg-surface border-l border-line" aria-label="Object details">

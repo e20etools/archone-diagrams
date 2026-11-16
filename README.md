@@ -794,6 +794,60 @@ of how they connect.
   and not on a schedule, and licence values are not read. It has been run against a
   stand-in for APM's feeds built from APM's own code, not against the live APM.
 
+### Flows: a use case, step by step
+
+A diagram shows what exists. A flow tells what happens: one use case, in order, over the
+boxes of one diagram ("A customer pays an invoice").
+
+- **Write one:** open a diagram, press Flows, start a flow, then click the arrows in the
+  order things happen. Each click adds a step from the arrow's start to its end. A step can
+  also be added from two lists: against the arrow for an answer, or the same box twice for
+  something that happens inside it. Steps take a sentence each and can be reordered.
+- **Walk through it:** choosing a step brings its two boxes and its arrow forward and dims
+  the rest. The left and right arrow keys move between steps; Escape stops.
+- **Where it shows:** in the editor, while presenting (an open flow takes the arrow keys;
+  with none open they move between diagrams), in a snapshot link, in a live link, and in the
+  Word document, as a table of steps under its diagram. Not on the public trust page.
+- **What it is:** a flow belongs to its diagram and points at its boxes. It changes nothing
+  in the model, travels with the diagram into versions and scenarios, and shows up as a
+  change when two versions are compared. A step whose box was taken off the diagram says
+  so; deleting an object removes the steps about it.
+- Up to 30 flows on a diagram and 60 steps in a flow.
+
+Not done: flows in the slides export, flows through the REST API and the MCP server, and a
+flow that crosses from one diagram into another.
+
+### Links to the real thing
+
+An object or a connection can link to where it really lives: the repository, the runbook,
+the dashboard, the API contract. Add them under Links in its details.
+
+- Only web addresses are accepted (`https://`, `http://`). `javascript:`, `data:` and
+  `file:` are refused, and so is an address with a password in it. A link opens in a new
+  tab, and the other site is not told which page it was opened from.
+- Up to 20 links on one item. They are kept in versions and scenarios, appear in the audit
+  log, and show as a change when two versions are compared.
+- **They stay with people who are signed in.** A live link, a snapshot link and the public
+  trust page leave them out, because such addresses often point at internal tools.
+
+Not done: links in the spreadsheet import and export, in the REST API and in the MCP
+server.
+
+### A password and a last day for live links (hosted mode)
+
+A live link can ask for a password, and can stop working after 1, 7, 30 or 90 days.
+
+- The password is at least 8 characters. It is stored as a salted hash in a table the app
+  cannot read, and never written to the audit log. It cannot be read back or changed: to
+  change it, switch the link off and create a new one.
+- A visitor types it on the link's page. It is sent in the body of the request, never in
+  the address, and kept only as long as that page is open.
+- After five wrong passwords the link shuts for fifteen minutes, also for the right one.
+- A link past its last day says so, and shows nothing.
+
+Snapshot links already had a password of their own (the diagram inside the link is
+encrypted). SSO on links needs the paid sign-on features and is not done.
+
 ### Large models
 
 Measured on the build machine with a generated model (domains of systems of services and
@@ -832,10 +886,10 @@ build does not reload.
 ## Check it
 
 ```bash
-npm test                   # 353 tests: model, decisions, arranging, health, CALM, scenario merging, the trust page, the document, your own rules, large models, templates, the pull-request gate, the APM import, AI, questions, checks, MCP, import readers, sync engine, comparison, and the database rules and the API on a real Postgres
+npm test                   # 376 tests: model, flows, links, protected live links, decisions, arranging, health, CALM, scenario merging, the trust page, the document, your own rules, large models, templates, the pull-request gate, the APM import, AI, questions, checks, MCP, import readers, sync engine, comparison, and the database rules and the API on a real Postgres
 npm run build              # type-check and production build into dist/
-npm run test:browser       # 132 end-to-end checks of browser-only mode (run after a build)
-npm run test:browser:cloud # 85 end-to-end checks of hosted mode with several people
+npm run test:browser       # 145 end-to-end checks of browser-only mode (run after a build)
+npm run test:browser:cloud # 87 end-to-end checks of hosted mode with several people
 ```
 
 `test:browser` serves the production build, including `api/ai.js`, and walks through the

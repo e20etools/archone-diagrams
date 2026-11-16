@@ -13,6 +13,12 @@ export type LiveView =
   | { status: "ok"; source: "working" | "published"; ws: Workspace; diagramId: string; at: string }
   /** Switched off, mistyped, or its diagram was deleted. */
   | { status: "gone" }
+  /** Its last day has passed. */
+  | { status: "expired" }
+  /** It asks for a password; `wrong` when one was given and did not open it. */
+  | { status: "locked"; wrong: boolean }
+  /** Too many wrong passwords; shut for this many minutes. */
+  | { status: "throttled"; minutes: number }
   /** Review is on and this diagram has not been approved yet. */
   | { status: "unpublished" }
   | { status: "unreachable" };
@@ -22,13 +28,36 @@ function toView(tables: Tables, diagramId: string, source: "working" | "publishe
   return ws.diagrams[diagramId] ? { status: "ok", source, ws, diagramId, at } : { status: "gone" };
 }
 
-export async function fetchLiveView(token: string): Promise<LiveView> {
+/** A live link shows the picture and its details, not the links to repositories and dashboards behind it. */
+function withoutLinks(tables: Tables): Tables {
+  const strip = <T extends { links?: unknown }>(rows: Record<string, T>) => Object.fromEntries(Object.entries(rows).map(([key, { links: _links, ...rest }]) => [key, rest as T]));
+  return { ...tables, objects: strip(tables.objects), relationships: strip(tables.relationships) };
+}
+
+type DemoLink = { token: string; workspaceId: string; diagramId: string; protected?: boolean; expiresAt?: string | null; password?: string; failed?: number; lockedUntil?: string };
+
+export async function fetchLiveView(token: string, password = ""): Promise<LiveView> {
   if (demoBackend) {
     try {
-      const db = JSON.parse(localStorage.getItem(DEMO_DB_KEY) ?? "{}") as { liveLinks?: { token: string; workspaceId: string; diagramId: string }[]; rows?: Record<string, Tables> };
+      const db = JSON.parse(localStorage.getItem(DEMO_DB_KEY) ?? "{}") as { liveLinks?: DemoLink[]; rows?: Record<string, Tables> };
       const link = db.liveLinks?.find((l) => l.token === token);
       const tables = link && db.rows?.[link.workspaceId];
-      return link && tables ? toView({ ...tables, proposals: {} }, link.diagramId, "working", new Date().toISOString()) : { status: "gone" };
+      if (!link || !tables) return { status: "gone" };
+      if (link.expiresAt && new Date(link.expiresAt).getTime() <= Date.now()) return { status: "expired" };
+      if (link.protected) {
+        const lockedFor = link.lockedUntil ? new Date(link.lockedUntil).getTime() - Date.now() : 0;
+        if (lockedFor > 0) return { status: "throttled", minutes: Math.max(1, Math.ceil(lockedFor / 60_000)) };
+        if (!password) return { status: "locked", wrong: false };
+        if (password !== link.password) {
+          // The same five guesses as the real database, kept in the stand-in server.
+          const failed = (link.failed ?? 0) + 1;
+          link.failed = failed >= 5 ? 0 : failed;
+          link.lockedUntil = failed >= 5 ? new Date(Date.now() + 15 * 60_000).toISOString() : undefined;
+          localStorage.setItem(DEMO_DB_KEY, JSON.stringify(db));
+          return { status: "locked", wrong: true };
+        }
+      }
+      return toView(withoutLinks({ ...tables, proposals: {} }), link.diagramId, "working", new Date().toISOString());
     } catch {
       return { status: "unreachable" };
     }
@@ -37,11 +66,14 @@ export async function fetchLiveView(token: string): Promise<LiveView> {
     const response = await fetch(`${supabaseUrl.replace(/\/$/, "")}/rest/v1/rpc/embed_view`, {
       method: "POST",
       headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ p_token: token }),
+      // The password goes in the body of the request, never in the address.
+      body: JSON.stringify(password ? { p_token: token, p_password: password } : { p_token: token }),
     });
     if (!response.ok) return { status: "unreachable" };
-    const reply = (await response.json()) as { status?: string; source?: string; diagram?: { id?: string }; nodes?: unknown; objects?: unknown; relationships?: unknown; at?: string };
-    if (reply.status === "gone" || reply.status === "unpublished") return { status: reply.status };
+    const reply = (await response.json()) as { status?: string; wrong?: boolean; minutes?: number; source?: string; diagram?: { id?: string }; nodes?: unknown; objects?: unknown; relationships?: unknown; at?: string };
+    if (reply.status === "gone" || reply.status === "unpublished" || reply.status === "expired") return { status: reply.status };
+    if (reply.status === "locked") return { status: "locked", wrong: reply.wrong === true };
+    if (reply.status === "throttled") return { status: "throttled", minutes: Number(reply.minutes) || 15 };
     if (reply.status !== "ok" || !reply.diagram?.id) return { status: "unreachable" };
     const tables = snapshotToTables({ objects: reply.objects, relationships: reply.relationships, diagrams: [reply.diagram], nodes: reply.nodes });
     return toView(tables, reply.diagram.id, reply.source === "published" ? "published" : "working", reply.at ?? new Date().toISOString());

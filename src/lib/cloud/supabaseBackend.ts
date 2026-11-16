@@ -512,12 +512,18 @@ export function createSupabaseBackend(url: string, key: string): Backend {
     },
 
     async listLiveLinks(workspaceId, diagramId) {
-      const { data, error } = await supabase.from("embeds").select("id, token, diagram_id, created_by, created_at").eq("workspace_id", workspaceId).eq("diagram_id", diagramId).is("revoked_at", null).order("created_at");
+      const { data, error } = await supabase.from("embeds").select("id, token, diagram_id, created_by, created_at, protected, expires_at").eq("workspace_id", workspaceId).eq("diagram_id", diagramId).is("revoked_at", null).order("created_at");
       if (error) fail(error, "The live links could not be listed.");
-      return ((data ?? []) as Row[]).map((r): LiveLink => ({ id: String(r.id), token: String(r.token), diagramId: String(r.diagram_id), createdBy: typeof r.created_by === "string" ? r.created_by : null, createdAt: stamp(r.created_at) }));
+      return ((data ?? []) as Row[]).map((r): LiveLink => ({ id: String(r.id), token: String(r.token), diagramId: String(r.diagram_id), createdBy: typeof r.created_by === "string" ? r.created_by : null, createdAt: stamp(r.created_at), protected: r.protected === true, expiresAt: r.expires_at ? stamp(r.expires_at) : null }));
     },
-    async createLiveLink(workspaceId, diagramId) {
-      const { error } = await supabase.rpc("create_embed", { p_workspace: workspaceId, p_diagram: diagramId });
+    async createLiveLink(workspaceId, diagramId, options) {
+      const { error } = await supabase.rpc("create_embed", {
+        p_workspace: workspaceId,
+        p_diagram: diagramId,
+        // Sent only when asked for, so a database that has not had the migration yet still creates open links.
+        ...(options?.password ? { p_password: options.password } : {}),
+        ...(options?.expiresAt ? { p_expires_at: options.expiresAt } : {}),
+      });
       if (error) fail(error, "The live link could not be created.");
     },
     async revokeLiveLink(_workspaceId, linkId) {
