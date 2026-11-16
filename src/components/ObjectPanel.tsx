@@ -102,10 +102,11 @@ export function LinksEditor({ links, onChange, about }: { links: ModelLink[] | u
           </li>
         ))}
       </ul>
-      <div className="flex gap-1.5">
+      {/* The address gets a line of its own: in a narrow panel it is the part that needs the room. */}
+      <div className="grid grid-cols-[1fr_auto] gap-1.5">
         <Input
           aria-label="Web address of the link"
-          className="min-w-0 flex-1"
+          className="col-span-2"
           inputMode="url"
           placeholder="https://"
           value={url}
@@ -116,7 +117,7 @@ export function LinksEditor({ links, onChange, about }: { links: ModelLink[] | u
           }}
           onKeyDown={(e) => e.key === "Enter" && add()}
         />
-        <Input aria-label="Name of the link" className="w-[34%]" placeholder="Name" value={label} onChange={(e) => setLabel(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()} />
+        <Input aria-label="Name of the link" className="min-w-0" placeholder="Name (optional)" value={label} onChange={(e) => setLabel(e.target.value)} onKeyDown={(e) => e.key === "Enter" && add()} />
         <Button size="sm" className="!h-9" disabled={!url.trim()} onClick={add}>
           Add
         </Button>
