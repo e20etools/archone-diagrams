@@ -98,11 +98,12 @@ export const LIFECYCLE_INFO: Record<Lifecycle, { label: string; color: string }>
 };
 
 export const VIEW_TYPE_INFO: Record<ViewType, { label: string; hint: string }> = {
-  landscape: { label: "Landscape", hint: "Domains, systems and the people who use them" },
-  context: { label: "Context", hint: "One system and everything it talks to" },
-  container: { label: "Inside a system", hint: "The applications and data stores inside one object" },
-  deployment: { label: "Deployment", hint: "Infrastructure and what is hosted on it" },
-  dataflow: { label: "Data flow", hint: "Data stores and the applications that read or write them" },
+  landscape: { label: "C4 System landscape", hint: "Every system and the people who use them" },
+  context: { label: "C4 Level 1: System context", hint: "One system and everything it talks to" },
+  container: { label: "C4 Level 2: Containers", hint: "The applications and data stores inside one system" },
+  deployment: { label: "Infrastructure", hint: "Servers, clusters, networks and what is hosted on them" },
+  dataflow: { label: "Data", hint: "Data stores and the applications that read or write them" },
+  business: { label: "Business", hint: "Domains, processes, their steps and the people who take part" },
   custom: { label: "Custom", hint: "Any objects you choose" },
 };
 

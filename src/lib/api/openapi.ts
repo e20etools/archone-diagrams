@@ -56,7 +56,7 @@ export function openApiDocument(server: string) {
   const diagramInput = {
     name: text,
     description: text,
-    viewType: { ...text, enum: ["landscape", "context", "container", "deployment", "dataflow", "custom"], default: "custom", description: "Set when the diagram is created; it cannot be changed afterwards." },
+    viewType: { ...text, enum: ["landscape", "context", "container", "deployment", "dataflow", "business", "custom"], default: "custom", description: "Set when the diagram is created; it cannot be changed afterwards." },
     direction: { ...text, enum: ["TB", "LR"] },
     nodes: { type: "array", items: node, description: "Boxes to place or move." },
     removeNodes: { type: "array", items: text, description: "Object ids to take off the diagram. Only on PATCH." },

@@ -1,3 +1,4 @@
+import { CATEGORIES, categoryRank, categoryRefusal, hiddenCategories, viewCategory, type CategoryRoles } from "../categories";
 import { nextAdrNumber, reviewAdr } from "../adr";
 import { scopeRefusal } from "./scope";
 import type { TrustPage } from "../trust";
@@ -6,7 +7,7 @@ import { AUDIT_PAGE_SIZE, matchesQuery, type AuditEntry } from "./audit";
 import { BackendError, LIVE_LINK_MIN_PASSWORD, canCommentRole, canEditRole, type ApiKeyInfo, type Backend, type LiveLink, type WebhookInfo, type CloudUser, type LiveHandlers, type Peer, type Role } from "./backend";
 import type { Comment, Review, ReviewSettings, VersionInfo } from "./collab";
 import { DEMO_DB_KEY } from "./config";
-import { emptyTables, patchTables, sameValue, splitNodeKey, type ChangeSet, type Tables } from "./tables";
+import { emptyTables, fromTables, patchTables, sameValue, splitNodeKey, type ChangeSet, type Tables } from "./tables";
 
 /**
  * A stand-in for the hosted backend that lives entirely in this browser. Accounts and
@@ -20,7 +21,7 @@ import { emptyTables, patchTables, sameValue, splitNodeKey, type ChangeSet, type
 interface Db {
   users: Record<string, { id: string; email: string; name: string; password: string }>;
   workspaces: Record<string, { id: string; name: string; scenarioOf?: string; scenarioNote?: string; createdAt?: string }>;
-  members: { workspaceId: string; userId: string; role: Role; domains?: string[] | null }[];
+  members: { workspaceId: string; userId: string; role: Role; domains?: string[] | null; categoryRoles?: CategoryRoles }[];
   invites: { id: string; workspaceId: string; email: string; role: Role; by: string }[];
   rows: Record<string, Tables>;
   comments?: Record<string, Comment[]>;
@@ -91,6 +92,24 @@ export function createDemoBackend(): Backend {
     const after = patchTables(before, change);
     const asWorkspace = (t: Tables) => ({ objects: t.objects, relationships: t.relationships }) as Workspace;
     if (scopeRefusal(asWorkspace(before), asWorkspace(after), domains)) throw new BackendError("forbidden", "You can only change what is inside the domains you were given.");
+  };
+  /** The database refuses a change outside the categories a member edits; so does this stand-in. */
+  const refuseOutsideCategories = (db: Db, workspaceId: string, change: ChangeSet) => {
+    const member = db.members.find((m) => m.workspaceId === workspaceId && m.userId === me().id);
+    if (!member) return;
+    const before = db.rows[workspaceId] ?? emptyTables();
+    const refusal = categoryRefusal(fromTables(before), fromTables(patchTables(before, change)), member.role, member.categoryRoles);
+    if (refusal) throw new BackendError("forbidden", refusal);
+  };
+  /** What the database lets a member read: diagrams, their boxes and templates of the categories they may see. */
+  const visibleRows = (db: Db, workspaceId: string, rows: Tables): Tables => {
+    const member = db.members.find((m) => m.workspaceId === workspaceId && m.userId === me().id);
+    const hidden = new Set<string>(hiddenCategories(member?.role ?? null, member?.categoryRoles));
+    if (!hidden.size) return rows;
+    const diagrams = Object.fromEntries(Object.entries(rows.diagrams).filter(([, d]) => !hidden.has(viewCategory(d.viewType))));
+    const nodes = Object.fromEntries(Object.entries(rows.nodes).filter(([key]) => diagrams[splitNodeKey(key)[0]]));
+    const templates = Object.fromEntries(Object.entries(rows.templates ?? {}).filter(([, t]) => !hidden.has(t.perspective)));
+    return { ...rows, diagrams, nodes, templates };
   };
   /** What the database's triggers would record for a set of row changes. */
   const logChanges = (db: Db, workspaceId: string, before: Tables, change: ChangeSet) => {
@@ -244,7 +263,7 @@ export function createDemoBackend(): Backend {
       const user = me();
       return db.members
         .filter((m) => m.userId === user.id && db.workspaces[m.workspaceId])
-        .map((m) => ({ id: m.workspaceId, name: db.workspaces[m.workspaceId].name, role: m.role, scenarioOf: db.workspaces[m.workspaceId].scenarioOf ?? null, scenarioNote: db.workspaces[m.workspaceId].scenarioNote ?? "", createdAt: db.workspaces[m.workspaceId].createdAt ?? null, domains: m.role === "editor" && m.domains?.length ? m.domains : null }))
+        .map((m) => ({ id: m.workspaceId, name: db.workspaces[m.workspaceId].name, role: m.role, scenarioOf: db.workspaces[m.workspaceId].scenarioOf ?? null, scenarioNote: db.workspaces[m.workspaceId].scenarioNote ?? "", createdAt: db.workspaces[m.workspaceId].createdAt ?? null, domains: m.role === "editor" && m.domains?.length ? m.domains : null, categoryRoles: m.role === "owner" ? {} : (m.categoryRoles ?? {}) }))
         .sort((a, b) => a.name.localeCompare(b.name));
     },
     async createWorkspace(name) {
@@ -321,7 +340,7 @@ export function createDemoBackend(): Backend {
           .filter((m) => m.workspaceId === workspaceId)
           .map((m) => {
             const user = Object.values(db.users).find((u) => u.id === m.userId);
-            return { userId: m.userId, email: user?.email ?? "", name: user?.name ?? "", role: m.role, domains: m.role === "editor" && m.domains?.length ? m.domains : null };
+            return { userId: m.userId, email: user?.email ?? "", name: user?.name ?? "", role: m.role, domains: m.role === "editor" && m.domains?.length ? m.domains : null, categoryRoles: m.role === "owner" ? {} : (m.categoryRoles ?? {}) };
           }),
         invites: owner ? db.invites.filter((i) => i.workspaceId === workspaceId).map((i) => ({ id: i.id, email: i.email, role: i.role })) : [],
       };
@@ -376,7 +395,7 @@ export function createDemoBackend(): Backend {
       await pause();
       const db = read();
       requireRole(db, workspaceId, (r) => r !== null);
-      return readsModel(db, workspaceId, me().id) ? (db.rows[workspaceId] ?? emptyTables()) : emptyTables();
+      return readsModel(db, workspaceId, me().id) ? visibleRows(db, workspaceId, db.rows[workspaceId] ?? emptyTables()) : emptyTables();
     },
     async push(workspaceId, change) {
       await pause();
@@ -384,6 +403,7 @@ export function createDemoBackend(): Backend {
       const db = read();
       requireRole(db, workspaceId, canEditRole);
       refuseOutsideDomains(db, workspaceId, change);
+      refuseOutsideCategories(db, workspaceId, change);
       if (Object.keys(change.rules ?? {}).length && roleOf(db, workspaceId, me().id) !== "owner") throw new BackendError("forbidden", "Only an owner can change the workspace's rules.");
       logChanges(db, workspaceId, db.rows[workspaceId] ?? emptyTables(), change);
       db.rows[workspaceId] = patchTables(db.rows[workspaceId] ?? emptyTables(), change);
@@ -467,7 +487,7 @@ export function createDemoBackend(): Backend {
       const db = read();
       const version = versionsOf(db, workspaceId).find((v) => v.id === versionId);
       if (!version || !versionVisible(db, workspaceId, versionId)) throw new BackendError("forbidden", "That version no longer exists, or you may not open it.");
-      return version.tables;
+      return visibleRows(db, workspaceId, version.tables);
     },
     async deleteVersion(workspaceId, versionId) {
       const db = read();
@@ -642,6 +662,20 @@ export function createDemoBackend(): Backend {
       await pause();
     },
 
+    async setMemberCategoryRoles(workspaceId, userId, roles) {
+      const db = read();
+      requireRole(db, workspaceId, (r) => r === "owner");
+      const member = db.members.find((m) => m.workspaceId === workspaceId && m.userId === userId);
+      if (!member) throw new BackendError("invalid", "That person is not a member of this workspace.");
+      if (member.role === "owner") throw new BackendError("invalid", "An owner has every category. Change the role first.");
+      // A role at or above the workspace role changes nothing, so it is not kept.
+      const kept = Object.fromEntries(Object.entries(roles).filter(([c, r]) => CATEGORIES.includes(c as never) && r && categoryRank(member.role, { [c]: r }, c) < categoryRank(member.role, {}, c))) as CategoryRoles;
+      const person = Object.values(db.users).find((u) => u.id === userId);
+      log(db, workspaceId, "member", userId, person?.name || person?.email || "", "category roles changed", { categories: [member.categoryRoles ?? {}, kept] });
+      member.categoryRoles = kept;
+      write(db);
+      bus.postMessage({ type: "members" } satisfies Message);
+    },
     async setMemberDomains(workspaceId, userId, domains) {
       const db = read();
       requireRole(db, workspaceId, (r) => r === "owner");

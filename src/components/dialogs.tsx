@@ -9,6 +9,8 @@ import { AiError, draftFromImage, draftFromPrompt, fetchAiStatus, getAccessCode,
 import { draftToProposal, saveProposal } from "@/lib/ai/proposals";
 import { VIEW_TYPE_INFO, objectType } from "@/lib/catalog";
 import { cloudEnabled } from "@/lib/cloud/config";
+import { useCategoryRank } from "@/lib/cloud/session";
+import { CATEGORIES as AREAS, CATEGORY_INFO as AREA_INFO, VIEWS_BY_CATEGORY, viewCategory } from "@/lib/categories";
 import {
   diagramJson,
   diagramObjects,
@@ -26,19 +28,25 @@ import { exportPdf, exportPng, exportSvg, stampFor } from "@/lib/exportImage";
 import { sortedObjects } from "@/lib/model";
 import { buildSharePayload, encodeShare, shareUrl } from "@/lib/share";
 import { addView, apply } from "@/lib/store";
-import { VIEW_TYPES, type Diagram, type ViewType, type Workspace } from "@/lib/types";
+import { type Diagram, type ViewType, type Workspace } from "@/lib/types";
 
 /* ---------- new diagram ---------- */
 
 export function NewDiagramDialog({ ws, onClose }: { ws: Workspace; onClose: () => void }) {
   const navigate = useNavigate();
   const [name, setName] = useState("");
-  const [viewType, setViewType] = useState<ViewType>(Object.keys(ws.objects).length ? "landscape" : "custom");
+  const rankIn = useCategoryRank();
+  // The first kind the person may create, preferring a system landscape when the model has objects.
+  const [viewType, setViewType] = useState<ViewType>(() => {
+    const offered = AREAS.filter((a) => rankIn(a) >= 3).flatMap((a) => VIEWS_BY_CATEGORY[a]);
+    const preferred: ViewType = Object.keys(ws.objects).length ? "landscape" : "custom";
+    return offered.includes(preferred) ? preferred : (offered[0] ?? preferred);
+  });
   const [scopeId, setScopeId] = useState("");
   const [direction, setDirection] = useState<"TB" | "LR">("TB");
   const needsScope = viewType === "context" || viewType === "container";
   const scopes = sortedObjects(ws).filter((o) => objectType(o.typeId).level <= 3);
-  const ready = !needsScope || !!scopeId;
+  const ready = (!needsScope || !!scopeId) && rankIn(viewCategory(viewType)) >= 3;
   const create = () => {
     const fallback = needsScope && scopeId ? `${VIEW_TYPE_INFO[viewType].label}: ${ws.objects[scopeId].name}` : VIEW_TYPE_INFO[viewType].label;
     const diagram = addView({ name: name.trim() || fallback, viewType, scopeId: needsScope ? scopeId : null, direction });
@@ -48,6 +56,7 @@ export function NewDiagramDialog({ ws, onClose }: { ws: Workspace; onClose: () =
   return (
     <Modal
       title="New diagram"
+      width={640}
       onClose={onClose}
       footer={
         <>
@@ -60,26 +69,40 @@ export function NewDiagramDialog({ ws, onClose }: { ws: Workspace; onClose: () =
     >
       <div className="space-y-4">
         <Field label="Name">
-          <Input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="For example: Payments landscape" onKeyDown={(e) => e.key === "Enter" && ready && create()} />
+          <Input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="For example: Payments system context" onKeyDown={(e) => e.key === "Enter" && ready && create()} />
         </Field>
         <fieldset>
           <legend className="text-[13px] font-medium text-ink-soft mb-1.5">What it shows</legend>
-          <div className="grid gap-1.5">
-            {VIEW_TYPES.map((type) => (
-              <label
-                key={type}
-                className={cx(
-                  "flex items-start gap-2.5 rounded-md border px-3 py-2 cursor-pointer",
-                  viewType === type ? "border-blueprint bg-blueprint-soft" : "border-line hover:border-ink-faint",
-                )}
-              >
-                <input type="radio" name="view-type" className="mt-1 accent-blueprint" checked={viewType === type} onChange={() => setViewType(type)} />
-                <span>
-                  <span className="block font-medium">{VIEW_TYPE_INFO[type].label}</span>
-                  <span className="block text-[13px] text-ink-soft">{VIEW_TYPE_INFO[type].hint}</span>
-                </span>
-              </label>
-            ))}
+          <div className="space-y-2.5">
+            {AREAS.map((area) => {
+              const allowed = rankIn(area) >= 3;
+              return (
+                <div key={area} data-view-category={area}>
+                  <p className="text-xs font-semibold text-ink-soft mb-1">
+                    {AREA_INFO[area].label}
+                    {!allowed && <span className="ml-1.5 font-normal text-ink-faint">{rankIn(area) === 0 ? "no access" : "view only"}</span>}
+                  </p>
+                  <div className={cx("grid gap-1.5", VIEWS_BY_CATEGORY[area].length > 1 && "sm:grid-cols-3")}>
+                    {VIEWS_BY_CATEGORY[area].map((type) => (
+                      <label
+                        key={type}
+                        className={cx(
+                          "flex items-start gap-2.5 rounded-md border px-3 py-2",
+                          !allowed ? "opacity-50 cursor-not-allowed border-line" : "cursor-pointer",
+                          allowed && (viewType === type ? "border-blueprint bg-blueprint-soft" : "border-line hover:border-ink-faint"),
+                        )}
+                      >
+                        <input type="radio" name="view-type" data-view-type={type} className="mt-1 accent-blueprint" disabled={!allowed} checked={viewType === type} onChange={() => setViewType(type)} />
+                        <span>
+                          <span className="block font-medium">{VIEW_TYPE_INFO[type].label}</span>
+                          <span className="block text-[13px] text-ink-soft">{VIEW_TYPE_INFO[type].hint}</span>
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </fieldset>
         {needsScope && (

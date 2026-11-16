@@ -698,6 +698,50 @@ try {
   await until(ana, () => document.querySelector('[data-member-limit="Ben Editor"] summary').textContent.includes("Changes the whole model"), 5000);
   check("an owner lifts the limit again", true);
 
+  // Roles per category: Ben may not see Applications diagrams and only views Infrastructure.
+  await visit(ana, `${base}/settings`);
+  await ana.waitForSelector('[data-member-categories="Ben Editor"] summary');
+  await ana.click('[data-member-categories="Ben Editor"] summary');
+  const setCategory = async (category, value) => {
+    await ana.select(`[data-member-categories="Ben Editor"] [data-category-role="${category}"]`, value);
+    await until(ana, (c, v) => document.querySelector(`[data-member-categories="Ben Editor"] [data-category-role="${c}"]`)?.value === v && !document.querySelector(`[data-member-categories="Ben Editor"] select:disabled`), 5000, category, value);
+  };
+  await setCategory("applications", "none");
+  await setCategory("infrastructure", "viewer");
+  const categorySummary = await ana.$eval('[data-member-categories="Ben Editor"] summary', (e) => e.textContent);
+  await shot(ana, "40-category-roles");
+  check("an owner sets a member's role per category", categorySummary.includes("Applications: No access") && categorySummary.includes("Infrastructure: View"), categorySummary);
+  await visit(ben, base, "table, [data-template-open]");
+  await until(ben, () => !document.body.innerText.includes("System landscape"), 8000).catch(() => undefined);
+  const benDiagrams = await ben.$$eval("tbody tr td:first-child a", (links) => links.map((a) => a.textContent.trim()));
+  check("diagrams of a category with no access are not shown at all", !benDiagrams.includes("System landscape") && !benDiagrams.includes("Inside Online store") && benDiagrams.includes("Deployment"), benDiagrams.join(", "));
+  await ben.evaluate(() => [...document.querySelectorAll("tbody tr td:first-child a")].find((a) => a.textContent.trim() === "Deployment").click());
+  await ben.waitForSelector(".object-node");
+  const viewOnly = await ben.$("[data-category-view-only=infrastructure]");
+  await shot(ben, "41-category-view-only");
+  check("a diagram of a category the member only views opens read-only, saying why", !!viewOnly && !(await ben.$('[aria-label="Show the panel for adding objects"]')));
+  await visit(ben, base, "[data-template-open]");
+  await ben.evaluate(() => [...document.querySelectorAll("button")].find((b) => b.textContent.trim() === "New diagram")?.click());
+  await ben.waitForSelector('[data-view-category="business"]');
+  const kindsOffered = await ben.$$eval("[data-view-type]", (inputs) => inputs.filter((i) => !i.disabled).map((i) => i.dataset.viewType));
+  check("a new diagram can be made only in the categories the member edits", kindsOffered.join(",") === "dataflow,business,custom", kindsOffered.join(","));
+  await ben.keyboard.press("Escape");
+  await visit(ben, `${base}/model`, "tbody tr");
+  const benRows = await ben.$$eval("tbody tr", (rows) => rows.map((r) => r.querySelector("td").innerText.trim().split("\n")[0]));
+  const appRow = benRows.find((n) => n === "Catalogue service") ?? benRows.find((n) => /service|store|app/i.test(n));
+  if (!appRow) throw new Error(`No application row among: ${benRows.join(", ")}`);
+  await openRow(ben, appRow);
+  await ben.waitForSelector("[data-object-view-only]");
+  check("an object of a category the member does not edit shows as view-only", !!(await ben.$("fieldset[data-object-editable=false]")));
+  await visit(ana, `${base}/settings`);
+  await ana.waitForSelector('[data-member-categories="Ben Editor"] summary');
+  await ana.click('[data-member-categories="Ben Editor"] summary');
+  await setCategory("applications", "");
+  await setCategory("infrastructure", "");
+  await visit(ben, base, "tbody tr");
+  await until(ben, () => document.body.innerText.includes("System landscape"), 8000).catch(() => undefined);
+  check("lifting the roles per category brings the diagrams back", await hasText(ben, "System landscape"));
+
   // The audit log: owners read who changed what; nobody else is offered it.
   await visit(ana, `${base}/audit`, "[data-audit-table]");
   const auditRows = () => ana.$$eval("[data-audit-entry]", (rows) => rows.map((r) => `${r.dataset.auditEntry} | ${r.innerText.replace(/\s+/g, " ")}`));

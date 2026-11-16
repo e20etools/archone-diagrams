@@ -742,6 +742,33 @@ forbids, and can file the ones the model does not know as a proposal that names 
 request. `gate/README.md` has the file format, the options and a GitHub Actions workflow.
 It checks the declaration, not the code.
 
+### Kinds of diagram and roles per category
+
+Every diagram belongs to one of five categories, chosen when it is made:
+
+| Category | Kinds | Filled with |
+|---|---|---|
+| Applications | C4 System landscape, C4 Level 1: System context, C4 Level 2: Containers | systems and people; one system and its neighbours; what is inside one system |
+| Data | Data | data stores and the applications that read, write or replicate them |
+| Infrastructure | Infrastructure | servers, clusters, gateways, networks and what is hosted on them |
+| Business | Business | domains, processes, their steps and the people who take part |
+| Custom | Custom | nothing; you choose |
+
+An owner can give a member a role in each category (Edit, Comment, View or No access) under
+Settings, Members, By category. A category narrows the workspace role and never widens it; a
+category left alone keeps the workspace role; owners always have everything. The role governs
+the category's diagrams and the objects that belong to it: Data covers databases, queues,
+caches and storage; Infrastructure servers, clusters, gateways and network devices; Business
+processes and their steps; Applications systems, applications, services, AI and external
+systems. People and domains belong to both Applications and Business. A relationship can be
+changed by whoever edits either of its ends. No access hides the category's diagrams, their
+boxes, comments and saved templates, also in versions (read through `version_snapshot`); the
+objects stay readable because other diagrams draw them. The database enforces all of it with
+restrictive row-level policies (migration `phase4_category_roles`); the app refuses such an edit
+before sending it, opens those diagrams read-only and offers only the kinds the member may
+create. Scenarios keep the roles of the workspace they were made from; changes are written to
+the audit log. API keys keep their own access and domain limits.
+
 ### Templates
 
 115 templates for the most common diagrams, under Start from a template on the Diagrams

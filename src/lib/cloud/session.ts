@@ -1,10 +1,12 @@
 import type { AuditCheck, AuditPage, AuditQuery } from "./audit";
 import { create } from "zustand";
+import { createContext, useContext } from "react";
 import { setAuthTokenProvider } from "../ai/client";
 import { emptyWorkspace, nowIso } from "../model";
 import { LocalStorageRepository } from "../repository";
 import { setChangeGuard, setEditGuard, useStore } from "../store";
 import { scopeRefusal } from "./scope";
+import { categoryRank, categoryRefusal, hiddenCategories, type Category, type CategoryRoles } from "../categories";
 import type { Workspace } from "../types";
 import { BackendError, canCommentRole, canEditRole, type Backend, type CloudUser, type Invite, type LiveConnection, type Peer, type Role, type WorkspaceSummary } from "./backend";
 import type { Comment, CommentDraft, Person, Review, ReviewSettings, ReviewStage, VersionInfo } from "./collab";
@@ -28,6 +30,8 @@ interface SessionState {
   invites: Invite[];
   workspaceId: string | null;
   role: Role | null;
+  /** The signed-in person's roles per category in the open workspace. */
+  myCategoryRoles: CategoryRoles;
   sync: SyncState;
   live: boolean;
   peers: Peer[];
@@ -56,6 +60,7 @@ export const useSession = create<SessionState>(() => ({
   invites: [],
   workspaceId: null,
   role: null,
+  myCategoryRoles: {},
   sync: { kind: "saved" },
   live: false,
   peers: [],
@@ -99,7 +104,7 @@ function closeWorkspace(): void {
   connection = null;
   unsubscribeStore = null;
   versionTables.clear();
-  set({ workspaceId: null, role: null, peers: [], live: false, sync: { kind: "saved" }, ...NO_COLLAB });
+  set({ workspaceId: null, role: null, myCategoryRoles: {}, peers: [], live: false, sync: { kind: "saved" }, ...NO_COLLAB });
 }
 
 async function refreshLists(): Promise<void> {
@@ -126,7 +131,7 @@ export function startSession(): void {
       set({ notice: "Only an owner can change the workspace's rules." });
       return true;
     }
-    const refusal = scopeRefusal(before, after, domains);
+    const refusal = scopeRefusal(before, after, domains) ?? categoryRefusal(before, after, role, workspaces.find((w) => w.id === workspaceId)?.categoryRoles);
     if (refusal) set({ notice: refusal });
     return !!refusal;
   });
@@ -234,7 +239,7 @@ export async function openWorkspace(workspaceId: string): Promise<void> {
     } catch {
       // Not remembered; the picker is shown next time.
     }
-    set({ phase: "ready", workspaceId, role: summary.role, sync: { kind: "saved" }, review, published: readsPublished ? { version: null } : null });
+    set({ phase: "ready", workspaceId, role: summary.role, myCategoryRoles: summary.categoryRoles ?? {}, sync: { kind: "saved" }, review, published: readsPublished ? { version: null } : null });
     void refreshCollab().catch(() => undefined);
   } catch (error) {
     closeWorkspace();
@@ -256,6 +261,16 @@ async function membershipChanged(workspaceId: string): Promise<void> {
     closeWorkspace();
     set({ phase: "choosing", notice: "You no longer have access to that workspace." });
     return;
+  }
+  const previous = get().myCategoryRoles;
+  if (JSON.stringify(previous) !== JSON.stringify(mine.categoryRoles ?? {})) {
+    set({ myCategoryRoles: mine.categoryRoles ?? {} });
+    if (mine.role === get().role) set({ notice: "Your roles per category in this workspace have changed." });
+    // Diagrams of a category that is now hidden, or no longer hidden, come and go with a fresh load.
+    if (JSON.stringify(hiddenCategories(mine.role, previous)) !== JSON.stringify(hiddenCategories(mine.role, mine.categoryRoles))) {
+      await openWorkspace(workspaceId);
+      return;
+    }
   }
   if (mine.role !== get().role) {
     set({ role: mine.role, notice: `Your role in this workspace is now ${mine.role}.` });
@@ -332,8 +347,27 @@ export async function deleteComment(commentId: string): Promise<void> {
   set({ comments });
 }
 
+/** What the signed-in person may do in a category: 0 nothing, 1 view, 2 comment, 3 edit, 4 own. Everything in browser-only mode. */
+export function useCategoryRank(): (category: Category | string) => number {
+  const role = useSession((s) => s.role);
+  const roles = useSession((s) => s.myCategoryRoles);
+  if (!cloudEnabled) return () => 4;
+  return (category) => categoryRank(role, roles, category);
+}
+export function useMyCategoryRoles(): { role: Role | null; roles: CategoryRoles } {
+  const role = useSession((s) => s.role);
+  const roles = useSession((s) => s.myCategoryRoles);
+  return cloudEnabled ? { role, roles } : { role: null, roles: {} };
+}
+
+/** The category of the diagram whose comments are shown; commenting there takes that category's comment role. */
+export const CommentCategory = createContext<Category | null>(null);
+
 export function useCanComment(): boolean {
-  return canCommentRole(useSession((s) => s.role));
+  const role = useSession((s) => s.role);
+  const roles = useSession((s) => s.myCategoryRoles);
+  const category = useContext(CommentCategory);
+  return canCommentRole(role) && (!category || categoryRank(role, roles, category) >= 2);
 }
 
 /* ---------- versions ---------- */

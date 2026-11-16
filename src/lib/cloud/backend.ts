@@ -1,3 +1,4 @@
+import type { CategoryRoles } from "../categories";
 import type { AuditCheck, AuditPage, AuditQuery } from "./audit";
 import type { Comment, CommentDraft, CommentPatch, Review, ReviewSettings, ReviewStage, VersionInfo } from "./collab";
 import type { TrustPage, TrustPageInput } from "../trust";
@@ -36,6 +37,8 @@ export interface WorkspaceSummary {
   createdAt: string | null;
   /** The domains an editor is limited to, or null when they may change the whole model. */
   domains: string[] | null;
+  /** The member's role in each category, where it narrows the workspace role. */
+  categoryRoles: CategoryRoles;
 }
 export interface Invite {
   id: string;
@@ -50,6 +53,7 @@ export interface Member {
   name: string;
   role: Role;
   domains: string[] | null;
+  categoryRoles: CategoryRoles;
 }
 export interface PendingInvite {
   id: string;
@@ -188,6 +192,9 @@ export interface Backend {
 
   /** Limits an editor to the given domains, or lifts the limit with null. Owners only. */
   setMemberDomains(workspaceId: string, userId: string, domains: string[] | null): Promise<void>;
+
+  /** Sets a member's role per category; a category left out keeps the workspace role. Owners only. */
+  setMemberCategoryRoles(workspaceId: string, userId: string, roles: CategoryRoles): Promise<void>;
 
   /** Copies the model into a new workspace tied to this one, and returns the new workspace's id. */
   createScenario(workspaceId: string, name: string, note: string): Promise<string>;

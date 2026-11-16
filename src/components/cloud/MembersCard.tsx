@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { Badge, Button, IconButton, Input, Modal, Select } from "@/components/ui";
 import { ROLES, ROLE_INFO, type Member, type PendingInvite, type Role } from "@/lib/cloud/backend";
 import { errorText, getBackend, showWorkspaceList, useSession } from "@/lib/cloud/session";
+import { CATEGORIES, CATEGORY_INFO, CATEGORY_ROLES, CATEGORY_ROLE_LABEL, categoryRank, type CategoryRole, type CategoryRoles } from "@/lib/categories";
 
 const INVITABLE = ROLES.filter((r) => r !== "owner");
 
@@ -73,7 +74,7 @@ export function MembersCard() {
         <thead className="text-[13px] text-ink-soft border-b border-line">
           <tr>
             <th className="font-medium py-1.5">Person</th>
-            <th className="font-medium py-1.5 w-44">Role</th>
+            <th className="font-medium py-1.5 w-80">Role</th>
             <th className="py-1.5 w-10">
               <span className="sr-only">Actions</span>
             </th>
@@ -84,7 +85,7 @@ export function MembersCard() {
             const self = m.userId === me?.id;
             return (
               <tr key={m.userId} className="border-b border-line-soft last:border-b-0">
-                <td className="py-2">
+                <td className="py-2 align-top">
                   <span className="font-medium">{m.name || m.email}</span>
                   {self && <span className="ml-2 text-[13px] text-ink-faint">you</span>}
                   {m.name && <span className="block text-[13px] text-ink-soft">{m.email}</span>}
@@ -141,8 +142,9 @@ export function MembersCard() {
                       )}
                     </div>
                   )}
+                  {m.role !== "owner" && (owner || Object.keys(m.categoryRoles ?? {}).length > 0) && <CategoryRolesEditor member={m} owner={owner} busy={busy} onSave={(next) => void run(async () => (await getBackend()).setMemberCategoryRoles(workspaceId, m.userId, next))} />}
                 </td>
-                <td className="py-2 text-right">
+                <td className="py-2 text-right align-top">
                   {(owner || self) && (
                     <IconButton label={self ? "Leave this workspace" : `Remove ${m.name || m.email}`} disabled={busy} onClick={() => setRemoving(m)}>
                       <Trash2 size={15} />
@@ -232,5 +234,58 @@ export function MembersCard() {
         </Modal>
       )}
     </section>
+  );
+}
+
+const RANK_OF: Record<CategoryRole, number> = { editor: 3, commenter: 2, viewer: 1, none: 0 };
+
+/**
+ * A member's role in each category of diagram. A category can narrow the workspace role, not
+ * widen it, so only the roles below it are offered. It also governs the objects of that category.
+ */
+function CategoryRolesEditor({ member, owner, busy, onSave }: { member: Member; owner: boolean; busy: boolean; onSave: (roles: CategoryRoles) => void }) {
+  const roles = member.categoryRoles ?? {};
+  const narrowedHere = CATEGORIES.filter((c) => roles[c]);
+  const summary = narrowedHere.length
+    ? narrowedHere.map((c) => `${CATEGORY_INFO[c].label}: ${CATEGORY_ROLE_LABEL[roles[c]!]}`).join(", ")
+    : `${ROLE_INFO[member.role].label} in every category`;
+  const ceiling = categoryRank(member.role, {}, "custom");
+  if (!owner) return <p className="mt-1.5 text-[13px] text-ink-soft" data-member-categories={member.name || member.email}>{summary}</p>;
+  return (
+    <details className="mt-1.5 text-[13px]" data-member-categories={member.name || member.email}>
+      <summary className="cursor-pointer text-ink-soft hover:text-ink">By category: {summary}</summary>
+      <div className="mt-1.5 grid grid-cols-[auto_1fr] items-center gap-x-2 gap-y-1">
+        {CATEGORIES.map((c) => (
+          <label key={c} className="contents">
+            <span className="text-ink-soft">{CATEGORY_INFO[c].label}</span>
+            <Select
+              aria-label={`${CATEGORY_INFO[c].label} role of ${member.name || member.email}`}
+              data-category-role={c}
+              value={roles[c] ?? ""}
+              disabled={busy}
+              onChange={(e) => {
+                const value = e.target.value as CategoryRole | "";
+                const next: CategoryRoles = { ...roles };
+                if (value) next[c] = value;
+                else delete next[c];
+                onSave(next);
+              }}
+            >
+              <option value="">Workspace role ({ROLE_INFO[member.role].label})</option>
+              {CATEGORY_ROLES.filter((r) => RANK_OF[r] < ceiling).map((r) => (
+                <option key={r} value={r}>
+                  {CATEGORY_ROLE_LABEL[r]}
+                </option>
+              ))}
+            </Select>
+          </label>
+        ))}
+      </div>
+      <p className="mt-1 text-xs text-ink-faint">
+        A category covers its diagrams and the objects that belong to it: Data covers databases, queues, caches and storage; Infrastructure covers servers, clusters, gateways and network devices; Business covers processes and their
+        steps; Applications covers systems, applications and services. People and domains belong to both Applications and Business. No access hides the category's diagrams; its objects stay visible because other
+        diagrams draw them.
+      </p>
+    </details>
   );
 }

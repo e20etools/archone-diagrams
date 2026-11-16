@@ -99,7 +99,7 @@ describe("versions", () => {
 
   it("copies the saved model, without rows marked deleted, when an editor saves a version", async () => {
     first = (await one("edgar", "select public.save_version($1, '  Before the migration ', 'Quarter end') as id", [workspace])).id;
-    const version = await one("edgar", "select name, note, kind, created_by, object_count, relationship_count, diagram_count, snapshot from public.versions where id = $1", [first]);
+    const version = await one("edgar", "select name, note, kind, created_by, object_count, relationship_count, diagram_count, public.version_snapshot(workspace_id, id) as snapshot from public.versions where id = $1", [first]);
     expect(version).toMatchObject({ name: "Before the migration", note: "Quarter end", kind: "manual", created_by: ids.edgar, object_count: 2, relationship_count: 1, diagram_count: 1 });
     expect(version.snapshot.objects.map((o: { id: string }) => o.id)).toEqual(["o1", "o2"]);
     expect(version.snapshot.objects[0]).not.toHaveProperty("workspace_id");
@@ -109,7 +109,7 @@ describe("versions", () => {
 
   it("does not change when the model changes afterwards", async () => {
     await as("edgar", (q) => q("update public.objects set name = 'General ledger' where id = 'o1'"));
-    const version = await one("edgar", "select snapshot from public.versions where id = $1", [first]);
+    const version = await one("edgar", "select public.version_snapshot(workspace_id, id) as snapshot from public.versions where id = $1", [first]);
     expect(version.snapshot.objects[0].name).toBe("Ledger");
   });
 
@@ -232,7 +232,7 @@ describe("review before publishing", () => {
     await as("edgar", (q) => q("insert into public.objects (workspace_id, id, type_id, name) values ($1, 'o4', 'service', 'Not reviewed yet')", [workspace]));
     expect((await one("vera", "select public.decide_review($1, true, '', '[true]') as status", [review])).status).toBe("approved");
     expect((await one("olivia", "select published_version_id as id from public.workspaces where id = $1", [workspace])).id).toBe(candidate);
-    const seen = await as("vera", (q) => q("select id, snapshot from public.versions"));
+    const seen = await as("vera", (q) => q("select id, public.version_snapshot(workspace_id, id) as snapshot from public.versions"));
     expect(seen.map((v) => v.id)).toEqual([candidate]);
     expect(seen[0].snapshot.objects.map((o: { name: string }) => o.name)).toEqual(["General ledger", "Ledger DB", "Events"]);
   });

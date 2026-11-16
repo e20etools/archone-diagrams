@@ -155,7 +155,7 @@ export const TOOLS: Tool[] = [
       properties: {
         name: text,
         description: text,
-        viewType: { ...text, enum: ["landscape", "context", "container", "deployment", "dataflow", "custom"] },
+        viewType: { ...text, enum: ["landscape", "context", "container", "deployment", "dataflow", "business", "custom"] },
         direction: { ...text, enum: ["TB", "LR"] },
         nodes: { type: "array", items: { type: "object", properties: { objectId: text, x: { type: "number" }, y: { type: "number" } }, required: ["objectId"] } },
       },

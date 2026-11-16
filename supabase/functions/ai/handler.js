@@ -3809,6 +3809,7 @@ var VIEW_TYPES = [
 	"container",
 	"deployment",
 	"dataflow",
+	"business",
 	"custom"
 ];
 /** Where an item came from and who approved it (PRD AI-07). */

@@ -696,6 +696,7 @@ var TOOLS = [
 						"container",
 						"deployment",
 						"dataflow",
+						"business",
 						"custom"
 					]
 				},

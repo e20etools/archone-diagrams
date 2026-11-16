@@ -12,7 +12,8 @@ import { CATEGORY_INFO, LIFECYCLE_INFO, OBJECT_TYPES, RELATION_KIND_INFO, object
 import { allOwners, diagramsUsing, possibleParents, relationshipsOf, updateObject, updateRelationship } from "@/lib/model";
 import { cloudSuggestions } from "@/lib/cloudCatalog";
 import { useMe } from "@/lib/cloud/me";
-import { useCanEdit } from "@/lib/cloud/session";
+import { useCanEdit, useMyCategoryRoles } from "@/lib/cloud/session";
+import { CATEGORY_INFO as AREA_INFO, canEditCategories, typeCategories } from "@/lib/categories";
 import { TRUTH_STATE_LABEL, confirmTruth, truthMatters, truthOf } from "@/lib/freshness";
 import { confirmDependency, handshakeState, ownsTarget, withdrawConfirmation } from "@/lib/handshake";
 import { AVAILABILITY_FIELD, declaredAvailability } from "@/lib/resilience";
@@ -150,8 +151,17 @@ export function ObjectEditor({ ws, object }: { ws: Workspace; object: ModelObjec
     }
     patch({ fields: next });
   };
+  const { role, roles } = useMyCategoryRoles();
+  const roleCanEdit = useCanEdit();
+  const categories = typeCategories(object.typeId);
+  const editable = roleCanEdit && canEditCategories(role, roles, categories);
   return (
-    <div className="space-y-3">
+    <fieldset disabled={!editable} className="space-y-3 min-w-0" data-object-editable={editable}>
+      {roleCanEdit && !editable && (
+        <p className="rounded-md bg-paper border border-line px-3 py-2 text-[13px] text-ink-soft" data-object-view-only>
+          You can view {categories.map((c) => AREA_INFO[c].label).join(" and ")} objects but not change them.
+        </p>
+      )}
       <Field label="Name">
         <CommitInput value={object.name} onCommit={(name) => patch({ name })} />
       </Field>
@@ -301,7 +311,7 @@ export function ObjectEditor({ ws, object }: { ws: Workspace; object: ModelObjec
           ))}
         </div>
       </div>
-    </div>
+    </fieldset>
   );
 }
 

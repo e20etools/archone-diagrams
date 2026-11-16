@@ -1,3 +1,4 @@
+import type { CategoryRoles } from "../categories";
 import type { TrustPage } from "../trust";
 import { AUDIT_PAGE_SIZE, cleanSearch, dayBounds, type AuditEntry } from "./audit";
 import { createClient, type PostgrestError, type RealtimeChannel, type SupabaseClient } from "@supabase/supabase-js";
@@ -180,7 +181,11 @@ export function createSupabaseBackend(url: string, key: string): Backend {
 
     async listWorkspaces() {
       const id = await uid();
-      let { data, error } = await supabase.from("workspace_members").select("role, domains, workspaces (id, name, scenario_of, scenario_note, created_at)").eq("user_id", id);
+      let { data, error } = await supabase.from("workspace_members").select("role, domains, category_roles, workspaces (id, name, scenario_of, scenario_note, created_at)").eq("user_id", id);
+      // Before the category migration there is no category_roles column.
+      if (error && (error.code === "42703" || /category_roles/.test(error.message))) {
+        ({ data, error } = (await supabase.from("workspace_members").select("role, domains, workspaces (id, name, scenario_of, scenario_note, created_at)").eq("user_id", id)) as unknown as { data: typeof data; error: typeof error });
+      }
       // A database that has not had the domain-limit migration yet has no such column; everything else still works.
       if (error && (error.code === "42703" || /domains/.test(error.message))) {
         ({ data, error } = (await supabase.from("workspace_members").select("role, workspaces (id, name, scenario_of, scenario_note, created_at)").eq("user_id", id)) as unknown as { data: typeof data; error: typeof error });
@@ -188,9 +193,9 @@ export function createSupabaseBackend(url: string, key: string): Backend {
       if (error) fail(error, "Your workspaces could not be listed.");
       const out: WorkspaceSummary[] = [];
       type Listed = { id: string; name: string; scenario_of: string | null; scenario_note: string | null; created_at?: string | null };
-      for (const row of (data ?? []) as unknown as { role: Role; domains: string[] | null; workspaces: Listed | Listed[] | null }[]) {
+      for (const row of (data ?? []) as unknown as { role: Role; domains: string[] | null; category_roles?: CategoryRoles | null; workspaces: Listed | Listed[] | null }[]) {
         const workspace = Array.isArray(row.workspaces) ? row.workspaces[0] : row.workspaces;
-        if (workspace) out.push({ id: workspace.id, name: workspace.name, role: row.role, scenarioOf: workspace.scenario_of ?? null, scenarioNote: workspace.scenario_note ?? "", createdAt: workspace.created_at ? stamp(workspace.created_at) : null, domains: row.role === "editor" && Array.isArray(row.domains) && row.domains.length ? row.domains : null });
+        if (workspace) out.push({ id: workspace.id, name: workspace.name, role: row.role, scenarioOf: workspace.scenario_of ?? null, scenarioNote: workspace.scenario_note ?? "", createdAt: workspace.created_at ? stamp(workspace.created_at) : null, domains: row.role === "editor" && Array.isArray(row.domains) && row.domains.length ? row.domains : null, categoryRoles: row.category_roles ?? {} });
       }
       return out.sort((a, b) => a.name.localeCompare(b.name));
     },
@@ -234,7 +239,7 @@ export function createSupabaseBackend(url: string, key: string): Backend {
       ]);
       if (people.error) fail(people.error, "The members could not be listed.");
       return {
-        members: ((people.data ?? []) as Row[]).map((r): Member => ({ userId: String(r.user_id), email: String(r.email), name: String(r.display_name ?? ""), role: r.role as Role, domains: Array.isArray(r.domains) && r.domains.length ? (r.domains as string[]) : null })),
+        members: ((people.data ?? []) as Row[]).map((r): Member => ({ userId: String(r.user_id), email: String(r.email), name: String(r.display_name ?? ""), role: r.role as Role, domains: Array.isArray(r.domains) && r.domains.length ? (r.domains as string[]) : null, categoryRoles: (r.category_roles as CategoryRoles | null) ?? {} })),
         // Only owners may read invitations; for everyone else the list is simply empty.
         invites: ((invites.data ?? []) as Row[]).map((r): PendingInvite => ({ id: String(r.id), email: String(r.email), role: r.role as Role })),
       };
@@ -350,10 +355,11 @@ export function createSupabaseBackend(url: string, key: string): Backend {
       return String(data);
     },
     async loadVersion(workspaceId, versionId) {
-      const { data, error } = await supabase.from("versions").select("snapshot").eq("workspace_id", workspaceId).eq("id", versionId).maybeSingle();
+      // Read through a function that leaves out the diagrams of categories the person may not see.
+      const { data, error } = await supabase.rpc("version_snapshot", { p_workspace: workspaceId, p_version: versionId });
       if (error) fail(error, "The version could not be opened.");
       if (!data) throw new BackendError("forbidden", "That version no longer exists, or you may not open it.");
-      return snapshotToTables((data as Row).snapshot);
+      return snapshotToTables(data);
     },
     async deleteVersion(workspaceId, versionId) {
       const { data, error } = await supabase.from("versions").delete().eq("workspace_id", workspaceId).eq("id", versionId).select("id");
@@ -446,6 +452,10 @@ export function createSupabaseBackend(url: string, key: string): Backend {
       if (error) fail(error, "The test could not be sent.");
     },
 
+    async setMemberCategoryRoles(workspaceId, userId, roles) {
+      const { error } = await supabase.rpc("set_member_category_roles", { p_workspace: workspaceId, p_user: userId, p_roles: roles });
+      if (error) fail(error, "The roles per category could not be saved.");
+    },
     async setMemberDomains(workspaceId, userId, domains) {
       const { error } = await supabase.rpc("set_member_domains", { p_workspace: workspaceId, p_user: userId, p_domains: domains });
       if (error) fail(error, "The limit could not be changed.");

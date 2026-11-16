@@ -35,10 +35,11 @@ import {
 } from "@/lib/model";
 import { CommentsPanel, commentsOn, openThreadsByObject, type CommentAnchor } from "@/components/cloud/CommentsPanel";
 import { cloudEnabled } from "@/lib/cloud/config";
-import { useCanEdit, useSession } from "@/lib/cloud/session";
+import { CommentCategory, useCanEdit, useCategoryRank, useSession } from "@/lib/cloud/session";
+import { CATEGORIES as AREAS, CATEGORY_INFO as AREA_INFO, VIEWS_BY_CATEGORY, viewCategory } from "@/lib/categories";
 import { searchObjects } from "@/lib/search";
 import { apply, useStore, useWorkspace, zoomInto } from "@/lib/store";
-import { COLOR_BY, RELATION_KINDS, VIEW_TYPES, type ColorBy, type Diagram, type RelationKind, type ViewType, type Workspace } from "@/lib/types";
+import { COLOR_BY, RELATION_KINDS, type ColorBy, type Diagram, type RelationKind, type ViewType, type Workspace } from "@/lib/types";
 import { addObjectsToDiagram, missingSuggestions, relayout, visibleEdges } from "@/lib/views";
 
 const CATEGORIES = Object.keys(CATEGORY_INFO) as Category[];
@@ -217,7 +218,8 @@ function DiagramSettings({ ws, diagram, onClose }: { ws: Workspace; diagram: Dia
   const [confirm, setConfirm] = useState(false);
   const [templating, setTemplating] = useState(false);
   const [savedAs, setSavedAs] = useState("");
-  const canEdit = useCanEdit();
+  const rankIn = useCategoryRank();
+  const canEdit = useCanEdit() && rankIn(viewCategory(diagram.viewType)) >= 3;
   const patch = (change: Parameters<typeof updateDiagram>[2]) => apply((w) => updateDiagram(w, diagram.id, change));
   const scopes = sortedObjects(ws).filter((o) => objectType(o.typeId).level <= 3);
   const kinds = diagram.edgeKinds;
@@ -245,11 +247,15 @@ function DiagramSettings({ ws, diagram, onClose }: { ws: Workspace; diagram: Dia
             <CommitInput multiline rows={2} value={diagram.description} onCommit={(description) => patch({ description })} placeholder="What this diagram is for" />
           </Field>
           <Field label="What it shows" hint={VIEW_TYPE_INFO[diagram.viewType].hint + "."}>
-            <Select value={diagram.viewType} onChange={(e) => patch({ viewType: e.target.value as ViewType })}>
-              {VIEW_TYPES.map((t) => (
-                <option key={t} value={t}>
-                  {VIEW_TYPE_INFO[t].label}
-                </option>
+            <Select value={diagram.viewType} disabled={!canEdit} onChange={(e) => patch({ viewType: e.target.value as ViewType })}>
+              {AREAS.map((c) => (
+                <optgroup key={c} label={AREA_INFO[c].label}>
+                  {VIEWS_BY_CATEGORY[c].map((t) => (
+                    <option key={t} value={t} disabled={rankIn(c) < 3}>
+                      {VIEW_TYPE_INFO[t].label}
+                    </option>
+                  ))}
+                </optgroup>
               ))}
             </Select>
           </Field>
@@ -597,7 +603,11 @@ function Editor({ ws, diagram }: { ws: Workspace; diagram: Diagram }) {
     }
   });
   const { notify, view: notice } = useNotice();
-  const canEdit = useCanEdit();
+  const roleCanEdit = useCanEdit();
+  const rankIn = useCategoryRank();
+  const category = viewCategory(diagram.viewType);
+  // Changing a diagram takes edit rights in its category as well as in the workspace.
+  const canEdit = roleCanEdit && rankIn(category) >= 3;
   const diagramId = diagram.id;
   useFlowKeys(!!flows.flow, flows.move, () => flows.setCursor(NO_FLOW));
   // While a flow is being written, a click on an arrow adds it as the next step instead of opening the arrow.
@@ -899,8 +909,13 @@ function Editor({ ws, diagram }: { ws: Workspace; diagram: Diagram }) {
           </IconButton>
         </div>
       )}
+      {roleCanEdit && !canEdit && (
+        <div role="status" className="shrink-0 px-4 py-2 border-b border-line bg-paper text-sm text-ink-soft" data-category-view-only={category}>
+          You can view {AREA_INFO[category].label} diagrams but not change them. Ask an owner if you need to.
+        </div>
+      )}
       <div className="min-h-0 flex-1 flex">
-        {paletteOpen ? (
+        {!canEdit ? null : paletteOpen ? (
           <Palette ws={ws} diagram={diagram} onAddType={addType} onAddComponent={addComponent} onAddObject={addExisting} onCollapse={() => togglePalette(false)} />
         ) : (
           <div className="w-11 shrink-0 flex justify-center pt-2 bg-surface border-r border-line">
@@ -964,15 +979,17 @@ function Editor({ ws, diagram }: { ws: Workspace; diagram: Diagram }) {
         </div>
         {commentsOpen ? (
           <aside className="w-[340px] shrink-0 bg-surface border-l border-line" aria-label="Comments">
-            <CommentsPanel
-              ws={ws}
-              diagram={diagram}
-              edgeIds={drawnEdges}
-              anchor={anchor}
-              focusThread={focusThread}
-              onPick={(target) => setSelection(target.kind === "object" ? { objectId: target.id, edgeId: null } : target.kind === "relationship" ? { objectId: null, edgeId: target.id } : NONE)}
-              onClose={closeComments}
-            />
+            <CommentCategory.Provider value={category}>
+              <CommentsPanel
+                ws={ws}
+                diagram={diagram}
+                edgeIds={drawnEdges}
+                anchor={anchor}
+                focusThread={focusThread}
+                onPick={(target) => setSelection(target.kind === "object" ? { objectId: target.id, edgeId: null } : target.kind === "relationship" ? { objectId: null, edgeId: target.id } : NONE)}
+                onClose={closeComments}
+              />
+            </CommentCategory.Provider>
           </aside>
         ) : flowsOpen && !objectId && !shownEdge ? (
           <aside className="w-[340px] shrink-0 bg-surface border-l border-line" aria-label="Flows">

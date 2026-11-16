@@ -199,6 +199,7 @@ function openApiDocument(server) {
 				"container",
 				"deployment",
 				"dataflow",
+				"business",
 				"custom"
 			],
 			default: "custom",

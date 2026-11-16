@@ -20,7 +20,7 @@ export const RELATION_KINDS = [
 ] as const;
 export type RelationKind = (typeof RELATION_KINDS)[number];
 
-export const VIEW_TYPES = ["landscape", "context", "container", "deployment", "dataflow", "custom"] as const;
+export const VIEW_TYPES = ["landscape", "context", "container", "deployment", "dataflow", "business", "custom"] as const;
 export type ViewType = (typeof VIEW_TYPES)[number];
 
 export const ORIGINS = ["manual", "ai-prompt", "ai-image", "import", "api", "demo"] as const;

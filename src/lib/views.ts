@@ -144,6 +144,10 @@ export function suggestObjects(ws: Workspace, viewType: ViewType, scopeId: strin
       }
       break;
     }
+    case "business": {
+      for (const o of objects) if (["business", "people"].includes(objectType(o.typeId).category) && (!inside || inside.has(o.id))) out.add(o.id);
+      break;
+    }
     case "custom":
       break;
   }
@@ -156,6 +160,7 @@ export const DEFAULT_EDGE_KINDS: Record<ViewType, RelationKind[] | null> = {
   container: null,
   deployment: ["hosted_on", "routes_to"],
   dataflow: ["reads_writes", "replicates_to"],
+  business: null,
   custom: null,
 };
 
