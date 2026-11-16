@@ -284,6 +284,31 @@ export const customRuleSchema = z.object({
 });
 export type CustomRule = z.infer<typeof customRuleSchema>;
 
+export const PERSPECTIVE_IDS = ["applications", "data", "infrastructure", "business"] as const;
+
+/**
+ * A template the workspace made from one of its own diagrams. It keeps the boxes (each a
+ * library component), the lines between them and where they stood, and nothing else: no
+ * owners, descriptions, basic information or links, which belong to the real objects.
+ */
+export const savedTemplateSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  perspective: z.enum(PERSPECTIVE_IDS),
+  about: z.string(),
+  tags: z.string().default(""),
+  direction: z.enum(["TB", "LR"]),
+  notation: z.enum(["bpmn", "archimate"]).optional(),
+  objects: z.array(z.object({ key: z.string(), name: z.string(), componentId: z.string(), typeId: z.string(), technology: z.string().default(""), x: z.number(), y: z.number() })),
+  relationships: z.array(z.object({ from: z.string(), to: z.string(), kind: z.enum(RELATION_KINDS), label: z.string().default(""), protocol: z.string().default("") })),
+  /** The diagram it was made from, while that diagram exists. */
+  sourceDiagramId: z.string(),
+  author: z.string(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+export type SavedTemplate = z.infer<typeof savedTemplateSchema>;
+
 export const workspaceSchema = z.object({
   version: z.literal(1),
   name: z.string(),
@@ -296,6 +321,8 @@ export const workspaceSchema = z.object({
   adrs: z.record(adrSchema).default({}),
   /** The workspace's own rules. Missing in workspaces saved before they existed. */
   rules: z.record(customRuleSchema).default({}),
+  /** Templates made from the workspace's own diagrams. Missing in workspaces saved before they existed. */
+  templates: z.record(savedTemplateSchema).default({}),
   updatedAt: z.string(),
 });
 export type Workspace = z.infer<typeof workspaceSchema>;

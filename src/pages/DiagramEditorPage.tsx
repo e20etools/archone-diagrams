@@ -1,6 +1,6 @@
 import { NOTATION_INFO } from "@/lib/notation";
 import { NOTATIONS, type Notation } from "@/lib/types";
-import { AlignCenterHorizontal, AlignCenterVertical, AlignEndHorizontal, AlignEndVertical, AlignHorizontalSpaceAround, AlignStartHorizontal, AlignStartVertical, AlignVerticalSpaceAround, ChevronRight, EyeOff, LayoutDashboard, Presentation, ListOrdered, MessageSquare, PanelLeftClose, PanelLeftOpen, Search, Share2, ShieldCheck, Shuffle, SlidersHorizontal, Sparkles, Trash2, Waypoints, X, ZoomIn } from "lucide-react";
+import { BookmarkPlus, AlignCenterHorizontal, AlignCenterVertical, AlignEndHorizontal, AlignEndVertical, AlignHorizontalSpaceAround, AlignStartHorizontal, AlignStartVertical, AlignVerticalSpaceAround, ChevronRight, EyeOff, LayoutDashboard, Presentation, ListOrdered, MessageSquare, PanelLeftClose, PanelLeftOpen, Search, Share2, ShieldCheck, Shuffle, SlidersHorizontal, Sparkles, Trash2, Waypoints, X, ZoomIn } from "lucide-react";
 import { checkCopy } from "@/lib/freshness";
 import { alignNodes, distributeNodes, type AlignMode } from "@/lib/arrange";
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from "react";
@@ -9,6 +9,7 @@ import { DRAG_MIME, DiagramCanvas, type CanvasHandle, type CanvasSelection, type
 import { AiDraftDialog, ExportMenu, ShareDialog } from "@/components/dialogs";
 import { FlowBar, FlowsPanel, NO_FLOW, useFlowCursor, useFlowKeys } from "@/components/Flows";
 import { LibraryPanel } from "@/components/LibraryBrowser";
+import { SaveAsTemplateDialog } from "@/components/SaveAsTemplate";
 import { componentById, componentSubtitle, objectFromComponent, type LibraryComponent } from "@/lib/library";
 import { addStep, flowsOf } from "@/lib/flows";
 import { TypeIcon } from "@/components/icons";
@@ -214,6 +215,9 @@ function Palette({
 function DiagramSettings({ ws, diagram, onClose }: { ws: Workspace; diagram: Diagram; onClose: () => void }) {
   const navigate = useNavigate();
   const [confirm, setConfirm] = useState(false);
+  const [templating, setTemplating] = useState(false);
+  const [savedAs, setSavedAs] = useState("");
+  const canEdit = useCanEdit();
   const patch = (change: Parameters<typeof updateDiagram>[2]) => apply((w) => updateDiagram(w, diagram.id, change));
   const scopes = sortedObjects(ws).filter((o) => objectType(o.typeId).level <= 3);
   const kinds = diagram.edgeKinds;
@@ -318,6 +322,20 @@ function DiagramSettings({ ws, diagram, onClose }: { ws: Workspace; diagram: Dia
           </div>
         )}
       </Section>
+      {canEdit && (
+        <Section title="Template">
+          <p className="text-[13px] text-ink-soft mb-2">Keep this diagram as a starting point everyone in the workspace can use, under the perspective you choose.</p>
+          <Button size="sm" icon={<BookmarkPlus size={14} />} data-save-as-template={diagram.id} onClick={() => setTemplating(true)}>
+            Save as template
+          </Button>
+          {savedAs && (
+            <p role="status" className="mt-2 text-[13px] text-ok">
+              Saved as "{savedAs}". Find it under Start from a template.
+            </p>
+          )}
+          {templating && <SaveAsTemplateDialog ws={ws} diagram={diagram} onClose={() => setTemplating(false)} onSaved={setSavedAs} />}
+        </Section>
+      )}
       <Section title="Delete">
         <Button variant="danger" size="sm" icon={<Trash2 size={14} />} onClick={() => setConfirm(true)}>
           Delete diagram

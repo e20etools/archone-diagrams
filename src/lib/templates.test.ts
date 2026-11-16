@@ -125,3 +125,56 @@ describe("the cloud service catalogue", () => {
     expect(offered.slice(firstOther).every((s) => s.typeId !== "queue")).toBe(true);
   });
 });
+
+describe("templates made from a diagram", () => {
+  const start = () => applyTemplate(emptyWorkspace("Sara"), TEMPLATES.find((t) => t.perspective === "applications")!.id)!;
+
+  it("keeps every box as a library component, the lines between them, and where they stand", async () => {
+    const { templateFromDiagram, saveTemplate, allTemplates } = await import("./templates");
+    const { ws, diagramId } = start();
+    const diagram = ws.diagrams[diagramId];
+    const made = templateFromDiagram(ws, diagramId, { name: "Our shop", perspective: "business", about: "Mine" }, "Sara")!;
+    expect(made.template.perspective).toBe("business");
+    expect(made.template.objects.length).toBe(Object.keys(diagram.nodes).length);
+    for (const o of made.template.objects) {
+      expect(componentById(o.componentId)).toBeTruthy();
+      expect(o.typeId).toBe(componentById(o.componentId)!.kind);
+    }
+    expect(Math.min(...made.template.objects.map((o) => o.x))).toBe(0);
+    expect(made.template.relationships.length).toBeGreaterThan(0);
+    const saved = saveTemplate(ws, made.template);
+    expect(allTemplates(saved)[0].id).toBe(made.template.id);
+    expect(allTemplates(saved)[0].saved?.author).toBe("Sara");
+  });
+
+  it("makes a box outside the library the usual component for its type, and says so", async () => {
+    const { templateFromDiagram } = await import("./templates");
+    const { ws, diagramId } = start();
+    const first = Object.keys(ws.diagrams[diagramId].nodes)[0];
+    const loose = { ...ws, objects: { ...ws.objects, [first]: { ...ws.objects[first], componentId: undefined } } };
+    const made = templateFromDiagram(loose, diagramId, { name: "x", perspective: "applications", about: "" }, "Sara")!;
+    expect(made.substitutions.map((s) => s.objectId)).toEqual([first]);
+    expect(componentById(made.substitutions[0].componentId)).toBeTruthy();
+  });
+
+  it("uses a saved template with its boxes where they were, and can delete it", async () => {
+    const { templateFromDiagram, saveTemplate, deleteSavedTemplate } = await import("./templates");
+    const { ws, diagramId } = start();
+    const made = templateFromDiagram(ws, diagramId, { name: "Again", perspective: "data", about: "" }, "Sara")!;
+    const saved = saveTemplate(ws, made.template);
+    const used = applyTemplate(saved, made.template.id)!;
+    const nodes = Object.values(used.ws.diagrams[used.diagramId].nodes);
+    expect(nodes.length).toBe(made.template.objects.length);
+    const xs = nodes.map((n) => n.x).sort((a, b) => a - b);
+    expect(xs).toEqual(made.template.objects.map((o) => o.x).sort((a, b) => a - b));
+    expect(deleteSavedTemplate(saved, made.template.id).templates).toEqual({});
+  });
+
+  it("every type has a usual library component", async () => {
+    const { USUAL_COMPONENT } = await import("./templates");
+    for (const t of OBJECT_TYPES) {
+      const id = USUAL_COMPONENT[t.id];
+      if (id) expect(componentById(id), t.id).toBeTruthy();
+    }
+  });
+});

@@ -1,4 +1,4 @@
-import { Copy, FileUp, LayoutTemplate, Plus, Sparkles, Trash2 } from "lucide-react";
+import { BookmarkPlus, Copy, FileUp, LayoutTemplate, Plus, Sparkles, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { AiDraftDialog, NewDiagramDialog } from "@/components/dialogs";
@@ -8,8 +8,10 @@ import { VIEW_TYPE_INFO } from "@/lib/catalog";
 import { demoWorkspace } from "@/lib/demo";
 import { deleteDiagram, duplicateDiagram, sortedDiagrams } from "@/lib/model";
 import { apply, useStore, useWorkspace } from "@/lib/store";
-import { applyTemplate } from "@/lib/templates";
+import { allTemplates, applyTemplate, deleteSavedTemplate } from "@/lib/templates";
 import { TemplatePicker } from "@/components/TemplatePicker";
+import { SaveAsTemplateDialog } from "@/components/SaveAsTemplate";
+import { useCanEdit } from "@/lib/cloud/session";
 import type { Diagram } from "@/lib/types";
 
 export function DiagramsPage() {
@@ -18,6 +20,8 @@ export function DiagramsPage() {
   const navigate = useNavigate();
   const [dialog, setDialog] = useState<"new" | "ai" | "import" | "template" | null>(null);
   const [removing, setRemoving] = useState<Diagram | null>(null);
+  const [templating, setTemplating] = useState<Diagram | null>(null);
+  const canEdit = useCanEdit();
   const diagrams = sortedDiagrams(ws);
   const blank = diagrams.length === 0 && Object.keys(ws.objects).length === 0;
 
@@ -114,6 +118,11 @@ export function DiagramsPage() {
                   <td className="px-4 py-3 text-right tabular-nums">{Object.keys(d.nodes).length}</td>
                   <td className="px-4 py-3 text-ink-soft whitespace-nowrap">{formatDate(d.updatedAt)}</td>
                   <td className="px-2 py-2 text-right whitespace-nowrap">
+                    {canEdit && (
+                      <IconButton label={`Save ${d.name} as a template`} data-save-as-template={d.id} onClick={() => setTemplating(d)}>
+                        <BookmarkPlus size={15} />
+                      </IconButton>
+                    )}
                     <IconButton label={`Duplicate ${d.name}`} onClick={() => apply((w) => duplicateDiagram(w, d.id).ws)}>
                       <Copy size={15} />
                     </IconButton>
@@ -130,6 +139,8 @@ export function DiagramsPage() {
 
       {dialog === "template" && (
         <TemplatePicker
+          templates={allTemplates(ws)}
+          onDelete={canEdit ? (t) => apply((w) => deleteSavedTemplate(w, t.id)) : undefined}
           onClose={() => setDialog(null)}
           onUse={(t) => {
             let diagramId = "";
@@ -144,6 +155,7 @@ export function DiagramsPage() {
           }}
         />
       )}
+      {templating && <SaveAsTemplateDialog ws={ws} diagram={templating} onClose={() => setTemplating(null)} />}
       {dialog === "new" && <NewDiagramDialog ws={ws} onClose={() => setDialog(null)} />}
       {dialog === "ai" && <AiDraftDialog ws={ws} onClose={() => setDialog(null)} />}
       {dialog === "import" && <ImportDialog onClose={() => setDialog(null)} />}

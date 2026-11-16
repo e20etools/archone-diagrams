@@ -334,6 +334,7 @@ export const GENERIC_SECTIONS: GenericSection[] = [
     kind: "network",
     profile: "network-device",
     items: [
+      ["Network device", "Network", undefined, undefined, "generic network equipment"],
       ["Router", "Router"],
       ["Core switch", "Network"],
       ["Distribution switch", "Network"],

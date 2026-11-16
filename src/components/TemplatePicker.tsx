@@ -4,7 +4,7 @@ import { LibraryIcon } from "@/components/icons";
 import { Button, Input, Modal } from "@/components/ui";
 import { NODE_H, NODE_W } from "@/lib/layout";
 import { templatePreview } from "@/lib/templatePreview";
-import { PERSPECTIVES, TEMPLATES, searchTemplates, type Perspective, type Template } from "@/lib/templates";
+import { PERSPECTIVES, searchTemplates, type Perspective, type Template } from "@/lib/templates";
 
 /** The template drawn small: its boxes in their places, coloured by what they are, with the lines between them. */
 export const TemplatePreview = memo(function TemplatePreview({ template }: { template: Template }) {
@@ -35,12 +35,16 @@ export const TemplatePreview = memo(function TemplatePreview({ template }: { tem
  * Choosing a template: a search box, the four perspectives, and every template as a small
  * picture with its name above it. A click picks one and shows what it is; Use puts it in the model.
  */
-export function TemplatePicker({ onUse, onClose }: { onUse: (template: Template) => void; onClose: () => void }) {
+export function TemplatePicker({ templates, onUse, onClose, onDelete }: { templates: Template[]; onUse: (template: Template) => void; onClose: () => void; onDelete?: (template: Template) => void }) {
   const [query, setQuery] = useState("");
   const [perspective, setPerspective] = useState<Perspective | null>(null);
+  const [ownOnly, setOwnOnly] = useState(false);
   const [picked, setPicked] = useState<Template | null>(null);
-  const shown = useMemo(() => searchTemplates(query, perspective), [query, perspective]);
-  const counts = useMemo(() => Object.fromEntries(PERSPECTIVES.map((p) => [p.id, searchTemplates(query, p.id).length])), [query]);
+  const [confirming, setConfirming] = useState(false);
+  const pool = useMemo(() => (ownOnly ? templates.filter((t) => t.saved) : templates), [templates, ownOnly]);
+  const ownCount = templates.filter((t) => t.saved).length;
+  const shown = useMemo(() => searchTemplates(query, perspective, pool), [query, perspective, pool]);
+  const counts = useMemo(() => Object.fromEntries(PERSPECTIVES.map((p) => [p.id, searchTemplates(query, p.id, pool).length])), [query, pool]);
   return (
     <Modal
       title="Start from a template"
@@ -53,6 +57,7 @@ export function TemplatePicker({ onUse, onClose }: { onUse: (template: Template)
               <>
                 <p className="font-medium truncate">{picked.name}</p>
                 <p className="text-[13px] text-ink-soft line-clamp-2">
+                  {picked.saved && `Saved in this workspace by ${picked.saved.author}. `}
                   {picked.about} {picked.objects.length} objects, {picked.relationships.length} relationships.
                 </p>
               </>
@@ -60,6 +65,24 @@ export function TemplatePicker({ onUse, onClose }: { onUse: (template: Template)
               <p className="text-[13px] text-ink-soft">Pick a template to see what it holds. Objects whose names the model already has are reused.</p>
             )}
           </div>
+          {picked?.saved && onDelete &&
+            (confirming ? (
+              <Button
+                variant="danger"
+                data-template-delete-confirm
+                onClick={() => {
+                  onDelete(picked);
+                  setPicked(null);
+                  setConfirming(false);
+                }}
+              >
+                Delete "{picked.name}"
+              </Button>
+            ) : (
+              <Button variant="danger" data-template-delete onClick={() => setConfirming(true)}>
+                Delete template
+              </Button>
+            ))}
           <Button onClick={onClose}>Cancel</Button>
           <Button variant="primary" disabled={!picked} onClick={() => picked && onUse(picked)} data-template-use>
             Use this template
@@ -73,7 +96,18 @@ export function TemplatePicker({ onUse, onClose }: { onUse: (template: Template)
           <Input className="pl-9" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search templates, e.g. DMZ or KYC" aria-label="Search templates" autoFocus />
         </div>
         <div role="tablist" aria-label="Perspective" className="flex flex-wrap gap-1" data-template-perspectives>
-          {[{ id: null, label: "All", count: searchTemplates(query).length }, ...PERSPECTIVES.map((p) => ({ id: p.id, label: p.label, count: counts[p.id] }))].map((p) => (
+          {ownCount > 0 && (
+            <button
+              type="button"
+              aria-pressed={ownOnly}
+              data-template-own
+              onClick={() => setOwnOnly(!ownOnly)}
+              className={`h-8 px-3 rounded-full border text-[13px] ${ownOnly ? "border-ok bg-ok text-white" : "border-ok/50 text-ok hover:border-ok"}`}
+            >
+              Saved here <span className="tabular-nums">{ownCount}</span>
+            </button>
+          )}
+          {[{ id: null, label: "All", count: searchTemplates(query, null, pool).length }, ...PERSPECTIVES.map((p) => ({ id: p.id, label: p.label, count: counts[p.id] }))].map((p) => (
             <button
               key={p.label}
               type="button"
@@ -100,7 +134,10 @@ export function TemplatePicker({ onUse, onClose }: { onUse: (template: Template)
                   data-template={t.id}
                   aria-pressed={picked?.id === t.id}
                   title={t.about}
-                  onClick={() => setPicked(t)}
+                  onClick={() => {
+                    setPicked(t);
+                    setConfirming(false);
+                  }}
                   onDoubleClick={() => onUse(t)}
                   className={`w-full rounded-lg border p-2 text-left ${picked?.id === t.id ? "border-blueprint ring-2 ring-blueprint/30 bg-blueprint-soft/40" : "border-line hover:border-blueprint"}`}
                 >
@@ -111,6 +148,7 @@ export function TemplatePicker({ onUse, onClose }: { onUse: (template: Template)
                   <span className="mt-1 flex items-center gap-1 text-[11px] text-ink-faint">
                     <LibraryIcon name={t.perspective === "applications" ? "AppWindow" : t.perspective === "data" ? "Database" : t.perspective === "infrastructure" ? "Server" : "Briefcase"} size={11} />
                     {PERSPECTIVES.find((p) => p.id === t.perspective)?.label} · {t.objects.length} boxes
+                    {t.saved && <span className="ml-auto rounded px-1 bg-ok-soft text-ok font-medium">Saved here</span>}
                   </span>
                 </button>
               </li>
@@ -118,7 +156,9 @@ export function TemplatePicker({ onUse, onClose }: { onUse: (template: Template)
           </ul>
         )}
       </div>
-      <p className="mt-2 text-xs text-ink-faint">{TEMPLATES.length} templates. Double-click one to use it straight away.</p>
+      <p className="mt-2 text-xs text-ink-faint">
+        {templates.length} templates{ownCount ? `, ${ownCount} of them saved in this workspace` : ""}. Double-click one to use it straight away. To add your own, open a diagram and choose Save as template.
+      </p>
     </Modal>
   );
 }

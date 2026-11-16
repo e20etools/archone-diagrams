@@ -777,6 +777,19 @@ holds, Use (or a double click) puts it in the model and opens its diagram. Proce
 open in BPMN, left to right. Objects whose names the model already has are reused. No
 template starts with a high-severity security finding; a test holds this.
 
+**Your own templates.** Any diagram can become a template of the workspace: Save as template
+in its settings, or the bookmark button on its row in the Diagrams list. You give it a name,
+choose the perspective it belongs under (Applications, Data, Infrastructure or Business; the
+window suggests one from what the boxes are), a line on what it is for and words to find it
+by. It keeps each box's name, library component and technology, the lines between the boxes,
+and where everything stands; owners, descriptions, basic information, links and comments stay
+with the real objects. A box that is not a library component is saved as the usual component
+for its type, and the window lists those first, so a template still holds only library
+components. Saved templates appear first in the picker, marked Saved here, with a filter of
+their own; using one draws its boxes where they stood. Owners and editors save and delete
+them, every member can use them, and the audit log records each. They are stored in the
+`diagram_templates` table (300 per workspace) and are not part of versions or scenarios.
+
 The technology field still offers common cloud service names, so the same service is
 spelled the same way across the model.
 

@@ -1,8 +1,8 @@
 import { componentById } from "./library";
-import { createDiagram, createObject, createRelationship, findByName, updateDiagram } from "./model";
+import { createDiagram, createObject, createRelationship, findByName, newId, nowIso, placeNodes, updateDiagram } from "./model";
 import { CATALOG, type Perspective } from "./templateCatalog";
-import type { RelationKind, Workspace } from "./types";
-import { addObjectsToDiagram, relayout } from "./views";
+import type { RelationKind, SavedTemplate, Workspace } from "./types";
+import { addObjectsToDiagram, relayout, visibleEdges } from "./views";
 
 export type { Perspective };
 export const PERSPECTIVES: { id: Perspective; label: string; hint: string }[] = [
@@ -27,6 +27,9 @@ interface TemplateObject {
   description?: string;
   /** The library component it is. Every box of a template is one; its type is the component's. */
   componentId: string;
+  /** Where the box stood, for a template made from a diagram. Without it the layout places the box. */
+  x?: number;
+  y?: number;
 }
 export interface Template {
   id: string;
@@ -36,6 +39,8 @@ export interface Template {
   direction?: "TB" | "LR";
   notation?: "bpmn" | "archimate";
   tags?: string;
+  /** Set for a template the workspace made from one of its diagrams. */
+  saved?: { author: string; createdAt: string; updatedAt: string; sourceDiagramId: string };
   objects: TemplateObject[];
   relationships: [from: string, to: string, kind: RelationKind, label?: string, protocol?: string][];
 }
@@ -141,8 +146,16 @@ const STARTERS: (Omit<Template, "objects"> & { objects: StarterObject[] })[] = [
 ];
 
 /** The first templates were written before the library; each box gets the component its type usually is. */
-const USUAL_COMPONENT: Record<string, string> = {
+export const USUAL_COMPONENT: Record<string, string> = {
   system: "applications.software-system",
+  domain: "business.business-domain",
+  process: "business.business-process",
+  task: "business.process-step",
+  event: "business.business-event",
+  decision: "business.decision-point",
+  server: "compute.physical-server",
+  network: "network.network-device",
+  component: "applications.software-module",
   actor: "people.user",
   "web-app": "applications.web-application",
   application: "applications.custom-application",
@@ -170,12 +183,36 @@ export const TEMPLATES: Template[] = [
   ...CATALOG.map((t) => ({ ...t, objects: t.objects.map((line) => fromCatalog(t.id, line)) })),
 ];
 
-export const templatesIn = (perspective: Perspective | null) => TEMPLATES.filter((t) => !perspective || t.perspective === perspective);
+/** A workspace's own template, in the shape every template has. */
+export function fromSaved(t: SavedTemplate): Template {
+  return {
+    id: t.id,
+    name: t.name,
+    perspective: t.perspective,
+    about: t.about,
+    tags: t.tags,
+    direction: t.direction,
+    ...(t.notation ? { notation: t.notation } : {}),
+    objects: t.objects.map((o) => ({ key: o.key, name: o.name, typeId: o.typeId, componentId: o.componentId, technology: o.technology, x: o.x, y: o.y })),
+    relationships: t.relationships.map((r) => [r.from, r.to, r.kind, r.label, r.protocol]),
+    saved: { author: t.author, createdAt: t.createdAt, updatedAt: t.updatedAt, sourceDiagramId: t.sourceDiagramId },
+  };
+}
+
+/** The built-in templates and the workspace's own, its own first. */
+export function allTemplates(ws?: Pick<Workspace, "templates">): Template[] {
+  const own = Object.values(ws?.templates ?? {})
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+    .map(fromSaved);
+  return [...own, ...TEMPLATES];
+}
+
+export const templatesIn = (perspective: Perspective | null, pool: Template[] = TEMPLATES) => pool.filter((t) => !perspective || t.perspective === perspective);
 
 /** Templates whose name, description, tags or box names contain every word typed. */
-export function searchTemplates(query: string, perspective: Perspective | null = null): Template[] {
+export function searchTemplates(query: string, perspective: Perspective | null = null, from: Template[] = TEMPLATES): Template[] {
   const words = query.toLowerCase().split(/\s+/).filter(Boolean);
-  const pool = templatesIn(perspective);
+  const pool = templatesIn(perspective, from);
   if (!words.length) return pool;
   return pool.filter((t) => {
     const hay = `${t.name} ${t.about} ${t.tags ?? ""} ${t.objects.map((o) => o.name).join(" ")}`.toLowerCase();
@@ -195,7 +232,8 @@ export interface TemplateResult {
 
 /** Puts a template into the model and draws one diagram of it. */
 export function applyTemplate(ws: Workspace, templateId: string): TemplateResult | null {
-  const template = TEMPLATES.find((t) => t.id === templateId);
+  const own = ws.templates?.[templateId];
+  const template = own ? fromSaved(own) : TEMPLATES.find((t) => t.id === templateId);
   if (!template) return null;
   let next = ws;
   const ids: Record<string, string> = {};
@@ -227,6 +265,93 @@ export function applyTemplate(ws: Workspace, templateId: string): TemplateResult
   // A box that holds others is left off: its parts are drawn, and the diagram reads better without a box around nothing.
   const hidden = containers(template);
   const shown = template.objects.filter((o) => !hidden.has(o.key)).map((o) => ids[o.key]);
-  next = relayout(addObjectsToDiagram(next, created.diagram.id, shown), created.diagram.id, false);
+  next = addObjectsToDiagram(next, created.diagram.id, shown);
+  // A template made from a diagram keeps its boxes where they were; the others are laid out.
+  const drawn = template.objects.filter((o) => !hidden.has(o.key));
+  if (drawn.every((o) => o.x !== undefined && o.y !== undefined)) {
+    next = placeNodes(next, created.diagram.id, Object.fromEntries(drawn.map((o) => [ids[o.key], { x: o.x!, y: o.y!, pinned: true }])));
+  } else next = relayout(next, created.diagram.id, false);
   return { ws: next, diagramId: created.diagram.id, added, reused };
+}
+
+export interface TemplateDraft {
+  name: string;
+  perspective: Perspective;
+  about: string;
+  tags?: string;
+}
+
+/** A box of the diagram that is not a library component, and what the template will make it. */
+export interface Substitution {
+  objectId: string;
+  name: string;
+  componentId: string;
+}
+
+/**
+ * What a diagram becomes as a template: its boxes, each a library component, the lines the
+ * diagram draws between them, and where the boxes stand. A box that is not a library component
+ * is saved as the usual component for its type, and listed so the person can choose otherwise
+ * first. Owners, descriptions, basic information and links stay with the real objects.
+ */
+export function templateFromDiagram(ws: Workspace, diagramId: string, draft: TemplateDraft, author: string): { template: SavedTemplate; substitutions: Substitution[] } | null {
+  const diagram = ws.diagrams[diagramId];
+  if (!diagram) return null;
+  const placed = Object.entries(diagram.nodes).filter(([id]) => ws.objects[id]);
+  if (!placed.length) return null;
+  const minX = Math.min(...placed.map(([, p]) => p.x));
+  const minY = Math.min(...placed.map(([, p]) => p.y));
+  const keyOf = new Map(placed.map(([id], i) => [id, `o${i + 1}`]));
+  const substitutions: Substitution[] = [];
+  const objects = placed.map(([id, p]) => {
+    const o = ws.objects[id];
+    let component = componentById(o.componentId);
+    if (!component) {
+      component = libraryComponent(USUAL_COMPONENT[o.typeId] ?? "applications.custom-application", "made from a diagram");
+      substitutions.push({ objectId: id, name: o.name, componentId: component.id });
+    }
+    return { key: keyOf.get(id)!, name: o.name, componentId: component.id, typeId: component.kind, technology: o.technology, x: Math.round(p.x - minX), y: Math.round(p.y - minY) };
+  });
+  // Only lines between two boxes of the diagram: a rolled-up line stands for objects the template does not have.
+  const relationships = visibleEdges(ws, diagram)
+    .filter((e) => !e.implied && keyOf.has(e.sourceId) && keyOf.has(e.targetId))
+    .map((e) => {
+      const r = ws.relationships[e.id];
+      return { from: keyOf.get(e.sourceId)!, to: keyOf.get(e.targetId)!, kind: e.kind, label: r?.label ?? "", protocol: r?.protocol ?? "" };
+    });
+  const stamp = nowIso();
+  return {
+    template: {
+      id: newId("tpl"),
+      name: draft.name.trim().slice(0, 120) || diagram.name,
+      perspective: draft.perspective,
+      about: draft.about.trim().slice(0, 400),
+      tags: (draft.tags ?? "").trim().slice(0, 200),
+      direction: diagram.direction,
+      ...(diagram.notation === "bpmn" || diagram.notation === "archimate" ? { notation: diagram.notation } : {}),
+      objects,
+      relationships,
+      sourceDiagramId: diagramId,
+      author,
+      createdAt: stamp,
+      updatedAt: stamp,
+    },
+    substitutions,
+  };
+}
+
+export function saveTemplate(ws: Workspace, template: SavedTemplate): Workspace {
+  return { ...ws, templates: { ...(ws.templates ?? {}), [template.id]: template }, updatedAt: nowIso() };
+}
+
+export function updateSavedTemplate(ws: Workspace, id: string, patch: Partial<Pick<SavedTemplate, "name" | "perspective" | "about" | "tags">>): Workspace {
+  const current = ws.templates?.[id];
+  if (!current) return ws;
+  return saveTemplate(ws, { ...current, ...patch, name: patch.name?.trim() || current.name, updatedAt: nowIso() });
+}
+
+export function deleteSavedTemplate(ws: Workspace, id: string): Workspace {
+  if (!ws.templates?.[id]) return ws;
+  const { [id]: _gone, ...rest } = ws.templates;
+  return { ...ws, templates: rest, updatedAt: nowIso() };
 }

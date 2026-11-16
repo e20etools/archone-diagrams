@@ -25,13 +25,17 @@ export interface Preview {
 const cache = new Map<string, Preview>();
 
 export function templatePreview(t: Template): Preview {
-  const cached = cache.get(t.id);
+  const cacheKey = `${t.id}@${t.saved?.updatedAt ?? ""}`;
+  const cached = cache.get(cacheKey);
   if (cached) return cached;
   const hidden = containers(t);
   const shown = t.objects.filter((o) => !hidden.has(o.key));
   const keys = new Set(shown.map((o) => o.key));
   const edges = t.relationships.filter(([a, b]) => keys.has(a) && keys.has(b)).map(([sourceId, targetId]) => ({ sourceId, targetId }));
-  const placed = autoLayout({ nodeIds: shown.map((o) => o.key), edges, direction: t.direction ?? "TB", respectPinned: false });
+  // A template made from a diagram is drawn as the diagram was.
+  const placed: Record<string, { x: number; y: number }> = shown.every((o) => o.x !== undefined && o.y !== undefined)
+    ? Object.fromEntries(shown.map((o) => [o.key, { x: o.x!, y: o.y! }]))
+    : autoLayout({ nodeIds: shown.map((o) => o.key), edges, direction: t.direction ?? "TB", respectPinned: false });
   const xs = Object.values(placed).map((p) => p.x);
   const ys = Object.values(placed).map((p) => p.y);
   const minX = Math.min(...xs);
@@ -48,6 +52,6 @@ export function templatePreview(t: Template): Preview {
     return { x1: a.x + NODE_W / 2, y1: a.y + NODE_H / 2, x2: b.x + NODE_W / 2, y2: b.y + NODE_H / 2 };
   });
   const preview: Preview = { width: Math.max(...xs) - minX + NODE_W, height: Math.max(...ys) - minY + NODE_H, boxes, lines };
-  cache.set(t.id, preview);
+  cache.set(cacheKey, preview);
   return preview;
 }

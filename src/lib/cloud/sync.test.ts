@@ -4,6 +4,7 @@ import { createObject, createRelationship, deleteObject, emptyWorkspace, placeNo
 import type { Workspace } from "../types";
 import { BackendError } from "./backend";
 import { fromRow, toRow } from "./rows";
+import { saveTemplate, templateFromDiagram } from "../templates";
 import { SyncEngine, type SyncState } from "./sync";
 import { TABLE_NAMES, applyChangeSet, diffTables, emptyTables, fromTables, isEmptyChange, patchTables, sameValue, toTables, type ChangeSet, type Tables } from "./tables";
 
@@ -77,7 +78,9 @@ describe("rows and tables", () => {
   });
 
   it("survives the trip to database columns and back for every table", () => {
-    const tables = toTables(demoWorkspace("Sara"));
+    const demo = demoWorkspace("Sara");
+    const firstDiagram = Object.keys(demo.diagrams)[0];
+    const tables = toTables(saveTemplate(demo, templateFromDiagram(demo, firstDiagram, { name: "Mine", perspective: "data", about: "" }, "Sara")!.template));
     for (const table of TABLE_NAMES) {
       const entries = Object.entries(tables[table]);
       expect(entries.length).toBeGreaterThan(table === "proposals" || table === "adrs" || table === "rules" ? -1 : 0);

@@ -106,6 +106,7 @@ export function payloadToWorkspace(payload: SharePayload): Workspace {
     proposals: {},
     adrs: {},
     rules: {},
+    templates: {},
     updatedAt: payload.sharedAt,
   };
 }

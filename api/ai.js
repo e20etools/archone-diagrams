@@ -4104,6 +4104,46 @@ var customRuleSchema = objectType({
 	createdAt: stringType(),
 	updatedAt: stringType()
 });
+/**
+* A template the workspace made from one of its own diagrams. It keeps the boxes (each a
+* library component), the lines between them and where they stood, and nothing else: no
+* owners, descriptions, basic information or links, which belong to the real objects.
+*/
+var savedTemplateSchema = objectType({
+	id: stringType(),
+	name: stringType(),
+	perspective: enumType([
+		"applications",
+		"data",
+		"infrastructure",
+		"business"
+	]),
+	about: stringType(),
+	tags: stringType().default(""),
+	direction: enumType(["TB", "LR"]),
+	notation: enumType(["bpmn", "archimate"]).optional(),
+	objects: arrayType(objectType({
+		key: stringType(),
+		name: stringType(),
+		componentId: stringType(),
+		typeId: stringType(),
+		technology: stringType().default(""),
+		x: numberType(),
+		y: numberType()
+	})),
+	relationships: arrayType(objectType({
+		from: stringType(),
+		to: stringType(),
+		kind: enumType(RELATION_KINDS),
+		label: stringType().default(""),
+		protocol: stringType().default("")
+	})),
+	/** The diagram it was made from, while that diagram exists. */
+	sourceDiagramId: stringType(),
+	author: stringType(),
+	createdAt: stringType(),
+	updatedAt: stringType()
+});
 objectType({
 	version: literalType(1),
 	name: stringType(),
@@ -4116,6 +4156,8 @@ objectType({
 	adrs: recordType(adrSchema).default({}),
 	/** The workspace's own rules. Missing in workspaces saved before they existed. */
 	rules: recordType(customRuleSchema).default({}),
+	/** Templates made from the workspace's own diagrams. Missing in workspaces saved before they existed. */
+	templates: recordType(savedTemplateSchema).default({}),
 	updatedAt: stringType()
 });
 // src/lib/ai/prompt.ts

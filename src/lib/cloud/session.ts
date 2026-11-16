@@ -378,7 +378,7 @@ export async function revertToVersion(version: VersionInfo): Promise<void> {
   const tables = withoutDangling(await versionTablesOf(version.id));
   await backend.saveVersion(workspaceId, `Before reverting to "${version.name}"`.slice(0, 120), "Saved automatically so that the revert can be taken back.", true);
   const current = useStore.getState().ws;
-  useStore.getState().replace({ ...current, ...fromTables({ ...tables, proposals: toTables(current).proposals, adrs: toTables(current).adrs, rules: toTables(current).rules }), updatedAt: nowIso() });
+  useStore.getState().replace({ ...current, ...fromTables({ ...tables, proposals: toTables(current).proposals, adrs: toTables(current).adrs, rules: toTables(current).rules, templates: toTables(current).templates }), updatedAt: nowIso() });
   await engine?.flush().catch(() => undefined);
   await refreshCollab();
 }

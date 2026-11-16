@@ -115,7 +115,7 @@ export function redactForTrust(tables: Tables, diagramId: string | null): Tables
 
   const nodes: Tables["nodes"] = {};
   if (diagram) for (const id of visible) if (tables.nodes[nodeKey(diagram.id, id)]) nodes[nodeKey(diagram.id, id)] = tables.nodes[nodeKey(diagram.id, id)];
-  return { objects, relationships, diagrams: diagram ? { [diagram.id]: withoutFlows({ ...diagram, description: "" }) } : {}, nodes, proposals: {}, adrs: {}, rules: {} };
+  return { objects, relationships, diagrams: diagram ? { [diagram.id]: withoutFlows({ ...diagram, description: "" }) } : {}, nodes, proposals: {}, adrs: {}, rules: {}, templates: {} };
 }
 
 export interface TrustFacts {

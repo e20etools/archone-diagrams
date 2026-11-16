@@ -36,6 +36,7 @@ export function emptyWorkspace(name = "My workspace"): Workspace {
     proposals: {},
     adrs: {},
     rules: {},
+    templates: {},
     updatedAt: nowIso(),
   };
 }

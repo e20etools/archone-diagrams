@@ -769,6 +769,61 @@ try {
   check("the technology field offers cloud service names", (await page.$$eval("#technology-options option", (o) => o.map((x) => x.value))).includes("Amazon S3"));
   await shot(page, "18-template");
 
+  // Any diagram can become a template of the workspace, under the perspective chosen for it.
+  {
+    await page.click('[aria-label="Diagram settings"]');
+    await page.waitForSelector("[data-save-as-template]");
+    await page.$eval("[data-save-as-template]", (b) => b.click());
+    await page.waitForSelector("[data-save-template-dialog]");
+    await page.$eval('input[aria-label="Template name"]', (e) => e.select());
+    await page.type('input[aria-label="Template name"]', "Our agent setup");
+    await page.$eval('[data-perspective-choice="data"]', (b) => b.click());
+    const counted = await page.$eval("[data-template-counts]", (e) => e.innerText);
+    await shot(page, "28-save-as-template");
+    await page.$eval("[data-save-template]", (b) => b.click());
+    await sleep(300);
+    const kept = Object.values((await stored()).templates ?? {});
+    const savedTemplate = kept[0];
+    const allLibrary = savedTemplate && savedTemplate.objects.every((o) => typeof o.componentId === "string" && o.componentId.includes("."));
+    check(
+      "a diagram is saved as a template under the perspective chosen, holding only library components",
+      kept.length === 1 && savedTemplate.name === "Our agent setup" && savedTemplate.perspective === "data" && savedTemplate.objects.length === 6 && allLibrary && counted.startsWith("6 boxes"),
+      `${kept.length} saved, ${savedTemplate?.perspective}, ${savedTemplate?.objects.length} boxes :: ${counted}`,
+    );
+    await page.goto(base, { waitUntil: "networkidle0" });
+    await page.click("[data-template-open]");
+    await page.waitForSelector("[data-template-own]");
+    await page.$eval("[data-template-own]", (b) => b.click());
+    await page.waitForFunction(() => document.querySelectorAll("[data-templates] [data-template]").length === 1);
+    const ownCard = await page.$eval("[data-templates] [data-template]", (b) => ({ id: b.getAttribute("data-template"), text: b.innerText }));
+    await page.$eval('[data-perspective="data"]', (b) => b.click());
+    const inData = await count(page, "[data-templates] [data-template]");
+    await shot(page, "29-saved-template-in-picker");
+    await page.$eval("[data-templates] [data-template]", (b) => b.click());
+    await page.$eval("[data-template-use]", (b) => b.click());
+    await page.waitForFunction(() => location.pathname.startsWith("/diagram/"));
+    await page.waitForSelector(".object-node");
+    await sleep(400);
+    const reused = await stored();
+    const reusedDiagram = Object.values(reused.diagrams).filter((d) => d.name === "Our agent setup");
+    check(
+      "a saved template is offered under its perspective, marked as saved here, and makes a diagram of its boxes where they stood",
+      ownCard.id === savedTemplate.id && ownCard.text.includes("Saved here") && inData === 1 && reusedDiagram.length === 1 && Object.keys(reusedDiagram[0].nodes).length === 6 && (await count(page, ".object-node")) === 6,
+      `${ownCard.id} :: ${ownCard.text.replace(/\n/g, " | ")} :: in data ${inData}, ${reusedDiagram.length} diagrams`,
+    );
+    await page.goto(base, { waitUntil: "networkidle0" });
+    await page.click("[data-template-open]");
+    await page.waitForSelector("[data-template-own]");
+    await page.$eval("[data-template-own]", (b) => b.click());
+    await page.waitForFunction(() => document.querySelectorAll("[data-templates] [data-template]").length === 1);
+    await page.$eval("[data-templates] [data-template]", (b) => b.click());
+    await page.$eval("[data-template-delete]", (b) => b.click());
+    await page.$eval("[data-template-delete-confirm]", (b) => b.click());
+    await sleep(300);
+    check("a saved template can be deleted after confirming", Object.keys((await stored()).templates ?? {}).length === 0 && !(await page.$("[data-template-own]")));
+    await page.keyboard.press("Escape");
+  }
+
   // The MCP server's diagram view, opened the way an assistant's client opens it: in a frame, fed over postMessage.
   {
     const { createMcpHandler } = await import(join(root, "supabase/functions/mcp/handler.js"));
