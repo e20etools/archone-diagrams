@@ -828,6 +828,30 @@ everything. In a diagram's library panel, a protocol is added to the connection 
 clear-text check reads the protocols (HTTP, FTP, Telnet, LDAP and the like) and stays quiet when
 the connection is marked encrypted. Exports carry the direction and protocols.
 
+### Impact and dependencies
+
+The Impact page (menu: Impact) answers two questions for anything in the model: a component, a
+whole diagram, or a library component (every object linked to it, or named as it is when not
+linked). It is also opened from a component's panel, a diagram's settings, and a component's
+details in the Library.
+
+- Dependencies and impact: what it depends on and what depends on it, level by level up to the
+  fifth, with the path to each, the kind of relationship and the protocols on it. A box that
+  stands for another diagram depends on everything that diagram shows, so the analysis crosses
+  from one diagram into the next. It lists the diagrams reached and how much of each, draws the
+  nearest sixty on a map, and downloads as CSV or JSON.
+- What if it stops: pick one or more components or whole diagrams. It lists everything that
+  stops with them, each rated Critical, High, Medium or Low (by distance, tier-1 or business
+  criticality, people who cannot work, and how many depend on it in turn); the diagrams affected;
+  the owners to tell; an impact level from 1 (negligible) to 5 (severe), worked out and
+  changeable; the likelihood from 1 (rare) to 5 (almost certain); and the risk on the usual five by
+  five grid (Low up to 4, Medium up to 9, High up to 16, Critical above). It suggests what to do
+  first: a second instance with failover for a single point of failure, replicas and tested
+  restores with an RPO and RTO for data, a fallback and agreed availability for an external
+  system, a second path or carrier for a network, high availability for a shared integration, a
+  recovery runbook for a whole diagram, owners where there are none. Scenarios are kept in the
+  browser and download as a Markdown report or CSV.
+
 ### Network zones, connections, integrations and diagram boxes
 
 Four more sections in the library:

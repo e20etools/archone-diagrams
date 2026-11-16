@@ -1,4 +1,4 @@
-import { Download, FileUp, Plus, Trash2, Waypoints, X } from "lucide-react";
+import { Zap, Download, FileUp, Plus, Trash2, Waypoints, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { TypeIcon } from "@/components/icons";
@@ -379,9 +379,12 @@ export function ModelPage() {
               <X size={16} />
             </IconButton>
           </div>
-          <div className="px-4 pb-3">
+          <div className="px-4 pb-3 flex gap-1.5">
             <Button size="sm" icon={<Waypoints size={14} />} onClick={() => navigate(`/analysis?object=${selected.id}`)}>
               Dependencies
+            </Button>
+            <Button size="sm" icon={<Zap size={14} />} onClick={() => navigate(`/impact?object=${selected.id}`)}>
+              Impact
             </Button>
           </div>
           <section className="px-4 py-3.5 border-t border-line-soft">

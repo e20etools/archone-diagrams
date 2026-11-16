@@ -1,6 +1,6 @@
 import { NOTATION_INFO } from "@/lib/notation";
 import { NOTATIONS, type Notation } from "@/lib/types";
-import { Archive, BookmarkPlus, AlignCenterHorizontal, AlignCenterVertical, AlignEndHorizontal, AlignEndVertical, AlignHorizontalSpaceAround, AlignStartHorizontal, AlignStartVertical, AlignVerticalSpaceAround, ChevronRight, EyeOff, LayoutDashboard, Presentation, ListOrdered, MessageSquare, PanelLeftClose, PanelLeftOpen, Search, Share2, ShieldCheck, Shuffle, SlidersHorizontal, Sparkles, Trash2, Waypoints, X, ZoomIn } from "lucide-react";
+import { Zap, Archive, BookmarkPlus, AlignCenterHorizontal, AlignCenterVertical, AlignEndHorizontal, AlignEndVertical, AlignHorizontalSpaceAround, AlignStartHorizontal, AlignStartVertical, AlignVerticalSpaceAround, ChevronRight, EyeOff, LayoutDashboard, Presentation, ListOrdered, MessageSquare, PanelLeftClose, PanelLeftOpen, Search, Share2, ShieldCheck, Shuffle, SlidersHorizontal, Sparkles, Trash2, Waypoints, X, ZoomIn } from "lucide-react";
 import { checkCopy } from "@/lib/freshness";
 import { alignNodes, distributeNodes, type AlignMode } from "@/lib/arrange";
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from "react";
@@ -346,6 +346,17 @@ function DiagramSettings({ ws, diagram, onClose }: { ws: Workspace; diagram: Dia
           </div>
         )}
       </Section>
+      <Section title="Impact">
+        <p className="text-[13px] text-ink-soft mb-2">What this diagram depends on, what depends on it in other diagrams, and what stops if it stops.</p>
+        <div className="flex flex-wrap gap-1.5">
+          <Button size="sm" icon={<Zap size={14} />} onClick={() => navigate(`/impact?diagram=${diagram.id}`)} data-diagram-impact>
+            Dependencies and impact
+          </Button>
+          <Button size="sm" onClick={() => navigate(`/impact?diagram=${diagram.id}&tab=whatif`)}>
+            What if it stops
+          </Button>
+        </div>
+      </Section>
       {canEdit && (
         <Section title="Template">
           <p className="text-[13px] text-ink-soft mb-2">Keep this diagram as a starting point everyone in the workspace can use, under the perspective you choose.</p>
@@ -442,6 +453,9 @@ function ObjectInspector({
         )}
         <Button size="sm" icon={<Waypoints size={14} />} onClick={() => navigate(`/analysis?object=${objectId}`)}>
           Dependencies
+        </Button>
+        <Button size="sm" icon={<Zap size={14} />} onClick={() => navigate(`/impact?object=${objectId}`)} data-object-impact>
+          Impact
         </Button>
       </div>
       <Section title="Details">

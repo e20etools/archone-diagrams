@@ -4,6 +4,7 @@ import { CloudGate } from "@/components/cloud/CloudGate";
 import { cloudEnabled } from "@/lib/cloud/config";
 import { EmptyState } from "@/components/ui";
 import { AiInboxPage, ProposalReviewPage } from "@/pages/AiPages";
+import { ImpactPage } from "./pages/ImpactPage";
 import { AnalysisPage } from "@/pages/AnalysisPage";
 import { AskPage } from "@/pages/AskPage";
 import { AuditPage } from "@/pages/AuditPage";
@@ -44,6 +45,7 @@ export default function App() {
         <Route path="/model" element={<ModelPage />} />
         <Route path="/library" element={<LibraryPage />} />
         <Route path="/analysis" element={<AnalysisPage />} />
+        <Route path="/impact" element={<ImpactPage />} />
         <Route path="/ask" element={<AskPage />} />
         <Route path="/health" element={<HealthPage />} />
         <Route path="/checks" element={<ChecksPage />} />

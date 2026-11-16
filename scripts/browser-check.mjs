@@ -460,6 +460,62 @@ try {
   check("impact report lists who is affected", (await count(page, "tbody tr")) >= 1);
   await shot(page, "07-impact");
 
+  // Impact and dependencies: five levels, across diagrams, and what if it stops.
+  const impactObject = new URL(page.url()).searchParams.get("object");
+  await page.goto(`${base}/impact?object=${impactObject}`, { waitUntil: "networkidle0" });
+  await page.waitForSelector("[data-impact-links]");
+  await page.waitForSelector(".object-node");
+  await sleep(400);
+  const impactCount = () => page.$eval('[data-impact-stat="impact"] .text-2xl', (e) => Number(e.textContent));
+  const impactAll = await impactCount();
+  check("the impact page marks the component and what depends on it on a map", impactAll >= 1 && (await count(page, '.object-node[data-highlight="focus"]')) >= 1 && (await count(page, '.object-node[data-highlight="down"]')) >= 1, `${impactAll} depend on it`);
+  await page.click('[data-impact-levels="1"]');
+  await sleep(300);
+  const impactOne = await impactCount();
+  check("one level shows only what depends on it directly", impactOne >= 1 && impactOne <= impactAll && (await count(page, '[data-impact-list="impact"] [data-impact-step]')) === impactOne, `${impactOne} at level 1, ${impactAll} in five`);
+  await page.click('[data-impact-levels="5"]');
+  await shot(page, "07b-impact-levels");
+  await clickText(page, "What if it stops", "[role=tab]");
+  await page.waitForSelector("[data-whatif-risk]");
+  const riskRank = { low: 0, medium: 1, high: 2, critical: 3 };
+  const riskNow = () => page.$eval("[data-whatif-risk]", (e) => e.getAttribute("data-whatif-risk"));
+  const riskBefore = await riskNow();
+  await page.select("[data-whatif-likelihood]", "5");
+  await sleep(200);
+  const riskAfter = await riskNow();
+  const whatIfCounts = await page.evaluate(() => ({ affected: Number(document.querySelector("[data-whatif-affected]").getAttribute("data-whatif-affected")), remedies: Number(document.querySelector("[data-whatif-remedies]").getAttribute("data-whatif-remedies")) }));
+  check("what if it stops lists the affected components with how bad, and what to do", whatIfCounts.affected >= 1 && whatIfCounts.remedies >= 1, `${whatIfCounts.affected} affected, ${whatIfCounts.remedies} remedies`);
+  check("a likelier failure is a higher risk", riskRank[riskAfter] >= riskRank[riskBefore] && riskAfter !== "low", `${riskBefore} then ${riskAfter}`);
+  await page.select("[data-whatif-impact]", "1");
+  await sleep(200);
+  check("the impact level can be set by hand, and the risk follows", (await riskNow()) === "low" || (await riskNow()) === "medium");
+  await page.click("[data-whatif-export=md]");
+  let report = "";
+  for (let i = 0; i < 25 && !report; i++) {
+    await sleep(200);
+    report = (await readdir(downloads)).find((f) => f.startsWith("what-if-") && f.endsWith(".md")) ?? "";
+  }
+  const reportText = report ? await readFile(join(downloads, report), "utf8") : "";
+  check("the scenario is downloaded as a report with risk, affected and what to do", reportText.includes("Risk:") && reportText.includes("## Affected") && reportText.includes("## What to do"), report || "no file");
+  if (report) await rm(join(downloads, report));
+  await page.click("[data-whatif-save]");
+  await sleep(200);
+  check("a scenario can be saved and is listed", (await count(page, "[data-whatif-saved] li button.text-blueprint")) === 1);
+  await shot(page, "07c-what-if");
+  await clickText(page, "Diagram", "[data-impact-picker] [role=tab]");
+  await page.waitForSelector("[data-impact-option]");
+  await page.click("[data-impact-option]");
+  await page.waitForFunction(() => document.querySelector("[data-impact-subject]")?.textContent.startsWith("Diagram"));
+  await page.waitForSelector("[data-whatif-stopped]");
+  check("a whole diagram can be stopped in a scenario", new URL(page.url()).searchParams.has("diagram") && (await count(page, "[data-whatif-stopped]")) === 1);
+  await clickText(page, "Library component", "[data-impact-picker] [role=tab]");
+  await page.waitForSelector("[data-impact-option]");
+  await page.click("[data-impact-option]");
+  await page.waitForFunction(() => document.querySelector("[data-impact-subject]")?.textContent.startsWith("Library component"));
+  await clickText(page, "Dependencies and impact", "[role=tab]");
+  await page.waitForSelector("[data-impact-links]");
+  check("a library component is analysed through every object that uses it", new URL(page.url()).searchParams.has("component") && (await count(page, '[data-impact-stat]')) === 4);
+
   // AI draft from text, with no key: the built-in rules answer, and nothing is saved before review.
   await page.goto(`${base}/ai`, { waitUntil: "networkidle0" });
   const objectsBefore = await page.evaluate(() => Object.keys(JSON.parse(localStorage.getItem("archone.workspace.v1")).objects).length);

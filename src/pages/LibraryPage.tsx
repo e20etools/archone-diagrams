@@ -1,4 +1,4 @@
-import { Lock, Plus, Search } from "lucide-react";
+import { Lock, Plus, Search, Zap } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { ComponentTile, GENERAL, SourceSelect, sectionsOf, type LibrarySource } from "@/components/LibraryBrowser";
@@ -166,6 +166,9 @@ export function LibraryPage() {
               Add to the model
             </Button>
           )}
+          <Button className="mt-2" icon={<Zap size={15} />} onClick={() => navigate(`/impact?component=${picked.id}`)} data-library-impact>
+            Dependencies and impact
+          </Button>
           <p className="mt-2 text-xs text-ink-faint">
             {usedBy.length ? `${usedBy.length} ${usedBy.length === 1 ? "object" : "objects"} in this model ${usedBy.length === 1 ? "is" : "are"} this component.` : "No object in this model is this component yet."} On a diagram, drag it from the panel on the left.
           </p>
