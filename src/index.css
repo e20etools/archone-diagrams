@@ -1,0 +1,307 @@
+@import "tailwindcss";
+
+/*
+ * Drafting-table look: cool paper, ink-navy text, one blueprint blue for actions.
+ * Amber is reserved for AI drafts that still need a person, so it always means "review me".
+ */
+@theme {
+  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  --color-paper: #f3f5f8;
+  --color-surface: #ffffff;
+  --color-ink: #16233a;
+  --color-ink-soft: #4a5870;
+  --color-ink-faint: #7c889c;
+  --color-line: #d5dbe5;
+  --color-line-soft: #e6eaf0;
+  --color-blueprint: #2447d6;
+  --color-blueprint-deep: #1a36ab;
+  --color-blueprint-soft: #e7ecfc;
+  --color-signal: #b7791f;
+  --color-signal-soft: #fdf3dc;
+  --color-danger: #b4321f;
+  --color-danger-soft: #fbeae7;
+  --color-ok: #1f8a4c;
+  --color-ok-soft: #e4f4ea;
+}
+
+/* In the base layer, so utility classes on a button or input still win. */
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    background: var(--color-paper);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+    color: inherit;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-blueprint);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background: var(--color-blueprint-soft);
+  }
+}
+
+/* ---------- canvas ---------- */
+
+.react-flow {
+  background: var(--color-paper);
+}
+
+.object-node {
+  position: relative;
+  box-sizing: border-box;
+  width: 216px;
+  height: 78px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px 0 14px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-left: 4px solid var(--node-color, var(--color-blueprint));
+  border-radius: 6px;
+  box-shadow: 0 1px 0 rgba(22, 35, 58, 0.04);
+  transition: box-shadow 120ms ease, opacity 120ms ease;
+}
+.react-flow__node.selected .object-node {
+  outline: 2px solid var(--color-blueprint);
+  outline-offset: 1px;
+  box-shadow: 0 4px 14px rgba(36, 71, 214, 0.16);
+}
+.object-node[data-highlight="focus"] {
+  outline: 3px solid var(--color-blueprint);
+  outline-offset: 1px;
+}
+.object-node[data-highlight="up"] {
+  outline: 2px solid #0e8a7d;
+  outline-offset: 1px;
+}
+.object-node[data-highlight="down"] {
+  outline: 2px solid var(--color-signal);
+  outline-offset: 1px;
+}
+.object-node[data-highlight="dim"] {
+  opacity: 0.35;
+}
+.object-node__icon {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  color: var(--node-color, var(--color-blueprint));
+  background: color-mix(in srgb, var(--node-color, var(--color-blueprint)) 11%, white);
+}
+.object-node__name {
+  font-weight: 600;
+  font-size: 14px;
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.object-node__meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 3px;
+  font-size: 12px;
+  color: var(--color-ink-soft);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.object-node__tech {
+  padding: 0 6px;
+  border-radius: 4px;
+  background: var(--color-paper);
+  border: 1px solid var(--color-line-soft);
+  font-size: 11.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.object-node__corner {
+  position: absolute;
+  top: -9px;
+  right: 8px;
+  display: flex;
+  gap: 4px;
+}
+.object-node__inside {
+  position: absolute;
+  right: 8px;
+  bottom: -9px;
+  padding: 0 7px;
+  height: 18px;
+  border-radius: 9px;
+  border: 1px solid var(--color-line);
+  background: var(--color-surface);
+  font-size: 11.5px;
+  color: var(--color-blueprint);
+  cursor: pointer;
+}
+.object-node__inside:hover {
+  background: var(--color-blueprint-soft);
+  border-color: var(--color-blueprint);
+}
+
+.boundary-node {
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  border: 1.5px dashed #9aa5b5;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.45);
+}
+.boundary-node__label {
+  position: absolute;
+  top: 10px;
+  left: 14px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--color-ink-soft);
+}
+
+.react-flow__handle {
+  width: 9px;
+  height: 9px;
+  background: var(--color-surface);
+  border: 1.5px solid var(--color-ink-faint);
+  opacity: 0;
+  transition: opacity 100ms ease;
+}
+.react-flow__node:hover .react-flow__handle,
+.react-flow__node.selected .react-flow__handle,
+.react-flow.connecting .react-flow__handle {
+  opacity: 1;
+}
+.react-flow__handle:hover {
+  border-color: var(--color-blueprint);
+  background: var(--color-blueprint-soft);
+}
+/* Hidden, not removed: React Flow measures the handles to know where arrows start and end. */
+.react-flow.read-only .react-flow__handle {
+  opacity: 0 !important;
+  pointer-events: none;
+}
+
+.react-flow__edge-path {
+  stroke: #5b6b84;
+  stroke-width: 1.5;
+}
+.react-flow__edge.selected .react-flow__edge-path,
+.react-flow__edge:focus .react-flow__edge-path {
+  stroke: var(--color-blueprint);
+  stroke-width: 2.25;
+}
+.edge-label {
+  position: absolute;
+  max-width: 190px;
+  padding: 0 5px;
+  border-radius: 3px;
+  background: var(--color-paper);
+  color: var(--color-ink-soft);
+  font-size: 11.5px;
+  line-height: 17px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+.edge-label[data-selected] {
+  color: var(--color-blueprint-deep);
+  background: var(--color-blueprint-soft);
+}
+.react-flow__attribution {
+  background: transparent;
+  font-size: 10px;
+}
+.react-flow__controls {
+  box-shadow: none;
+  border: 1px solid var(--color-line);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.react-flow__controls-button {
+  border-bottom: 1px solid var(--color-line-soft);
+}
+.react-flow__minimap {
+  border: 1px solid var(--color-line);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
+/* ---------- notations (PRD FR-10): the same boxes, drawn the ArchiMate or the BPMN way ---------- */
+
+/* ArchiMate: the layer gives the fill. The colours are the ones the standard's own figures use. */
+.object-node[data-notation="archimate"] {
+  border: 1px solid #55606f;
+  border-radius: 2px;
+}
+.object-node[data-notation="archimate"] .object-node__icon {
+  background: rgba(255, 255, 255, 0.55);
+  color: #2a3444;
+}
+.object-node[data-layer="business"] { background: #ffffb5; }
+.object-node[data-layer="application"] { background: #b5ffff; }
+.object-node[data-layer="technology"] { background: #c9e7b7; }
+.object-node[data-layer="business"], .object-node[data-layer="application"] { border-radius: 10px; }
+.object-node[data-layer="grouping"] {
+  background: transparent;
+  border: 1.5px dashed #55606f;
+}
+.object-node[data-notation="archimate"] .object-node__meta,
+.object-node[data-notation="archimate"] .object-node__name { color: #16233a; }
+
+/* BPMN: the shape says what the step is. Each shape keeps the box's footprint, so layouts carry over. */
+.object-node[data-notation="bpmn"] {
+  border: 1.5px solid #2a3444;
+  border-left-width: 1.5px;
+}
+.object-node[data-shape="task"] { border-radius: 14px; }
+.object-node[data-shape="pool"] { border-radius: 0; border-left-width: 14px; }
+.object-node[data-shape="event"],
+.object-node[data-shape="gateway"] {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+.object-node[data-shape="event"] .object-node__icon,
+.object-node[data-shape="gateway"] .object-node__icon {
+  width: 46px;
+  height: 46px;
+  background: var(--color-surface);
+  border: 2px solid #2a3444;
+  color: transparent;
+}
+.object-node[data-shape="event"] .object-node__icon { border-radius: 50%; }
+.object-node[data-shape="gateway"] .object-node__icon { border-radius: 3px; transform: rotate(45deg) scale(0.82); }
+.object-node[data-shape="data"] { border-radius: 2px 2px 14px 14px; }
+.object-node[data-shape="participant"] { border-style: dashed; }

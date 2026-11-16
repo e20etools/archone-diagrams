@@ -1,0 +1,4 @@
+Name;Type;Owner;Description
+"Fraud check";Service;"Risk; Compliance";"Scores every payment
+before capture"
+Card vault;Database;Risk;

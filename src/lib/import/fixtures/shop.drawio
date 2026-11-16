@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="app.diagrams.net" version="24.0.0">
+<diagram id="p1" name="Shop"><mxGraphModel dx="800" dy="600"><root><mxCell id="0"/><mxCell id="1" parent="0"/>
+<mxCell id="zone" value="Payments &lt;b&gt;platform&lt;/b&gt;" style="swimlane;whiteSpace=wrap;html=1;" vertex="1" parent="1"><mxGeometry x="40" y="40" width="520" height="300" as="geometry"/></mxCell>
+<mxCell id="web" value="Web shop" style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="zone"><mxGeometry x="30" y="60" width="120" height="60" as="geometry"/></mxCell>
+<object label="Orders&lt;br&gt;service" owner="Team A" id="orders"><mxCell style="rounded=1;whiteSpace=wrap;html=1;" vertex="1" parent="zone"><mxGeometry x="220" y="60" width="120" height="60" as="geometry"/></mxCell></object>
+<mxCell id="db" value="Orders DB" style="shape=cylinder3;whiteSpace=wrap;html=1;" vertex="1" parent="zone"><mxGeometry x="220" y="190" width="120" height="80" as="geometry"/></mxCell>
+<mxCell id="user" value="Customer" style="shape=umlActor;verticalLabelPosition=bottom;html=1;" vertex="1" parent="1"><mxGeometry x="640" y="90" width="30" height="60" as="geometry"/></mxCell>
+<mxCell id="icon" value="" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.sqs;" vertex="1" parent="1"><mxGeometry x="640" y="220" width="48" height="48" as="geometry"/></mxCell>
+<mxCell id="caption" value="Order events" style="text;html=1;align=center;" vertex="1" parent="1"><mxGeometry x="620" y="272" width="90" height="20" as="geometry"/></mxCell>
+<mxCell id="blank" value="" style="ellipse;html=1;" vertex="1" parent="1"><mxGeometry x="800" y="40" width="20" height="20" as="geometry"/></mxCell>
+<mxCell id="note" value="Draft, not approved" style="text;html=1;" vertex="1" parent="1"><mxGeometry x="40" y="380" width="160" height="20" as="geometry"/></mxCell>
+<mxCell id="e1" value="places orders" style="edgeStyle=orthogonalEdgeStyle;html=1;" edge="1" parent="1" source="user" target="web"><mxGeometry relative="1" as="geometry"/></mxCell>
+<mxCell id="e2" style="html=1;" edge="1" parent="zone" source="web" target="orders"><mxGeometry relative="1" as="geometry"/></mxCell>
+<mxCell id="e2l" value="REST" style="edgeLabel;html=1;" vertex="1" connectable="0" parent="e2"><mxGeometry relative="1" as="geometry"/></mxCell>
+<mxCell id="e3" value="" style="html=1;" edge="1" parent="1" source="orders" target="db"><mxGeometry relative="1" as="geometry"/></mxCell>
+<mxCell id="e4" value="publishes" style="html=1;" edge="1" parent="1" source="orders" target="icon"><mxGeometry relative="1" as="geometry"/></mxCell>
+<mxCell id="e5" value="drawn up to the shop" style="html=1;" edge="1" parent="1" target="blank"><mxGeometry relative="1" as="geometry"><mxPoint x="150" y="140" as="sourcePoint"/></mxGeometry></mxCell>
+<mxCell id="e6" value="loose" style="html=1;" edge="1" parent="1"><mxGeometry relative="1" as="geometry"><mxPoint x="900" y="500" as="sourcePoint"/><mxPoint x="950" y="520" as="targetPoint"/></mxGeometry></mxCell>
+</root></mxGraphModel></diagram>
+<diagram id="p2" name="Compressed page">xVPBTsMwDP0a30MiDj2yMHriwh+YxmojpUvluVv792RNxFaVITggDpHsZ73nvKcEjO2nmnHoXqOjAGYPxnKMkqt+shQCaOUdmGfQWqUD+uXO9GGZqgGZDvITAmbCCcNIGalR6Ixzxo8yh4JzHA+OLjQFZldoxELT3dULVPbWFHsSTrpqur2Ymlfd2TvpClsVrCPfdkXysWB4zH37KXs1mYri82vP7xvPb2ANPFVD8E0KRMFeQ2WhMn8fglb/FkOziSED5Fr63k2KJI7c0OoJCXJLcpPw1jNTQPGntfovLKT2+jOW2erjfAA=</diagram>
+</mxfile>
