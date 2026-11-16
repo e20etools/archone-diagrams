@@ -1681,6 +1681,19 @@ try {
   check("a file of another kind is refused with the kinds that work", true);
   await clickText(page, "Cancel");
   await shot(page, "10-settings");
+
+  // The bank sample: ten connected diagrams added to what is there.
+  await page.goto(`${base}/settings`, { waitUntil: "networkidle0" });
+  const beforeSample = Object.values((await stored()).diagrams).filter((d) => !d.archive?.archived).length;
+  await page.click("[data-enterprise-sample]");
+  await page.waitForFunction(() => location.pathname === "/map");
+  await page.waitForSelector("[data-map-node]");
+  await sleep(800);
+  const sampleDiagrams = await count(page, "[data-map-node]");
+  check("the bank sample adds ten connected diagrams and opens the map", sampleDiagrams === beforeSample + 10 && (await count(page, ".react-flow__edge")) >= 20, `${beforeSample} then ${sampleDiagrams} diagrams, ${await count(page, ".react-flow__edge")} links`);
+  await shot(page, "10b-bank-sample-map");
+  await page.goto(`${base}/settings`, { waitUntil: "networkidle0" });
+  check("the bank sample is added only once", await page.$eval("[data-enterprise-sample]", (b) => b.disabled));
   await page.close();
 
   /* ---------- pass 2: an AI provider is configured ---------- */

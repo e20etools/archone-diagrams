@@ -10,6 +10,7 @@ import { Badge, Button, CommitInput, Field, Input, Modal, countOf, useNotice } f
 import { cloudEnabled } from "@/lib/cloud/config";
 import { deleteCurrentWorkspace, errorText, renameCurrentWorkspace, updateMyName, useCanEdit, useSession } from "@/lib/cloud/session";
 import { fetchAiStatus, getAccessCode, setAccessCode, type AiStatus } from "@/lib/ai/client";
+import { addEnterpriseSample, hasEnterpriseSample } from "@/lib/enterpriseSample";
 import { demoWorkspace } from "@/lib/demo";
 import { downloadText, slugify, workspaceJson } from "@/lib/exporters";
 import { emptyWorkspace } from "@/lib/model";
@@ -196,6 +197,20 @@ export function SettingsPage() {
           <div className="flex flex-wrap gap-2">
             <Button disabled={!isOwner && hasContent} onClick={() => (hasContent ? setConfirm("demo") : loadDemo())}>
               Load the sample model
+            </Button>
+            <Button
+              data-enterprise-sample
+              disabled={hasEnterpriseSample(ws)}
+              title={hasEnterpriseSample(ws) ? "The bank sample is already in this workspace." : "Adds ten connected diagrams of a bank to what is here, without removing anything."}
+              onClick={() => {
+                const result = addEnterpriseSample(ws);
+                if (result.added) {
+                  apply(() => result.ws);
+                  navigate("/map");
+                }
+              }}
+            >
+              Add the bank sample (10 diagrams)
             </Button>
             <Button variant="danger" disabled={!hasContent || !isOwner} onClick={() => setConfirm("reset")}>
               Delete everything

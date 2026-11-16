@@ -873,6 +873,20 @@ and the protocols on them.
 - Export what the map shows as PNG, SVG, PDF, an animated GIF, draw.io, Mermaid, CSV (every link
   with the components behind it) or JSON.
 
+### The bank sample: ten connected diagrams
+
+Settings, Sample model, "Add the bank sample (10 diagrams)" adds a bank's estate to what is in
+the workspace, without removing anything, to try impact and dependency analysis on something the
+size of a real one: Enterprise landscape, Customer portal, Core banking, Payments hub, Identity
+and access, Data platform, Data centre network (zones: Internet, DMZ, internal LAN, database,
+PCI, management, DR site), Security operations, Backup and disaster recovery, and Employee
+onboarding as a process. Shared services (Active Directory, DNS, NTP, Exchange, the integration
+bus, the log collectors, the core switch) appear on several diagrams, connections carry
+protocols and ports (LDAPS 636, Kerberos 88, Oracle 1521, Kafka over TLS 9093, ISO 20022, ISO
+8583, Syslog over TLS 6514 and more) and the networks they run over (MPLS, GSN, Internet), and
+boxes stand for the network, identity and backup diagrams. Every object is tagged
+enterprise-sample. An empty workspace offers it on the Diagrams page too.
+
 ### Network zones, connections, integrations and diagram boxes
 
 Four more sections in the library:

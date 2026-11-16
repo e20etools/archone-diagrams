@@ -6,6 +6,7 @@ import { ArchiveDialog, ArchivedDialog, NewArchitectureDialog } from "@/componen
 import { ImportDialog } from "@/components/ImportDialog";
 import { Button, EmptyState, IconButton, Modal, formatDate } from "@/components/ui";
 import { VIEW_TYPE_INFO } from "@/lib/catalog";
+import { addEnterpriseSample } from "@/lib/enterpriseSample";
 import { demoWorkspace } from "@/lib/demo";
 import { archivedDiagrams, deleteDiagram, duplicateDiagram, sortedDiagrams } from "@/lib/model";
 import { apply, useStore, useWorkspace } from "@/lib/store";
@@ -80,6 +81,18 @@ export function DiagramsPage() {
               }}
             >
               Load the sample model
+            </Button>
+            <Button
+              data-enterprise-sample
+              onClick={() => {
+                const result = addEnterpriseSample(ws);
+                if (result.added) {
+                  apply(() => result.ws);
+                  navigate("/map");
+                }
+              }}
+            >
+              Load the bank sample (10 diagrams)
             </Button>
           </EmptyState>
         </div>

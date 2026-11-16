@@ -245,6 +245,7 @@ function DiagramMapView() {
     const pair = (l: MapLink) => [l.from, l.to].sort().join("|");
     const dependsPairs = new Set(shown.links.filter((l) => l.kind === "depends").map(pair));
     const sharedBy = new Map(shown.links.filter((l) => l.kind === "shared").map((l) => [pair(l), l.shared.length]));
+    const busy = shown.links.length > 24;
     return shown.links
       .filter((l) => l.kind === "depends" || !dependsPairs.has(pair(l)))
       .map((l) => {
@@ -262,7 +263,8 @@ function DiagramMapView() {
           target: l.to,
           type: l.kind === "shared" ? "straight" : "default",
           animated: l.kind === "depends",
-          label: l.kind === "depends" && sharedBy.get(pair(l)) ? `${linkLabel(ws, l)} · ${sharedBy.get(pair(l))} shared` : linkLabel(ws, l),
+          // On a busy map, only the lines of the diagrams picked say what they carry.
+          label: busy && !lit ? undefined : l.kind === "depends" && sharedBy.get(pair(l)) ? `${linkLabel(ws, l)} · ${sharedBy.get(pair(l))} shared` : linkLabel(ws, l),
           data: { kind: l.kind },
           className: cx("map-edge", `map-edge-${l.kind}`, lit && "map-edge-lit", faded && "map-edge-faded"),
           style: {
