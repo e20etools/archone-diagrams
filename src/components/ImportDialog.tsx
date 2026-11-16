@@ -254,12 +254,10 @@ export function ImportDialog({ onClose, start, only }: { onClose: () => void; st
             <input ref={picker} type="file" accept={only === "drawio" ? ".drawio,.xml" : ACCEPT} className="sr-only" aria-label="File to import" onChange={(e) => void choose(e.target.files?.[0])} />
           </div>
           {problem && <Problem text={problem} />}
-          {only === "drawio" && (
-            <p className="text-[13px] text-ink-soft" data-drawio-exact>
-              No AI is used. A shape whose label, or whose draw.io stencil, is exactly a component of the library becomes that component. Every other shape is listed in the draft so you can check
-              its type before accepting.
-            </p>
-          )}
+          <p className="text-[13px] text-ink-soft" data-drawio-exact>
+            No AI is used. In a draw.io or Visio diagram, a shape whose label or stencil is exactly a component of the library (also "Amazon S3", "AWS Lambda") becomes that component; every other
+            shape is listed in the draft so you can check its type before accepting.
+          </p>
           {!only && <ApmImport canEdit={canEdit} onDone={onClose} />}
           <ul className="space-y-2.5">
             <li className="flex gap-3">

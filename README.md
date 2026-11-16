@@ -786,11 +786,11 @@ build it:
 5. **Text to architecture** and 6. **Voice to architecture**: a draft from a description, typed
    or dictated (Arabic or English; the browser's dictation, started only on request), reviewed
    before it is saved. Component names are asked for in English.
-7. **Import architecture**: a file, or a picture through the AI draft.
-8. **Import draw.io file**: no AI; a shape whose label or draw.io stencil is exactly a library
-   component (also "Amazon S3", "AWS Lambda", "Azure Functions") becomes that component, and the
-   draft lists the shapes that matched nothing.
-9. **Archived diagrams**: a diagram can be archived from its row or its settings, with a reason;
+7. **Import architecture**: draw.io, Visio, Excel, CSV, Mermaid, Structurizr or ArchiMate, with no
+   AI; in a draw.io or Visio diagram a shape whose label or stencil is exactly a library component
+   (also "Amazon S3", "AWS Lambda", "Azure Functions") becomes that component, and the draft lists
+   the shapes that matched nothing. A picture goes through the AI draft instead.
+8. **Archived diagrams**: a diagram can be archived from its row or its settings, with a reason;
    it leaves the lists and search, nothing is deleted, and it can be restored with a reason. Both
    reasons are kept with the diagram (column `archive`), and scenarios keep it archived.
 

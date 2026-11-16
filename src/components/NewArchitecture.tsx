@@ -13,7 +13,6 @@ import {
   Plus,
   Sparkles,
   Trash2,
-  Workflow,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
@@ -38,7 +37,7 @@ import { componentFor, stepComponents, wizardProblem, wizardSteps, wizardTemplat
  * (AI, voice, files) go through a draft that is reviewed before anything is saved.
  */
 
-type Way = "manual" | "wizard" | "existing" | "template" | "text" | "voice" | "import" | "drawio" | "archived";
+type Way = "manual" | "wizard" | "existing" | "template" | "text" | "voice" | "import" | "archived";
 
 const WAYS: { group: string; items: { id: Way; n: string; title: string; text: string; icon: ReactNode }[] }[] = [
   {
@@ -65,9 +64,14 @@ const WAYS: { group: string; items: { id: Way; n: string; title: string; text: s
   {
     group: "Import and archive",
     items: [
-      { id: "import", n: "07", title: "Import architecture", text: "From a file (Excel, Visio, Mermaid, Structurizr, ArchiMate) or a picture.", icon: <FileUp size={18} /> },
-      { id: "drawio", n: "08", title: "Import draw.io file", text: "Convert a .drawio diagram using exact library matches. No AI.", icon: <Workflow size={18} /> },
-      { id: "archived", n: "09", title: "Archived diagrams", text: "See archived diagrams and restore one, with a reason.", icon: <Archive size={18} /> },
+      {
+        id: "import",
+        n: "07",
+        title: "Import architecture",
+        text: "draw.io, Visio, Excel, Mermaid, Structurizr or ArchiMate. Shapes that are exactly a library component become it; no AI.",
+        icon: <FileUp size={18} />,
+      },
+      { id: "archived", n: "08", title: "Archived diagrams", text: "See archived diagrams and restore one, with a reason.", icon: <Archive size={18} /> },
     ],
   },
 ];
@@ -123,7 +127,6 @@ export function NewArchitectureDialog({ ws, onClose }: { ws: Workspace; onClose:
   if (way === "image") return <AiDraftDialog ws={ws} start={{ ...named, tab: "image" }} onClose={onClose} />;
   if (way === "voice") return <VoiceDialog ws={ws} start={named} onBack={back} onClose={onClose} />;
   if (way === "import") return <ImportDialog start={start} onClose={onClose} />;
-  if (way === "drawio") return <ImportDialog start={start} only="drawio" onClose={onClose} />;
   if (way === "archived") return <ArchivedDialog ws={ws} onClose={back} onRestored={open} />;
 
   if (stage === "kind")

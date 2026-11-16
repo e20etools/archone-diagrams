@@ -260,7 +260,7 @@ try {
   await clickText(page, "Next: how to build it");
   await page.waitForSelector("[data-new-ways]");
   const ways = await page.$$eval("[data-new-ways] [data-way]", (els) => els.map((e) => e.dataset.way));
-  check("after the kind, nine ways to build the diagram are offered", ways.join(",") === "manual,wizard,existing,template,text,voice,import,drawio,archived", ways.join(","));
+  check("after the kind, eight ways to build the diagram are offered", ways.join(",") === "manual,wizard,existing,template,text,voice,import,archived", ways.join(","));
   await shot(page, "30-new-diagram-ways");
   await page.click('[data-way="manual"]');
   await page.waitForSelector(".object-node");
