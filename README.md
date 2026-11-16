@@ -742,6 +742,23 @@ forbids, and can file the ones the model does not know as a proposal that names 
 request. `gate/README.md` has the file format, the options and a GitHub Actions workflow.
 It checks the declaration, not the code.
 
+### Exporting a diagram
+
+Export opens one window with every format, grouped:
+
+- **Pictures and slides**: PNG, SVG and PDF as on the screen (PNG and PDF can carry the date
+  and a check code), and PowerPoint: the picture, the same diagram as shapes and lines that can
+  be edited in PowerPoint, and tables of its objects and relationships.
+- **Moving and interactive**: an interactive HTML page (pan, zoom, search, every box's details
+  on a click, flows to play; one file that works offline), an animated GIF and a video (MP4 where
+  the browser can record it, otherwise WebM). The animation plays the diagram's flows step by
+  step; a diagram without flows shows traffic moving along its lines. These are drawn from the
+  model, not from the screen, so they look the same wherever they open.
+- **Data**: JSON, Excel (objects and relationships sheets, which import back), and CSV.
+- **For other tools**: Mermaid, PlantUML, draw.io, Structurizr DSL (a C4 Level 2 diagram becomes
+  a container view of its system), ArchiMate exchange file, FINOS CALM, and BPMN 2.0 for diagrams
+  drawn in BPMN.
+
 ### Kinds of diagram and roles per category
 
 Every diagram belongs to one of five categories, chosen when it is made:

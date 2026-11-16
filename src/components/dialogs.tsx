@@ -1,6 +1,6 @@
 import { writeBpmn } from "@/lib/bpmn";
-import { Check, ChevronDown, Copy, ImageUp, Sparkles } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { Check, Copy, Download, ImageUp, Sparkles } from "lucide-react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import type { CanvasHandle } from "@/components/canvas/DiagramCanvas";
 import { LiveLinks } from "@/components/cloud/LiveLinks";
@@ -13,6 +13,7 @@ import {
   diagramJson,
   diagramObjects,
   diagramRelationships,
+  downloadBlob,
   downloadText,
   objectsCsv,
   relationshipsCsv,
@@ -22,6 +23,11 @@ import {
 } from "@/lib/exporters";
 import { transcriptToProposal } from "@/lib/ai/transcript";
 import { calmJson } from "@/lib/calm";
+import { diagramPicture } from "@/lib/export/picture";
+import { diagramWorkspace, drawioXml, gifBlob, interactiveHtml, powerPointBlob, structurizrDsl, videoBlob } from "@/lib/export/formats";
+import { writeXlsx } from "@/lib/import/xlsx";
+import { modelSheets } from "@/lib/import/draft";
+import { writeArchimate } from "@/lib/import/archimate";
 import { exportPdf, exportPng, exportSvg, stampFor } from "@/lib/exportImage";
 import { buildSharePayload, encodeShare, shareUrl } from "@/lib/share";
 import { apply } from "@/lib/store";
@@ -292,20 +298,41 @@ const STAMP_KEY = "archone.export.stamp";
 
 export function ExportMenu({ ws, diagram, canvas, onNotice }: { ws: Workspace; diagram: Diagram; canvas: React.RefObject<CanvasHandle | null>; onNotice: (text: string) => void }) {
   const [open, setOpen] = useState(false);
-  const root = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const close = (e: MouseEvent) => !root.current?.contains(e.target as Node) && setOpen(false);
-    const key = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
-    window.addEventListener("mousedown", close);
-    window.addEventListener("keydown", key);
-    return () => {
-      window.removeEventListener("mousedown", close);
-      window.removeEventListener("keydown", key);
-    };
-  }, [open]);
+  return (
+    <>
+      <Button icon={<Download size={15} />} onClick={() => setOpen(true)} data-export-open>
+        Export
+      </Button>
+      {open && <ExportDialog ws={ws} diagram={diagram} canvas={canvas} onNotice={onNotice} onClose={() => setOpen(false)} />}
+    </>
+  );
+}
 
-  const file = slugify(diagram.name);
+type ExportId =
+  | "png"
+  | "svg"
+  | "pdf"
+  | "pptx"
+  | "html"
+  | "gif"
+  | "video"
+  | "json"
+  | "xlsx"
+  | "csv-objects"
+  | "csv-relationships"
+  | "mermaid"
+  | "plantuml"
+  | "drawio"
+  | "structurizr"
+  | "archimate"
+  | "calm"
+  | "bpmn";
+
+/** Every way a diagram can leave the app, in one window, grouped by what the file is for. */
+function ExportDialog({ ws, diagram, canvas, onNotice, onClose }: { ws: Workspace; diagram: Diagram; canvas: React.RefObject<CanvasHandle | null>; onNotice: (text: string) => void; onClose: () => void }) {
+  const file = slugify(diagram.name) || "diagram";
+  const [busy, setBusy] = useState<ExportId | null>(null);
+  const [done, setDone] = useState("");
   // PNG and PDF carry a strip saying when they were exported, with a code to check them against the model.
   const [stamped, setStamped] = useState(() => {
     try {
@@ -325,70 +352,155 @@ export function ExportMenu({ ws, diagram, canvas, onNotice }: { ws: Workspace; d
   const picture = async (kind: "png" | "svg" | "pdf") => {
     const handle = canvas.current;
     const element = handle?.element();
-    if (!handle || !element) return;
+    if (!handle || !element) throw new Error("Open the diagram to export its picture.");
     const stamp = stamped ? stampFor(diagram, ws.name, ws.userName, window.location.origin) : undefined;
     try {
       await handle.whole(true);
       if (kind === "png") await exportPng(element, handle.nodes(), file, stamp);
       if (kind === "svg") await exportSvg(element, handle.nodes(), file);
       if (kind === "pdf") await exportPdf(element, handle.nodes(), file, diagram.name, stamp);
-      onNotice(`Exported ${file}.${kind}`);
-    } catch (e) {
-      onNotice(e instanceof Error ? e.message : "The export failed.");
     } finally {
       void handle.whole(false);
     }
+    return `${file}.${kind}`;
   };
-  const items: { group: string; label: string; run: () => void }[] = [
-    { group: "Picture", label: "PNG image", run: () => void picture("png") },
-    { group: "Picture", label: "SVG image", run: () => void picture("svg") },
-    { group: "Picture", label: "PDF document", run: () => void picture("pdf") },
-    { group: "Data", label: "Objects (CSV)", run: () => downloadText(`${file}-objects.csv`, objectsCsv(ws, diagramObjects(ws, diagram)), "text/csv") },
-    { group: "Data", label: "Relationships (CSV)", run: () => downloadText(`${file}-relationships.csv`, relationshipsCsv(ws, diagramRelationships(ws, diagram)), "text/csv") },
-    { group: "Data", label: "Diagram (JSON)", run: () => downloadText(`${file}.json`, diagramJson(ws, diagram), "application/json") },
-    { group: "Code", label: "Mermaid", run: () => downloadText(`${file}.mmd`, toMermaid(ws, diagram)) },
-    { group: "Code", label: "PlantUML", run: () => downloadText(`${file}.puml`, toPlantUml(ws, diagram)) },
-    { group: "Code", label: "FINOS CALM (JSON)", run: () => downloadText(`${file}.calm.json`, calmJson(ws, diagram), "application/json") },
-    // Offered for a diagram drawn in BPMN: other diagrams hold nothing a BPMN tool would show.
-    ...(diagram.notation === "bpmn" ? [{ group: "Code", label: "BPMN 2.0 (.bpmn)", run: () => downloadText(`${file}.bpmn`, writeBpmn(ws, diagram).xml, "application/xml") }] : []),
+  const drawn = () => diagramPicture(ws, diagram);
+  const run: Record<ExportId, () => Promise<string> | string> = {
+    png: () => picture("png"),
+    svg: () => picture("svg"),
+    pdf: () => picture("pdf"),
+    pptx: async () => {
+      downloadBlob(`${file}.pptx`, await powerPointBlob(ws, diagram, drawn()));
+      return `${file}.pptx`;
+    },
+    html: () => {
+      downloadText(`${file}.html`, interactiveHtml(ws, diagram, drawn()), "text/html");
+      return `${file}.html`;
+    },
+    gif: async () => {
+      downloadBlob(`${file}.gif`, await gifBlob(drawn()));
+      return `${file}.gif`;
+    },
+    video: async () => {
+      const { blob, extension } = await videoBlob(drawn());
+      downloadBlob(`${file}.${extension}`, blob);
+      return `${file}.${extension}`;
+    },
+    json: () => (downloadText(`${file}.json`, diagramJson(ws, diagram), "application/json"), `${file}.json`),
+    xlsx: () => {
+      downloadBlob(`${file}.xlsx`, new Blob([writeXlsx(modelSheets(diagramWorkspace(ws, diagram))) as BlobPart], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
+      return `${file}.xlsx`;
+    },
+    "csv-objects": () => (downloadText(`${file}-objects.csv`, objectsCsv(ws, diagramObjects(ws, diagram)), "text/csv"), `${file}-objects.csv`),
+    "csv-relationships": () => (downloadText(`${file}-relationships.csv`, relationshipsCsv(ws, diagramRelationships(ws, diagram)), "text/csv"), `${file}-relationships.csv`),
+    mermaid: () => (downloadText(`${file}.mmd`, toMermaid(ws, diagram)), `${file}.mmd`),
+    plantuml: () => (downloadText(`${file}.puml`, toPlantUml(ws, diagram)), `${file}.puml`),
+    drawio: () => (downloadText(`${file}.drawio`, drawioXml(diagram, drawn()), "application/xml"), `${file}.drawio`),
+    structurizr: () => (downloadText(`${file}.dsl`, structurizrDsl(ws, diagram)), `${file}.dsl`),
+    archimate: () => (downloadText(`${file}-archimate.xml`, writeArchimate(diagramWorkspace(ws, diagram)), "application/xml"), `${file}-archimate.xml`),
+    calm: () => (downloadText(`${file}.calm.json`, calmJson(ws, diagram), "application/json"), `${file}.calm.json`),
+    bpmn: () => (downloadText(`${file}.bpmn`, writeBpmn(ws, diagram).xml, "application/xml"), `${file}.bpmn`),
+  };
+  const go = async (id: ExportId) => {
+    if (busy) return;
+    setBusy(id);
+    setDone("");
+    try {
+      const name = await run[id]();
+      setDone(`Downloaded ${name}`);
+      onNotice(`Exported ${name}`);
+    } catch (e) {
+      setDone(e instanceof Error ? e.message : "The export failed. Try again.");
+    } finally {
+      setBusy(null);
+    }
+  };
+  const hasFlows = (diagram.flows ?? []).some((f) => f.steps.length);
+  const groups: { title: string; note?: string; items: { id: ExportId; label: string; hint: string }[] }[] = [
+    {
+      title: "Pictures and slides",
+      items: [
+        { id: "png", label: "PNG", hint: "An image, as on the screen" },
+        { id: "svg", label: "SVG", hint: "Sharp at any size" },
+        { id: "pdf", label: "PDF", hint: "A page to print or send" },
+        { id: "pptx", label: "PowerPoint", hint: "The picture, an editable copy and tables" },
+      ],
+    },
+    {
+      title: "Moving and interactive",
+      note: hasFlows ? "The GIF and the video play the diagram's flows step by step." : "With no flows on the diagram, the GIF and the video show traffic moving along the lines.",
+      items: [
+        { id: "html", label: "Interactive HTML", hint: "Zoom, search, details and flows, offline" },
+        { id: "gif", label: "GIF", hint: "An animation for chats and slides" },
+        { id: "video", label: "Video", hint: "MP4 or WebM, as the browser can" },
+      ],
+    },
+    {
+      title: "Data",
+      items: [
+        { id: "json", label: "JSON", hint: "The diagram and its objects" },
+        { id: "xlsx", label: "Excel", hint: "Objects and relationships sheets" },
+        { id: "csv-objects", label: "Objects (CSV)", hint: "One row per object" },
+        { id: "csv-relationships", label: "Relationships (CSV)", hint: "One row per line" },
+      ],
+    },
+    {
+      title: "For other tools",
+      items: [
+        { id: "mermaid", label: "Mermaid", hint: "For Markdown, GitHub and wikis" },
+        { id: "plantuml", label: "PlantUML", hint: "Diagrams as text" },
+        { id: "drawio", label: "draw.io", hint: "Opens in draw.io and diagrams.net" },
+        { id: "structurizr", label: "Structurizr DSL", hint: "C4 model as code" },
+        { id: "archimate", label: "ArchiMate", hint: "Exchange file for Archi, Sparx, Bizzdesign" },
+        { id: "calm", label: "FINOS CALM", hint: "Architecture as code, JSON" },
+        // A BPMN file holds only process boxes, so it is offered for diagrams drawn in BPMN.
+        ...(diagram.notation === "bpmn" ? [{ id: "bpmn" as const, label: "BPMN 2.0", hint: "For Camunda, Signavio and other BPMN tools" }] : []),
+      ],
+    },
   ];
-  const groups = [...new Set(items.map((i) => i.group))];
   return (
-    <div ref={root} className="relative">
-      <Button aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
-        Export <ChevronDown size={14} />
-      </Button>
-      {open && (
-        <div role="menu" className="absolute right-0 top-full mt-1 z-30 w-52 rounded-md border border-line bg-surface py-1 shadow-[0_10px_30px_rgba(22,35,58,0.14)]">
-          {groups.map((group) => (
-            <div key={group} className="py-1 border-b border-line-soft last:border-b-0">
-              <div className="px-3 pb-0.5 text-xs text-ink-faint">{group}</div>
-              {items
-                .filter((i) => i.group === group)
-                .map((item) => (
-                  <button
-                    key={item.label}
-                    role="menuitem"
-                    type="button"
-                    className="block w-full px-3 py-1.5 text-left hover:bg-line-soft"
-                    onClick={() => {
-                      setOpen(false);
-                      item.run();
-                    }}
-                  >
-                    {item.label}
-                  </button>
-                ))}
-              {group === "Picture" && (
-                <label className="flex items-start gap-2 px-3 pt-1.5 pb-1 text-[13px] text-ink-soft" title="A strip under the picture with the date and a code. Scanning the code opens this diagram and says what has changed since.">
-                  <input type="checkbox" className="mt-0.5" checked={stamped} onChange={(e) => toggleStamp(e.target.checked)} data-export-stamp />
-                  <span>Stamp PNG and PDF with the date and a check code</span>
-                </label>
-              )}
+    <Modal title="Export" width={640} onClose={onClose} footer={<Button onClick={onClose}>Done</Button>}>
+      <div className="space-y-4" data-export-window>
+        {groups.map((group) => (
+          <section key={group.title}>
+            <h3 className="text-[13px] font-semibold text-ink-soft mb-1.5">{group.title}</h3>
+            <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+              {group.items.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  data-export={item.id}
+                  disabled={!!busy}
+                  onClick={() => void go(item.id)}
+                  title={item.hint}
+                  className={cx(
+                    "flex flex-col items-start gap-0.5 rounded-md border px-2.5 py-2 text-left hover:border-blueprint hover:bg-blueprint-soft disabled:cursor-wait",
+                    busy === item.id ? "border-blueprint bg-blueprint-soft" : "border-line",
+                  )}
+                >
+                  <span className="flex items-center gap-1.5 font-medium">
+                    <Download size={14} className="text-blueprint" />
+                    {busy === item.id ? (item.id === "video" ? "Recording…" : "Making…") : item.label}
+                  </span>
+                  <span className="text-xs text-ink-soft leading-snug">{item.hint}</span>
+                </button>
+              ))}
             </div>
-          ))}
-        </div>
-      )}
-    </div>
+            {group.title === "Pictures and slides" && (
+              <label className="mt-1.5 flex items-start gap-2 text-[13px] text-ink-soft" title="A strip under the picture with the date and a code. Scanning the code opens this diagram and says what has changed since.">
+                <input type="checkbox" className="mt-0.5 accent-blueprint" checked={stamped} onChange={(e) => toggleStamp(e.target.checked)} data-export-stamp />
+                Add the date and a check code under PNG and PDF
+              </label>
+            )}
+            {group.note && <p className="mt-1.5 text-xs text-ink-faint">{group.note}</p>}
+          </section>
+        ))}
+        {done && (
+          <p role="status" className="rounded-md bg-paper px-3 py-2 text-[13px]" data-export-done>
+            {done}
+          </p>
+        )}
+      </div>
+    </Modal>
   );
 }

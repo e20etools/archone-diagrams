@@ -80,6 +80,16 @@ function fakeProvider(port) {
   return new Promise((ok) => server.listen(port, "127.0.0.1", () => ok({ server, seen })));
 }
 
+/** Opens the Export window if it is not open, downloads one format, and waits until it is made. */
+const exportAs = async (page, id) => {
+  if (!(await page.$("[data-export-window]"))) {
+    await page.click("[data-export-open]");
+    await page.waitForSelector("[data-export-window]");
+  }
+  await page.click(`[data-export="${id}"]`);
+  await page.waitForFunction(() => !document.querySelector("[data-export]:disabled"), { timeout: 60000 });
+};
+const closeExport = (page) => page.evaluate(() => [...document.querySelectorAll("[role=dialog] button")].find((b) => b.textContent.trim() === "Done")?.click());
 const clickText = (page, text, selector = "button, a, [role=menuitem], [role=tab]") =>
   page.evaluate(
     (text, selector) => {
@@ -158,19 +168,69 @@ try {
   check("tidy layout keeps every box", (await count(page, ".object-node")) === before);
 
   // Exports.
-  for (const label of ["Mermaid", "PlantUML", "Objects (CSV)", "Relationships (CSV)", "Diagram (JSON)", "PNG image", "SVG image", "PDF document"]) {
-    await page.evaluate(() => [...document.querySelectorAll("button")].find((b) => b.textContent.trim().startsWith("Export"))?.click());
-    await page.waitForSelector("[role=menu]");
-    await clickText(page, label, "[role=menuitem]");
-    await sleep(label.includes("PDF") ? 2500 : 1200);
+  for (const id of ["mermaid", "plantuml", "csv-objects", "csv-relationships", "json", "png", "svg", "pdf"]) {
+    await exportAs(page, id);
+    await sleep(id === "pdf" ? 1500 : 600);
   }
+  const exportGroups = await page.$$eval("[data-export-window] h3", (hs) => hs.map((h) => h.textContent));
+  const exportIds = await page.$$eval("[data-export]", (bs) => bs.map((b) => b.dataset.export));
+  await shot(page, "34-export-window");
+  check(
+    "the Export window offers every format, grouped",
+    exportGroups.length === 4 && ["png", "svg", "pdf", "pptx", "html", "gif", "video", "json", "mermaid", "xlsx", "drawio", "structurizr", "archimate", "calm", "plantuml"].every((id) => exportIds.includes(id)),
+    exportIds.join(","),
+  );
+  for (const id of ["pptx", "html", "gif", "video", "xlsx", "drawio", "structurizr", "archimate"]) {
+    await exportAs(page, id);
+    await sleep(500);
+  }
+  await closeExport(page);
   const files = await readdir(downloads);
   const has = (ext) => files.some((f) => f.endsWith(ext));
+  const fileOf = (end) => files.find((f) => f.endsWith(end));
+  const pptxFile = fileOf(".pptx");
+  const pptxZip = pptxFile ? await JSZip.loadAsync(await readFile(join(downloads, pptxFile))) : null;
+  const exportSlides = pptxZip ? Object.keys(pptxZip.files).filter((f) => /^ppt\/slides\/slide\d+\.xml$/.test(f)).length : 0;
+  const htmlText = fileOf(".html") ? await readFile(join(downloads, fileOf(".html")), "utf8") : "";
+  const gifBytes = fileOf(".gif") ? await readFile(join(downloads, fileOf(".gif"))) : Buffer.alloc(0);
+  const videoFile = files.find((f) => f.endsWith(".mp4") || f.endsWith(".webm"));
+  const videoSize = videoFile ? (await readFile(join(downloads, videoFile))).length : 0;
+  const drawioText = fileOf(".drawio") ? await readFile(join(downloads, fileOf(".drawio")), "utf8") : "";
+  const dslText = fileOf(".dsl") ? await readFile(join(downloads, fileOf(".dsl")), "utf8") : "";
+  const archimateText = fileOf("-archimate.xml") ? await readFile(join(downloads, fileOf("-archimate.xml")), "utf8") : "";
+  const xlsxFile = fileOf(".xlsx");
+  check(
+    "PowerPoint, interactive HTML, GIF, video, Excel, draw.io, Structurizr and ArchiMate come out as real files",
+    exportSlides >= 4 &&
+      htmlText.startsWith("<!doctype html>") && htmlText.includes('id="data"') && htmlText.includes("\\u003csvg") &&
+      gifBytes.subarray(0, 6).toString() === "GIF89a" && gifBytes.length > 5000 &&
+      videoSize > 5000 &&
+      drawioText.includes("<mxGraphModel") && (drawioText.match(/vertex="1"/g) ?? []).length >= 3 &&
+      dslText.startsWith("workspace") && dslText.includes("views {") &&
+      archimateText.includes("http://www.opengroup.org/xsd/archimate") &&
+      !!xlsxFile,
+    `${exportSlides} slides, gif ${gifBytes.length} bytes, ${videoFile} ${videoSize} bytes, html ${htmlText.startsWith("<!doctype html>")}/${htmlText.includes('id="data"')}, drawio ${(drawioText.match(/vertex="1"/g) ?? []).length}, dsl ${dslText.slice(0, 20)}, archimate ${archimateText.slice(0, 160).replace(/\s+/g, " ")}, xlsx ${!!xlsxFile}`,
+  );
+  // The interactive page opens on its own and shows a box's details on a click.
+  {
+    const viewer = await newPage(browser, errors);
+    await viewer.goto(`file://${join(downloads, fileOf(".html"))}`);
+    await viewer.waitForSelector("#stage svg g");
+    const box = await viewer.$eval("#stage svg g rect", (r) => { const b = r.getBoundingClientRect(); return { x: b.x + b.width / 2, y: b.y + b.height / 2 }; });
+    await viewer.mouse.click(box.x, box.y);
+    await sleep(200);
+    const shown = await viewer.$eval("#side h2", (h) => h.textContent).catch(() => "");
+    await viewer.type("#q", "a");
+    check("the interactive HTML opens offline and shows a box's details when clicked", !!shown, shown);
+    await viewer.close();
+  }
   check(
     "all eight export formats download as files",
     has(".mmd") && has(".puml") && has("-objects.csv") && has("-relationships.csv") && has(".json") && has(".png") && has(".svg") && has(".pdf"),
     files.join(", "),
   );
+  // The later checks look for their own slides and pages; these are put aside.
+  for (const f of await readdir(downloads)) if (/\.(pptx|html|gif|mp4|webm|xlsx|drawio|dsl)$|-archimate\.xml$/.test(f)) await rm(join(downloads, f));
   const svg = files.find((f) => f.endsWith(".svg"));
   if (svg) check("SVG export contains the drawing", (await readFile(join(downloads, svg), "utf8")).includes("<svg"));
   const pdf = files.find((f) => f.endsWith(".pdf"));
@@ -195,10 +255,9 @@ try {
   await shot(page, "15-archimate");
   await page.select('select[aria-label="Notation"]', "bpmn");
   await sleep(300);
-  await page.evaluate(() => [...document.querySelectorAll("button")].find((b) => b.textContent.trim().startsWith("Export"))?.click());
-  await page.waitForSelector("[role=menu]");
-  await clickText(page, "BPMN 2.0 (.bpmn)", "[role=menuitem]");
-  await sleep(1000);
+  await exportAs(page, "bpmn");
+  await closeExport(page);
+  await sleep(500);
   const bpmnFile = (await readdir(downloads)).find((f) => f.endsWith(".bpmn"));
   check("a diagram drawn in BPMN exports as a BPMN 2.0 file", !!bpmnFile && (await readFile(join(downloads, bpmnFile), "utf8")).includes("http://www.omg.org/spec/BPMN/20100524/MODEL") && (await notationOf()) === "bpmn");
   await page.select('select[aria-label="Notation"]', "plain");
@@ -743,8 +802,9 @@ try {
     const drawn = await count(large, ".object-node");
     check("a diagram of 400 boxes opens quickly, and zoomed in draws only the boxes in view", fitted === 400 && drawn > 0 && drawn < 200 && opened < 8000, `${drawn} of 400 drawn when zoomed in, opened in ${opened} ms`);
     for (const f of await readdir(downloads)) if (f.endsWith(".png")) await rm(join(downloads, f));
-    await clickText(large, "Export");
-    await clickText(large, "PNG image", "[role=menuitem]");
+    await large.click("[data-export-open]");
+    await large.waitForSelector("[data-export-window]");
+    await large.click('[data-export="png"]');
     let bigPng;
     for (let i = 0; i < 60 && !bigPng; i++) {
       await sleep(500);
@@ -1061,23 +1121,22 @@ try {
   await page.waitForSelector(".object-node");
   await sleep(400);
   for (const f of await readdir(downloads)) if (f.endsWith(".png")) await rm(join(downloads, f));
-  await clickText(page, "Export");
+  await page.click("[data-export-open]");
+  await page.waitForSelector("[data-export-window]");
   const stampOn = await page.$eval("[data-export-stamp]", (e) => e.checked);
-  await clickText(page, "PNG image", "[role=menuitem]");
+  await exportAs(page, "png");
   await sleep(2500);
   const stampedPng = (await readdir(downloads)).find((f) => f.endsWith(".png"));
   const stampedHeight = stampedPng ? (await readFile(join(downloads, stampedPng))).readUInt32BE(20) : 0;
-  await clickText(page, "Export");
   await page.click("[data-export-stamp]");
   if (stampedPng) await rm(join(downloads, stampedPng));
-  await clickText(page, "PNG image", "[role=menuitem]");
+  await exportAs(page, "png");
   await sleep(2500);
   const plainPng = (await readdir(downloads)).find((f) => f.endsWith(".png"));
   const plainHeight = plainPng ? (await readFile(join(downloads, plainPng))).readUInt32BE(20) : 0;
   check("a PNG is stamped with a strip under the picture unless that is switched off", stampOn && plainHeight > 0 && stampedHeight - plainHeight >= 150 && stampedHeight - plainHeight <= 400, `${stampedHeight} against ${plainHeight} pixels high`);
-  await clickText(page, "Export");
   await page.click("[data-export-stamp]");
-  await page.keyboard.press("Escape");
+  await closeExport(page);
   await page.goto(`${base}/diagram/${stampDiagram}?asof=${encodeURIComponent(new Date().toISOString())}`, { waitUntil: "networkidle0" });
   await page.waitForSelector("[data-copy-check]");
   const copyNow = await page.$eval("[data-copy-check]", (e) => [e.getAttribute("data-copy-check"), e.innerText]);
@@ -1093,8 +1152,8 @@ try {
   // CALM export, the NCA pack and a draft from a meeting.
   await page.goto(`${base}/diagram/${stampDiagram}`, { waitUntil: "networkidle0" });
   await page.waitForSelector(".object-node");
-  await clickText(page, "Export");
-  await clickText(page, "FINOS CALM (JSON)", "[role=menuitem]");
+  await exportAs(page, "calm");
+  await closeExport(page);
   await sleep(700);
   const calmFile = (await readdir(downloads)).find((f) => f.endsWith(".calm.json"));
   const calm = calmFile ? JSON.parse(await readFile(join(downloads, calmFile), "utf8")) : null;

@@ -21,6 +21,7 @@
     "@supabase/supabase-js": "^2.119.0",
     "@xyflow/react": "^12.12.1",
     "docx": "^9.15.4",
+    "gifenc": "^1.0.3",
     "html-to-image": "^1.11.13",
     "jspdf": "^4.2.1",
     "lucide-react": "^1.73.0",
