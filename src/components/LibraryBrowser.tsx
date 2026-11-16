@@ -61,7 +61,18 @@ export function SourceSelect({ value, onChange, className }: { value: LibrarySou
  * The library as a narrow panel: a search box, a choice of general or one provider, and the
  * sections underneath, each opened on demand. Searching looks through all of it.
  */
-export function LibraryPanel({ onPick, intro }: { onPick: (c: LibraryComponent) => void; intro?: React.ReactNode }) {
+export function LibraryPanel({
+  onPick,
+  intro,
+  diagrams,
+  onPickDiagram,
+}: {
+  onPick: (c: LibraryComponent) => void;
+  intro?: React.ReactNode;
+  /** The other diagrams of the workspace, offered in the Diagrams section as boxes to connect to. */
+  diagrams?: { id: string; name: string; kind: string }[];
+  onPickDiagram?: (diagramId: string) => void;
+}) {
   const [query, setQuery] = useState("");
   const [source, setSource] = useState<LibrarySource>(GENERAL);
   const [open, setOpen] = useState<Record<string, boolean>>({});
@@ -105,9 +116,30 @@ export function LibraryPanel({ onPick, intro }: { onPick: (c: LibraryComponent) 
                       <LibraryIcon name={s.icon} size={15} />
                     </span>
                     <span className="min-w-0 flex-1 truncate">{s.provider ? s.group : s.label}</span>
-                    <span className="text-xs text-ink-faint tabular-nums">{componentsIn(s.id).length}</span>
+                    <span className="text-xs text-ink-faint tabular-nums">{s.id === "diagrams" && diagrams ? diagrams.length : componentsIn(s.id).length}</span>
                   </button>
-                  {isOpen && (
+                  {isOpen && s.id === "diagrams" && diagrams && onPickDiagram ? (
+                    <div className="space-y-1 pl-1 pt-1 pb-1.5" data-library-diagrams>
+                      {diagrams.length === 0 && <p className="px-1.5 text-xs text-ink-faint">No other diagrams yet.</p>}
+                      {diagrams.map((d) => (
+                        <button
+                          key={d.id}
+                          type="button"
+                          draggable={false}
+                          data-library-diagram={d.id}
+                          onClick={() => onPickDiagram(d.id)}
+                          className="w-full flex items-center gap-2 rounded-md border border-line bg-surface px-2 py-1.5 text-left hover:border-blueprint"
+                          title={`Add ${d.name} as one box to connect to`}
+                        >
+                          <LibraryIcon name="Workflow" size={14} />
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-[13px] font-medium">{d.name}</span>
+                            <span className="block truncate text-xs text-ink-faint">{d.kind}</span>
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  ) : isOpen && (
                     <div className="grid grid-cols-2 gap-1 pl-1 pt-1 pb-1.5">
                       {items.map((c) => (
                         <ComponentTile key={c.id} component={c} onPick={onPick} />

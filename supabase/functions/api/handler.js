@@ -129,7 +129,9 @@ function openApiDocument(server) {
 				"process",
 				"task",
 				"event",
-				"decision"
+				"decision",
+				"zone",
+				"diagram"
 			]
 		},
 		description: text,

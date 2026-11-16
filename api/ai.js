@@ -3731,6 +3731,22 @@ var OBJECT_TYPES = [
 		category: "business",
 		icon: "decision",
 		hint: "A point where a process splits or joins (a BPMN gateway)"
+	},
+	{
+		id: "zone",
+		label: "Network zone",
+		level: 2,
+		category: "infrastructure",
+		icon: "zone",
+		hint: "A part of the network with its own rules, such as a DMZ. What is placed inside it is drawn within it"
+	},
+	{
+		id: "diagram",
+		label: "Diagram",
+		level: 2,
+		category: "external",
+		icon: "diagram",
+		hint: "Another diagram of this workspace, as one box to connect to"
 	}
 ];
 var TYPE_BY_ID = new Map(OBJECT_TYPES.map((t) => [t.id, t]));
@@ -3851,6 +3867,8 @@ var modelObjectSchema = objectType({
 	links: arrayType(linkSchema).optional(),
 	/** The library component it was made from, for its icon and its basic information. Missing for a plain object. */
 	componentId: stringType().optional(),
+	/** For a box that stands for another diagram: that diagram. */
+	diagramId: stringType().optional(),
 	provenance: provenanceSchema,
 	createdAt: stringType(),
 	updatedAt: stringType()

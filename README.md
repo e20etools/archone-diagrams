@@ -814,6 +814,24 @@ build it:
 Every draft, imported or AI-made, becomes a diagram of the kind and name chosen, and each new
 object is linked to the library component its name or technology names exactly.
 
+### Network zones, connections, integrations and diagram boxes
+
+Four more sections in the library:
+
+- **Network zones** (57, such as DMZ, Internal / LAN, Public / Internet, Management, Database
+  zone, Cloud VPC / Subnet, Restricted / PCI, DR zone, OT, SWIFT secure zone). A zone is its own
+  kind of object; put servers, applications or databases inside it (Part of) and the diagram
+  draws the zone around them in its colour, nested zones inside outer ones. A zone with nothing
+  inside it on the diagram stays a box. Zones belong to the Infrastructure category.
+- **Network connections** (54, such as LAN, WAN, Internet, MPLS, GSN, site-to-site and remote
+  access VPN, SD-WAN, leased line, 4G/5G, satellite, Direct Connect, ExpressRoute).
+- **Integrations** (120 shared services almost every diagram connects to: Active Directory,
+  Entra ID, DNS, DHCP, NTP, email, SMTP relay, backup, SIEM, EDR, PAM, PKI, monitoring, ITSM,
+  CMDB, file transfer, ESB, ERP, CRM and more), with their own basic information.
+- **Diagrams**: in a diagram's library panel this lists the workspace's other diagrams. Placing
+  one adds a box that stands for that diagram (one box per diagram, reused everywhere), so
+  components can connect to it; the box's button, or a double click, opens the diagram.
+
 ### Templates
 
 115 templates for the most common diagrams, under Start from a template on the Diagrams

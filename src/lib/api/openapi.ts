@@ -34,7 +34,7 @@ function resource(name: string, title: string, schema: string, input: string, fi
 export function openApiDocument(server: string) {
   const objectInput = {
     name: { ...text, maxLength: 300 },
-    typeId: { ...text, enum: ["domain", "actor", "system", "external-system", "application", "web-app", "mobile-app", "service", "database", "queue", "cache", "storage", "gateway", "server", "cluster", "network", "component", "ai-agent", "ai-model", "mcp-server", "process", "task", "event", "decision"] },
+    typeId: { ...text, enum: ["domain", "actor", "system", "external-system", "application", "web-app", "mobile-app", "service", "database", "queue", "cache", "storage", "gateway", "server", "cluster", "network", "component", "ai-agent", "ai-model", "mcp-server", "process", "task", "event", "decision", "zone", "diagram"] },
     description: text,
     owner: text,
     lifecycle: { ...text, enum: ["planned", "active", "deprecated", "retired"] },

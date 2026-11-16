@@ -22,11 +22,12 @@ import {
   type NodeChange,
   type NodeProps,
 } from "@xyflow/react";
-import { MessageSquare } from "lucide-react";
+import { SquareDashed, MessageSquare } from "lucide-react";
 import { memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type DragEvent, type Ref } from "react";
 import { TypeIcon } from "@/components/icons";
 import { LIFECYCLE_INFO, RELATION_KIND_INFO, objectType, ownerColor, typeColor } from "@/lib/catalog";
 import { NODE_H, NODE_W, boundsOf } from "@/lib/layout";
+import { zonesOf } from "@/lib/zones";
 import { componentSubtitle } from "@/lib/library";
 import { childrenOf } from "@/lib/model";
 import type { Diagram, ModelObject, Workspace } from "@/lib/types";
@@ -145,7 +146,21 @@ const ObjectNode = memo(function ObjectNode({ data }: NodeProps<Node<ObjectNodeD
           </span>
         )}
       </div>
-      {childCount > 0 && onOpen && (
+      {object.typeId === "diagram" && object.diagramId && onOpen && (
+        <button
+          type="button"
+          className="object-node__inside nodrag"
+          data-open-diagram={object.diagramId}
+          title={`Open the diagram ${object.name}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            onOpen(object.id);
+          }}
+        >
+          Open diagram
+        </button>
+      )}
+      {childCount > 0 && onOpen && object.typeId !== "diagram" && (
         <button
           type="button"
           className="object-node__inside nodrag"
@@ -213,7 +228,21 @@ const LabelledEdge = memo(function LabelledEdge({
   );
 });
 
-const nodeTypes = { object: ObjectNode, boundary: BoundaryNode };
+/** A network zone drawn around what sits in it. It can be picked, and lines can reach it. */
+const ZoneNode = memo(function ZoneNode({ data, selected }: NodeProps<Node<{ label: string; color: string; direction: "TB" | "LR" }>>) {
+  return (
+    <div className="zone-node" data-selected={selected || undefined} style={{ ["--zone-color" as string]: data.color }}>
+      <Handle type="target" position={data.direction === "TB" ? Position.Top : Position.Left} />
+      <span className="zone-node__label">
+        <SquareDashed size={12} aria-hidden />
+        {data.label}
+      </span>
+      <Handle type="source" position={data.direction === "TB" ? Position.Bottom : Position.Right} />
+    </div>
+  );
+});
+
+const nodeTypes = { object: ObjectNode, boundary: BoundaryNode, zone: ZoneNode };
 const edgeTypes = { labelled: LabelledEdge };
 
 function nodeColor(o: ModelObject, colorBy: Diagram["colorBy"]): string {
@@ -247,11 +276,14 @@ function Inner({
   const [connecting, setConnecting] = useState(false);
   const [whole, setWhole] = useState(false);
 
+  // A zone holding boxes on this diagram is drawn around them rather than as a box.
+  const zones = useMemo(() => zonesOf(ws, diagram), [ws, diagram]);
+  const zoneIds = useMemo(() => new Set(zones.map((z) => z.id)), [zones]);
   const derived = useMemo<Node[]>(() => {
     const list: Node[] = [];
     for (const [id, placement] of Object.entries(diagram.nodes)) {
       const object = ws.objects[id];
-      if (!object) continue;
+      if (!object || zoneIds.has(id)) continue;
       const data: ObjectNodeData = {
         object,
         color: nodeColor(object, diagram.colorBy),
@@ -274,7 +306,7 @@ function Inner({
       });
     }
     return list;
-  }, [ws, diagram, highlight, spotlight, comments, readOnly, selection?.objectId, picked, onOpen]);
+  }, [ws, diagram, highlight, spotlight, comments, readOnly, selection?.objectId, picked, onOpen, zoneIds]);
 
   // React Flow owns positions while a node is being dragged; the store is updated when the drag ends.
   const [nodes, setNodes] = useState<Node[]>(derived);
@@ -283,9 +315,39 @@ function Inner({
   const members = useMemo(() => new Set(scopeMembers(ws, diagram)), [ws, diagram]);
   const scopeName = diagram.scopeId ? ws.objects[diagram.scopeId]?.name : undefined;
   const allNodes = useMemo<Node[]>(() => {
-    if (!scopeName || !members.size) return nodes;
+    // Zones first, outer ones behind inner ones, each around the boxes it holds as they stand now.
+    const at = new Map(nodes.map((n) => [n.id, n.position]));
+    const zoneNodes: Node[] = [];
+    const zoneBox = new Map<string, { x: number; y: number; width: number; height: number }>();
+    for (const z of [...zones].sort((a, b) => b.depth - a.depth)) {
+      const points = z.members.flatMap((m) => {
+        const inner = zoneBox.get(m);
+        if (inner) return [{ x: inner.x, y: inner.y }, { x: inner.x + inner.width - NODE_W, y: inner.y + inner.height - NODE_H }];
+        const p = at.get(m);
+        return p ? [p] : [];
+      });
+      const box = boundsOf(points);
+      if (!box) continue;
+      const frame = { x: box.x - 26, y: box.y - 42, width: box.width + 52, height: box.height + 68 };
+      zoneBox.set(z.id, frame);
+      zoneNodes.push({
+        id: z.id,
+        type: "zone",
+        position: { x: frame.x, y: frame.y },
+        data: { label: z.name, color: z.color, direction: diagram.direction },
+        style: { width: frame.width, height: frame.height },
+        width: frame.width,
+        height: frame.height,
+        selectable: true,
+        selected: selection?.objectId === z.id,
+        draggable: false,
+        zIndex: -2 + z.depth,
+      });
+    }
+    const withZones = zoneNodes.length ? [...zoneNodes, ...nodes] : nodes;
+    if (!scopeName || !members.size) return withZones;
     const box = boundsOf(nodes.filter((n) => members.has(n.id)).map((n) => n.position));
-    if (!box) return nodes;
+    if (!box) return withZones;
     const boundary: Node = {
       id: BOUNDARY_ID,
       type: "boundary",
@@ -299,8 +361,8 @@ function Inner({
       focusable: false,
       zIndex: -1,
     };
-    return [boundary, ...nodes];
-  }, [nodes, members, scopeName]);
+    return [boundary, ...withZones];
+  }, [nodes, members, scopeName, zones, diagram.direction, selection?.objectId]);
 
   const edges = useMemo<Edge[]>(() => {
     // Labelled arrows into the same box stack their labels instead of printing them on top of each other,

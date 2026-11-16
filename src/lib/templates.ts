@@ -156,6 +156,8 @@ export const USUAL_COMPONENT: Record<string, string> = {
   server: "compute.physical-server",
   network: "network.network-device",
   component: "applications.software-module",
+  zone: "zones.internal-lan",
+  diagram: "diagrams.diagram",
   actor: "people.user",
   "web-app": "applications.web-application",
   application: "applications.custom-application",

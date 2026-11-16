@@ -40,6 +40,8 @@ export function viewCategory(viewType: ViewType): Category {
 /** The categories an object of this type belongs to. People and domains belong to two. */
 export function typeCategories(typeId: string): Category[] {
   if (typeId === "domain" || typeId === "actor") return ["applications", "business"];
+  // A box standing for another diagram belongs to no category: the workspace role decides.
+  if (typeId === "diagram") return [];
   const category = OBJECT_TYPES.find((t) => t.id === typeId)?.category;
   switch (category) {
     case "application":

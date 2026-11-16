@@ -24,7 +24,7 @@ const reply = (status: number, body?: unknown, extra: Record<string, string> = {
 const rpcError = (id: unknown, code: number, message: string) => ({ jsonrpc: "2.0", id: id ?? null, error: { code, message } });
 
 const text = { type: "string" };
-const TYPES = ["domain", "actor", "system", "external-system", "application", "web-app", "mobile-app", "service", "database", "queue", "cache", "storage", "gateway", "server", "cluster", "network", "component", "ai-agent", "ai-model", "mcp-server", "process", "task", "event", "decision"];
+const TYPES = ["domain", "actor", "system", "external-system", "application", "web-app", "mobile-app", "service", "database", "queue", "cache", "storage", "gateway", "server", "cluster", "network", "component", "ai-agent", "ai-model", "mcp-server", "process", "task", "event", "decision", "zone", "diagram"];
 const KINDS = ["calls", "depends_on", "reads_writes", "hosted_on", "routes_to", "replicates_to", "flows_to"];
 const objectFields = {
   name: { ...text, description: "The object's name, as people call it." },

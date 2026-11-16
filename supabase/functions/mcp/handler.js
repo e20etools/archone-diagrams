@@ -350,7 +350,9 @@ var TYPES = [
 	"process",
 	"task",
 	"event",
-	"decision"
+	"decision",
+	"zone",
+	"diagram"
 ];
 var KINDS = [
 	"calls",

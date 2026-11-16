@@ -65,6 +65,8 @@ export function toRow(table: TableName, workspaceId: string, key: string, value:
         // Always sent, so that removing the last link clears the column.
         links: o.links?.length ? o.links : null,
         component_id: o.componentId ?? null,
+        // Sent only for a box standing for a diagram, so a database without the column still saves the rest.
+        ...(o.diagramId ? { diagram_ref: o.diagramId } : {}),
         provenance: o.provenance,
         created_at: o.createdAt,
         updated_at: o.updatedAt,
@@ -162,6 +164,7 @@ export function fromRow(table: TableName, row: Row): { key: string; value: unkno
         fields: (row.fields ?? {}) as Record<string, string>,
         ...linksOf(row.links),
         ...(typeof row.component_id === "string" && row.component_id ? { componentId: row.component_id } : {}),
+        ...(typeof row.diagram_ref === "string" && row.diagram_ref ? { diagramId: row.diagram_ref } : {}),
         provenance: (row.provenance ?? { origin: "manual" }) as ModelObject["provenance"],
         createdAt: iso(row.created_at),
         updatedAt: iso(row.updated_at),

@@ -59,6 +59,8 @@ export const modelObjectSchema = z.object({
   links: z.array(linkSchema).optional(),
   /** The library component it was made from, for its icon and its basic information. Missing for a plain object. */
   componentId: z.string().optional(),
+  /** For a box that stands for another diagram: that diagram. */
+  diagramId: z.string().optional(),
   provenance: provenanceSchema,
   createdAt: z.string(),
   updatedAt: z.string(),

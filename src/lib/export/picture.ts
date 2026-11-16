@@ -3,6 +3,7 @@ import { NODE_H, NODE_W } from "../layout";
 import { componentById } from "../library";
 import type { Diagram, Workspace } from "../types";
 import { visibleEdges } from "../views";
+import { zonesOf } from "../zones";
 
 /**
  * A diagram drawn from the model rather than from the screen: boxes where the diagram puts
@@ -41,6 +42,8 @@ export interface Picture {
   edges: PictureEdge[];
   /** The system a C4 Level 1 or 2 diagram is about, drawn as a dashed boundary. */
   boundary: { x: number; y: number; w: number; h: number; label: string } | null;
+  /** Network zones holding boxes, drawn around them, outer ones first. */
+  zones: { id: string; x: number; y: number; w: number; h: number; label: string; color: string }[];
   flows: { name: string; steps: { from: string; to: string; text: string }[] }[];
 }
 
@@ -56,7 +59,9 @@ function border(cx: number, cy: number, w: number, h: number, tx: number, ty: nu
 }
 
 export function diagramPicture(ws: Workspace, diagram: Diagram): Picture {
-  const placed = Object.entries(diagram.nodes).filter(([id]) => ws.objects[id]);
+  const zoneList = zonesOf(ws, diagram);
+  const zoneIds = new Set(zoneList.map((z) => z.id));
+  const placed = Object.entries(diagram.nodes).filter(([id]) => ws.objects[id] && !zoneIds.has(id));
   const minX = Math.min(0, ...placed.map(([, p]) => p.x));
   const minY = Math.min(0, ...placed.map(([, p]) => p.y));
   const nodes: PictureNode[] = placed.map(([id, p]) => {
@@ -86,6 +91,16 @@ export function diagramPicture(ws: Workspace, diagram: Diagram): Picture {
     const [x2, y2] = border(b.x + b.w / 2, b.y + b.h / 2, b.w + 12, b.h + 12, a.x + a.w / 2, a.y + a.h / 2);
     edges.push({ id: e.id, from: e.sourceId, to: e.targetId, x1, y1, x2, y2, label: e.label || RELATION_KIND_INFO[e.kind]?.label || "", kind: e.kind });
   }
+  // Zones around their boxes, inner ones first so an outer zone can take in an inner one.
+  const zoneFrames = new Map<string, { x: number; y: number; w: number; h: number }>();
+  for (const z of [...zoneList].sort((a, b) => b.depth - a.depth)) {
+    const rects = z.members.map((m) => zoneFrames.get(m) ?? (byId.get(m) ? { x: byId.get(m)!.x, y: byId.get(m)!.y, w: NODE_W, h: NODE_H } : null)).filter((r): r is { x: number; y: number; w: number; h: number } => !!r);
+    if (!rects.length) continue;
+    const x = Math.min(...rects.map((r) => r.x)) - 26;
+    const y = Math.min(...rects.map((r) => r.y)) - 42;
+    zoneFrames.set(z.id, { x, y, w: Math.max(...rects.map((r) => r.x + r.w)) + 26 - x, h: Math.max(...rects.map((r) => r.y + r.h)) + 26 - y });
+  }
+  const zones = zoneList.filter((z) => zoneFrames.has(z.id)).map((z) => ({ id: z.id, ...zoneFrames.get(z.id)!, label: z.name, color: z.color }));
   let boundary: Picture["boundary"] = null;
   const scope = diagram.scopeId ? ws.objects[diagram.scopeId] : null;
   if (scope) {
@@ -100,8 +115,8 @@ export function diagramPicture(ws: Workspace, diagram: Diagram): Picture {
       boundary = { x, y, w: Math.max(...members.map((n) => n.x + n.w)) + 24 - x, h: Math.max(...members.map((n) => n.y + n.h)) + 24 - y, label: scope.name };
     }
   }
-  const right = Math.max(400, ...nodes.map((n) => n.x + n.w), boundary ? boundary.x + boundary.w : 0);
-  const bottom = Math.max(240, ...nodes.map((n) => n.y + n.h), boundary ? boundary.y + boundary.h : 0);
+  const right = Math.max(400, ...nodes.map((n) => n.x + n.w), boundary ? boundary.x + boundary.w : 0, ...zones.map((z) => z.x + z.w));
+  const bottom = Math.max(240, ...nodes.map((n) => n.y + n.h), boundary ? boundary.y + boundary.h : 0, ...zones.map((z) => z.y + z.h));
   return {
     title: diagram.name,
     width: Math.ceil(right + PAD),
@@ -109,6 +124,7 @@ export function diagramPicture(ws: Workspace, diagram: Diagram): Picture {
     nodes,
     edges,
     boundary,
+    zones,
     flows: (diagram.flows ?? []).filter((f) => f.steps.length).map((f) => ({ name: f.name, steps: f.steps.map((s) => ({ from: s.fromId, to: s.toId, text: s.text })) })),
   };
 }
@@ -147,6 +163,10 @@ export function pictureSvg(p: Picture, options: SvgOptions = {}): string {
     const b = p.boundary;
     out.push(`<rect x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" rx="10" fill="#F5F7FC" stroke="#2447D6" stroke-dasharray="6 4"/>`);
     out.push(`<text x="${b.x + 12}" y="${b.y + 22}" ${font} font-size="13" font-weight="600" fill="#2447D6">${escapeXml(fit(b.label, 60))}</text>`);
+  }
+  for (const z of p.zones ?? []) {
+    out.push(`<rect x="${z.x}" y="${z.y}" width="${z.w}" height="${z.h}" rx="10" fill="${z.color}" fill-opacity="0.06" stroke="${z.color}" stroke-width="1.5" stroke-dasharray="6 4"/>`);
+    out.push(`<text x="${z.x + z.w / 2}" y="${z.y + 24}" ${font} font-size="13" font-weight="600" fill="${z.color}" text-anchor="middle">${escapeXml(fit(z.label, 60))}</text>`);
   }
   for (const e of p.edges) {
     const on = options.highlight?.has(e.id);

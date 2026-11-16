@@ -149,19 +149,22 @@ export function searchLibrary(query: string, options: { sectionId?: string; prov
   return scored.slice(0, options.limit ?? scored.length).map((s) => s.c);
 }
 
-const EXACT = (() => {
-  const map = new Map<string, LibraryComponent[]>();
-  const add = (key: string, c: LibraryComponent) => {
+/** Names first: a component's own name or short form wins over another component's other name. */
+const [EXACT, EXACT_ALIAS] = (() => {
+  const names = new Map<string, LibraryComponent[]>();
+  const aliases = new Map<string, LibraryComponent[]>();
+  const put = (map: Map<string, LibraryComponent[]>, key: string, c: LibraryComponent) => {
     if (!key) return;
     const list = map.get(key) ?? [];
     if (!list.includes(c)) list.push(c);
     map.set(key, list);
   };
+  const add = (key: string, c: LibraryComponent) => put(names, key, c);
   for (const c of LIBRARY) {
     add(normalizeComponentName(c.name), c);
     const short = /\(([^)]+)\)\s*$/.exec(c.name)?.[1];
     if (short) add(normalizeComponentName(short), c);
-    for (const alias of c.aliases.split(/[,;]/)) add(normalizeComponentName(alias), c);
+    for (const alias of c.aliases.split(/[,;]/)) put(aliases, normalizeComponentName(alias), c);
     // A cloud service is also called by its provider's name in front: "Amazon S3", "AWS Lambda", "Azure Functions".
     const provider = c.provider ? PROVIDERS.find((p) => p.id === c.provider) : undefined;
     if (provider) {
@@ -172,7 +175,7 @@ const EXACT = (() => {
       }
     }
   }
-  return map;
+  return [names, aliases] as const;
 })();
 
 /**
@@ -181,12 +184,13 @@ const EXACT = (() => {
  * A kind narrows the choice when several fit.
  */
 export function exactComponent(text: string, kind?: string): LibraryComponent | undefined {
-  const found = EXACT.get(normalizeComponentName(text)) ?? [];
+  const key = normalizeComponentName(text);
+  const found = EXACT.get(key) ?? EXACT_ALIAS.get(key) ?? [];
   const fitting = kind ? found.filter((c) => c.kind === kind) : found;
   if (fitting.length === 1) return fitting[0];
-  // A general component wins over the same name at a cloud provider.
+  // A general component wins over the same name at a cloud provider; between general ones, the first section's.
   const general = fitting.filter((c) => !c.provider);
-  return general.length === 1 ? general[0] : undefined;
+  return general[0];
 }
 
 /** What placing a component writes into a new object. */

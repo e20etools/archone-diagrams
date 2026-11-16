@@ -56,6 +56,10 @@ export const OBJECT_TYPES: ObjectType[] = [
   { id: "task", label: "Task", level: 4, category: "business", icon: "task", hint: "One step of a process, done by a person or a system" },
   { id: "event", label: "Event", level: 4, category: "business", icon: "event", hint: "Something that starts, interrupts or ends a process" },
   { id: "decision", label: "Decision", level: 4, category: "business", icon: "decision", hint: "A point where a process splits or joins (a BPMN gateway)" },
+  // Network zones hold what sits in them, so the zone is drawn around it.
+  { id: "zone", label: "Network zone", level: 2, category: "infrastructure", icon: "zone", hint: "A part of the network with its own rules, such as a DMZ. What is placed inside it is drawn within it" },
+  // Another diagram drawn as one box, so a component can connect to everything it shows.
+  { id: "diagram", label: "Diagram", level: 2, category: "external", icon: "diagram", hint: "Another diagram of this workspace, as one box to connect to" },
 ];
 
 const TYPE_BY_ID = new Map(OBJECT_TYPES.map((t) => [t.id, t]));

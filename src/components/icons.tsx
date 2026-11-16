@@ -1,10 +1,12 @@
-import { AppWindow, Bot, BrainCircuit, Plug, Boxes, Circle, Cog, Container, Database, Diamond, Globe, HardDrive, Layers, ListOrdered, Monitor, Puzzle, Server, Shield, Smartphone, Split, SquareCheck, User, Workflow, Zap, type LucideIcon } from "lucide-react";
+import { SquareDashed, Workflow as DiagramIcon, AppWindow, Bot, BrainCircuit, Plug, Boxes, Circle, Cog, Container, Database, Diamond, Globe, HardDrive, Layers, ListOrdered, Monitor, Puzzle, Server, Shield, Smartphone, Split, SquareCheck, User, Workflow, Zap, type LucideIcon } from "lucide-react";
 import { objectType } from "@/lib/catalog";
 import { componentById } from "@/lib/library";
 import { LIBRARY_ICONS } from "./libraryIcons";
 
 const ICONS: Record<string, LucideIcon> = {
   layers: Layers,
+  zone: SquareDashed,
+  diagram: DiagramIcon,
   user: User,
   boxes: Boxes,
   globe: Globe,

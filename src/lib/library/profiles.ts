@@ -86,6 +86,26 @@ export const PROFILES: Profile[] = [
   // Network and security
   { id: "network-device", label: "Network device", fields: [t("Host name"), MANUFACTURER, MODEL, SERIAL, t("Firmware or OS version"), ip("Management IP"), n("Ports"), LOCATION, s("Role", ["Core", "Distribution", "Access", "Edge", "Data centre", "Branch"]), SUPPORT_ENDS] },
   { id: "network-segment", label: "Network or segment", fields: [t("Address range", "For example 10.20.0.0/16"), n("VLAN"), ip("Gateway"), s("Zone", ["Internet", "DMZ", "Internal", "Restricted", "Management", "Guest", "OT"]), t("Site")] },
+  {
+    id: "network-zone",
+    label: "Network zone",
+    fields: [
+      t("Address ranges", "For example 10.20.0.0/16, 10.30.0.0/24"),
+      t("VLANs"),
+      s("Trust level", ["Untrusted", "Semi-trusted", "Trusted", "Restricted", "Isolated"]),
+      ENVIRONMENT,
+      t("Site or region"),
+      t("Firewall policy"),
+      t("Allowed in", "Who may connect into it"),
+      t("Allowed out", "Where it may connect to"),
+      t("Owner"),
+    ],
+  },
+  {
+    id: "shared-service",
+    label: "Shared service",
+    fields: [PRODUCT, VENDOR, VERSION, HOSTING, t("Address or host name"), t("Protocol and port", "For example LDAPS 636"), ENVIRONMENT, t("Owner team"), CRITICALITY],
+  },
   { id: "link", label: "Network link", fields: [t("Provider"), t("Circuit ID"), n("Bandwidth", "Mbps"), s("Type", ["MPLS", "Internet", "Dedicated fibre", "SD-WAN", "LTE or 5G", "Satellite", "Microwave"]), t("Site A"), t("Site B"), d("Contract ends")] },
   { id: "security-control", label: "Security control", fields: [VENDOR, PRODUCT, VERSION, s("Deployment", ["Inline appliance", "Out of band", "Agent", "Cloud service", "Virtual appliance"]), t("Protects", "What it covers"), t("Policy owner"), u("Management console"), d("Licence ends"), d("Last reviewed")] },
   { id: "identity", label: "Identity service", fields: [PRODUCT, VERSION, t("Directory or tenant"), t("Protocols", "SAML, OIDC, LDAP, Kerberos"), n("Accounts"), s("Multi-factor enforced", ["Yes", "Partly", "No"]), t("Owner")] },

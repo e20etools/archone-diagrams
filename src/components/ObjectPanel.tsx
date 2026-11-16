@@ -182,6 +182,20 @@ export function ObjectEditor({ ws, object }: { ws: Workspace; object: ModelObjec
         </Field>
       </div>
       <ComponentField object={object} />
+      {object.typeId === "diagram" && (
+        <Field label="Stands for the diagram" hint="Connect other boxes to this one to show they depend on what that diagram shows.">
+          <Select value={object.diagramId ?? ""} aria-label="Stands for the diagram" onChange={(e) => patch({ diagramId: e.target.value || undefined })} data-diagram-ref>
+            <option value="">Choose a diagram</option>
+            {Object.values(ws.diagrams)
+              .sort((a, b) => a.name.localeCompare(b.name))
+              .map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.name}
+                </option>
+              ))}
+          </Select>
+        </Field>
+      )}
       <Field label="Part of" hint={parents.length ? undefined : "No object on a higher level exists yet."}>
         <Select value={object.parentId ?? ""} onChange={(e) => patch({ parentId: e.target.value || null })}>
           <option value="">Nothing (top level)</option>

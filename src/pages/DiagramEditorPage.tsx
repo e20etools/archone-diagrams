@@ -26,11 +26,13 @@ import {
   deleteDiagram,
   deleteObject,
   deleteRelationship,
+  diagramBox,
   diagramsUsing,
   placeNodes,
   relationshipsOf,
   removeNodes,
   setRelationshipHidden,
+  sortedDiagrams,
   sortedObjects,
   updateDiagram,
 } from "@/lib/model";
@@ -87,6 +89,7 @@ function Palette({
   onAddType,
   onAddComponent,
   onAddObject,
+  onAddDiagram,
   onCollapse,
 }: {
   ws: Workspace;
@@ -94,6 +97,7 @@ function Palette({
   onAddType: (typeId: string) => void;
   onAddComponent: (component: LibraryComponent) => void;
   onAddObject: (objectId: string) => void;
+  onAddDiagram: (diagramId: string) => void;
   onCollapse: () => void;
 }) {
   const [basicOpen, setBasicOpen] = useState(true);
@@ -129,7 +133,13 @@ function Palette({
       {tab === "new" ? (
         <div className="min-h-0 overflow-y-auto px-3 py-3 space-y-3.5">
           <p className="text-[13px] text-ink-soft">Drag a component onto the canvas, or click it. Each box becomes an object in the model.</p>
-          <LibraryPanel onPick={onAddComponent} />
+          <LibraryPanel
+            onPick={onAddComponent}
+            diagrams={sortedDiagrams(ws)
+              .filter((d) => d.id !== diagram.id)
+              .map((d) => ({ id: d.id, name: d.name, kind: VIEW_TYPE_INFO[d.viewType].label }))}
+            onPickDiagram={onAddDiagram}
+          />
           <div className="border-t border-line-soft pt-2.5">
           <button type="button" className="w-full flex items-center justify-between text-[13px] font-medium" aria-expanded={basicOpen} onClick={() => setBasicOpen(!basicOpen)}>
             Basic types
@@ -730,6 +740,20 @@ function Editor({ ws, diagram }: { ws: Workspace; diagram: Diagram }) {
     [diagramId],
   );
 
+  // Another diagram as one box: the same box wherever that diagram is connected to.
+  const addDiagram = useCallback(
+    (targetId: string) => {
+      let boxId: string | null = null;
+      apply((w) => {
+        const made = diagramBox(w, targetId);
+        boxId = made.objectId;
+        return boxId && !(boxId in w.diagrams[diagramId].nodes) ? addObjectsToDiagram(made.ws, diagramId, [boxId]) : made.ws;
+      });
+      if (boxId) setSelection({ objectId: boxId, edgeId: null });
+    },
+    [diagramId],
+  );
+
   const addExisting = useCallback(
     (id: string, position?: { x: number; y: number }) => {
       apply((w) => addObjectsToDiagram(w, diagramId, [id], position));
@@ -752,8 +776,15 @@ function Editor({ ws, diagram }: { ws: Workspace; diagram: Diagram }) {
 
   const onOpen = useCallback(
     (id: string) => {
-      const object = useStore.getState().ws.objects[id];
+      const current = useStore.getState().ws;
+      const object = current.objects[id];
       if (!object) return;
+      // A box standing for another diagram opens that diagram.
+      if (object.typeId === "diagram") {
+        if (object.diagramId && current.diagrams[object.diagramId]) navigate(`/diagram/${object.diagramId}`);
+        else notify("The diagram this box stands for no longer exists.");
+        return;
+      }
       if (objectType(object.typeId).level >= 4) {
         notify("A component is the smallest level, so it has no inside view.");
         return;
@@ -927,7 +958,7 @@ function Editor({ ws, diagram }: { ws: Workspace; diagram: Diagram }) {
       )}
       <div className="min-h-0 flex-1 flex">
         {!canEdit ? null : paletteOpen ? (
-          <Palette ws={ws} diagram={diagram} onAddType={addType} onAddComponent={addComponent} onAddObject={addExisting} onCollapse={() => togglePalette(false)} />
+          <Palette ws={ws} diagram={diagram} onAddType={addType} onAddComponent={addComponent} onAddObject={addExisting} onAddDiagram={addDiagram} onCollapse={() => togglePalette(false)} />
         ) : (
           <div className="w-11 shrink-0 flex justify-center pt-2 bg-surface border-r border-line">
             <IconButton label="Show the panel for adding objects" onClick={() => togglePalette(true)}>

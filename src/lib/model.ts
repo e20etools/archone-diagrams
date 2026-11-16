@@ -113,6 +113,8 @@ export interface ObjectInput {
   fields?: Record<string, string>;
   provenance?: Provenance;
   componentId?: string;
+  /** For a box standing for another diagram. */
+  diagramId?: string;
 }
 
 export const cleanTags = (tags: string[]) => [...new Set(tags.map((t) => t.trim().toLowerCase()).filter(Boolean))].sort();
@@ -133,6 +135,7 @@ export function createObject(ws: Workspace, input: ObjectInput): { ws: Workspace
     technology: input.technology?.trim() ?? "",
     fields: input.fields ?? {},
     ...(input.componentId ? { componentId: input.componentId } : {}),
+    ...(input.diagramId && typeId === "diagram" ? { diagramId: input.diagramId } : {}),
     provenance: input.provenance ?? manual,
     createdAt: stamp,
     updatedAt: stamp,
@@ -490,4 +493,17 @@ export function copyDiagram(
   if (!diagram.flows) delete diagram.flows;
   delete diagram.archive;
   return { ws: touch({ ...next, diagrams: { ...next.diagrams, [diagram.id]: diagram } }), diagram };
+}
+
+/**
+ * The box that stands for a diagram, made the first time it is needed and reused after: every
+ * diagram that connects to that diagram connects to the same box.
+ */
+export function diagramBox(ws: Workspace, diagramId: string): { ws: Workspace; objectId: string | null } {
+  const target = ws.diagrams[diagramId];
+  if (!target) return { ws, objectId: null };
+  const existing = Object.values(ws.objects).find((o) => o.typeId === "diagram" && o.diagramId === diagramId);
+  if (existing) return { ws, objectId: existing.id };
+  const made = createObject(ws, { typeId: "diagram", name: target.name, componentId: "diagrams.diagram", diagramId, description: target.description });
+  return { ws: made.ws, objectId: made.object.id };
 }
