@@ -627,7 +627,7 @@ build does not reload.
 ## Check it
 
 ```bash
-npm test                   # 299 tests: model, decisions, arranging, health, CALM, AI, questions, checks, MCP, import readers, sync engine, comparison, and the database rules and the API on a real Postgres
+npm test                   # 302 tests: model, decisions, arranging, health, CALM, AI, questions, checks, MCP, import readers, sync engine, comparison, and the database rules and the API on a real Postgres
 npm run build              # type-check and production build into dist/
 npm run test:browser       # 117 end-to-end checks of browser-only mode (run after a build)
 npm run test:browser:cloud # 76 end-to-end checks of hosted mode with several people
@@ -656,6 +656,22 @@ reach the site can use it, including the AI endpoint. Set `AI_ACCESS_CODE` so on
 with the code can spend your AI budget, or switch on hosted mode, where the endpoint asks
 for a signed-in person. Anyone can still create an account unless you turn sign-ups off in
 Supabase, so keep a spending limit on the AI key either way.
+
+### Closing the site to new accounts
+
+The database can refuse new accounts by itself, which is useful for a private or pilot
+site. Run these in the Supabase SQL Editor:
+
+```sql
+update public.signup_settings set open = false;                          -- stop new accounts
+insert into public.allowed_signups (email) values ('new@example.com');   -- let one address in
+update public.signup_settings set open = true;                           -- open again
+```
+
+While the site is closed, an address that is not on the list gets an error when it tries
+to sign up, and people who already have an account are not affected. Add an address to the
+list before you invite that person to a workspace. Neither table can be read or changed
+through the app.
 
 ## Host it on Lovable
 
