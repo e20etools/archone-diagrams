@@ -197,7 +197,7 @@ An AI assistant that speaks the Model Context Protocol connects to
 `Authorization: Bearer <key>`. A read key gives it seven tools to read the model and
 `list_proposals`; a propose key adds `propose_changes`; a write key adds seven more to
 create, change and delete objects and relationships and to create diagrams. Any key can
-ask `may_connect`. 17 tools.
+ask `may_connect` and `show_diagram`. 18 tools.
 
 - It is the REST API under another protocol: the same database function answers, so the
   key's rights, the 300-a-minute limit, webhooks and the audit log apply unchanged. An
@@ -715,6 +715,54 @@ What you should know:
   version, and says so.
 - A workspace can have 200 rules of its own.
 
+### Showing a diagram inside an assistant, and a skill for coding agents
+
+The MCP server has an 18th tool, `show_diagram`. It returns one diagram as its boxes and
+arrows, and declares a view for clients that support MCP Apps: the client opens the view in
+a sandboxed frame and the diagram is drawn in the conversation. A client without MCP Apps
+gets the same content as text.
+
+- The view is one self-contained page served by the server as `ui://archone/diagram.html`.
+  It makes no request of its own and writes names from the model as text, never as markup.
+- The picture is simpler than the app's canvas: straight arrows, no nesting boxes, and only
+  relationships whose two ends are both on the diagram.
+- `skills/archone-architecture/SKILL.md` is a skill for coding agents: ask `may_connect`
+  before writing a connection, file changes with `propose_changes`, show diagrams with
+  `show_diagram`. Copy the folder into the agent's skills folder.
+- Tested: the tool and the resource calls against the database rules, and the view inside a
+  frame with a stand-in host that speaks the handshake. Not tested: inside a real assistant
+  client. The view follows the MCP Apps messages as documented on 16 November 2026.
+
+### A gate for pull requests
+
+`gate/archone-gate.mjs` is a single-file check for a repository's CI. The repository
+declares in `archone.json` which system it is and what it connects to; the gate asks the
+model about each connection with the rules of `may_connect`, fails the check on one a rule
+forbids, and can file the ones the model does not know as a proposal that names the pull
+request. `gate/README.md` has the file format, the options and a GitHub Actions workflow.
+It checks the declaration, not the code.
+
+### Templates and cloud service names
+
+- Diagrams → **Template** offers five starting points (three-tier web application,
+  event-driven services, data platform, AI agent with tools, cloud workload). Using one
+  adds its objects and relationships to the model and draws one diagram. Objects whose
+  names the model already has are reused. It is one step in the undo history.
+- The Technology field of an object offers the technologies already in the model, then
+  about a hundred AWS, Azure and Google Cloud service names, those of the object's kind
+  first, so one service is spelled one way. Names only: the providers' icons are not
+  included.
+
+### ArchiMate 4
+
+ArchiMate 4 removes seven concepts and merges the processes of the three layers into one.
+The export here still writes the ArchiMate 3 exchange format, which is what current tools
+read. The import now also reads the removed concepts and ArchiMate 4's single Process, Role
+and Collaboration, and when a file uses something ArchiMate 4 removes or merges, the import
+dialog lists it with the documented way to model it instead. Not checked: the relationship
+types of ArchiMate 4 (the export writes Composition, Serving, Flow, Triggering and
+Association), and an ArchiMate 4 exchange file from a real tool.
+
 ### Large models
 
 Measured on the build machine with a generated model (domains of systems of services and
@@ -753,9 +801,9 @@ build does not reload.
 ## Check it
 
 ```bash
-npm test                   # 333 tests: model, decisions, arranging, health, CALM, scenario merging, the trust page, the document, your own rules, large models, AI, questions, checks, MCP, import readers, sync engine, comparison, and the database rules and the API on a real Postgres
+npm test                   # 346 tests: model, decisions, arranging, health, CALM, scenario merging, the trust page, the document, your own rules, large models, templates, the pull-request gate, AI, questions, checks, MCP, import readers, sync engine, comparison, and the database rules and the API on a real Postgres
 npm run build              # type-check and production build into dist/
-npm run test:browser       # 126 end-to-end checks of browser-only mode (run after a build)
+npm run test:browser       # 129 end-to-end checks of browser-only mode (run after a build)
 npm run test:browser:cloud # 85 end-to-end checks of hosted mode with several people
 ```
 
@@ -859,6 +907,8 @@ supabase/migrations/     the database schema and access rules
 supabase/functions/ai/   Edge Function wrapper for Supabase or Lovable Cloud
 supabase/functions/api/  Edge Function that serves the REST API
 supabase/functions/mcp/  Edge Function that serves the MCP server
+gate/               the pull-request gate: one generated file, its README and a workflow to copy
+skills/             a skill for coding agents that work against the model
 scripts/            build-api.mjs, browser-check.mjs
 ```
 

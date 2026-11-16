@@ -82,7 +82,7 @@ describe("connecting", () => {
     expect((await rpc("ping", undefined, { headers: { "MCP-Protocol-Version": "2025-06-18" } })).status).toBe(200);
     expect((await send("{not json")).body.error.code).toBe(-32700);
     expect((await send([{ jsonrpc: "2.0", id: 1, method: "ping" }])).status).toBe(400);
-    expect((await rpc("resources/list")).body.error.code).toBe(-32601);
+    expect((await rpc("prompts/list")).body.error.code).toBe(-32601);
   });
 });
 
@@ -126,8 +126,42 @@ describe("tools", () => {
     expect((await tool("may_connect", { source: "Ledger", target: "Nowhere" })).structuredContent.answer).toBe("unknown");
     expect((await tool("may_connect", { source: "Ledger" })).isError).toBe(true);
     const listed = (await rpc("tools/list")).body.result.tools;
-    expect(listed).toHaveLength(17);
+    expect(listed).toHaveLength(18);
     expect(listed.find((t: { name: string }) => t.name === "may_connect").annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false });
+  });
+
+  it("shows a diagram: as data for a client that draws, and as text for one that does not", async () => {
+    await db.query("insert into public.diagrams (workspace_id, id, name, description, view_type) values ($1, 'dia_pay', 'Payments <b>overview</b>', 'How money moves', 'custom'), ($1, 'dia_empty', 'Empty', '', 'custom')", [workspace]);
+    await db.query("insert into public.diagram_nodes (workspace_id, diagram_id, object_id, x, y) values ($1, 'dia_pay', $2, 0, 0), ($1, 'dia_pay', $3, 320.4, 40)", [workspace, ledger, store]);
+    const listed = (await rpc("tools/list")).body.result.tools.find((t: { name: string }) => t.name === "show_diagram");
+    expect(listed._meta).toEqual({ ui: { resourceUri: "ui://archone/diagram.html" } });
+    expect(listed.annotations).toMatchObject({ readOnlyHint: true });
+    expect((await rpc("initialize", {})).body.result.capabilities).toMatchObject({ resources: {} });
+
+    const shown = await tool("show_diagram", { diagram: "payments <b>overview</b>" }, { key: keys.read });
+    expect(shown.isError).toBe(false);
+    expect(shown.structuredContent).toMatchObject({ found: true, diagram: { id: "dia_pay", view: "custom" } });
+    expect(shown.structuredContent.others.map((d: { name: string }) => d.name)).toEqual(["Empty", "Finance"]);
+    expect(shown.structuredContent.boxes).toEqual(expect.arrayContaining([{ id: ledger, name: "Ledger", kind: "Service or API", lifecycle: "deprecated", x: 0, y: 0 }]));
+    expect(shown.structuredContent.boxes.find((b: { id: string }) => b.id === store)).toMatchObject({ x: 320, y: 40 });
+    expect(shown.structuredContent.arrows).toEqual([{ from: ledger, to: store, kind: "reads writes", label: "TLS" }]);
+    expect(shown.content[0].text).toContain('Diagram "Payments <b>overview</b>" (custom view), 2 boxes and 1 arrows. How money moves');
+    expect(shown.content[0].text).toContain("Ledger reads writes Ledger DB (TLS)");
+    expect((await tool("show_diagram", { diagram: "dia_empty" })).structuredContent).toMatchObject({ found: true, boxes: [], arrows: [] });
+    const missing = await tool("show_diagram", { diagram: "Nope" });
+    expect(missing.structuredContent).toMatchObject({ found: false, problem: 'There is no diagram "Nope". Choose one of the others.' });
+    expect(missing.content[0].text).toContain("Payments <b>overview</b> (dia_pay)");
+
+    const resources = (await rpc("resources/list")).body.result.resources;
+    expect(resources).toEqual([expect.objectContaining({ uri: "ui://archone/diagram.html", mimeType: "text/html;profile=mcp-app" })]);
+    const read = (await rpc("resources/read", { uri: "ui://archone/diagram.html" })).body.result.contents[0];
+    expect(read).toMatchObject({ uri: "ui://archone/diagram.html", mimeType: "text/html;profile=mcp-app", _meta: { ui: { csp: { connectDomains: [], resourceDomains: [] } } } });
+    // The view takes the handshake, draws from the result, and never writes model text as markup or fetches anything.
+    for (const part of ["ui/initialize", "ui/notifications/initialized", "ui/notifications/tool-result", "ui/notifications/size-changed", "textContent"]) expect(read.text, part).toContain(part);
+    for (const risk of ["innerHTML", "fetch(", "XMLHttpRequest", "eval(", "http://", "https://"]) expect(read.text.replace("http://www.w3.org/2000/svg", ""), risk).not.toContain(risk);
+    expect((await rpc("resources/read", { uri: "ui://archone/other" })).body.error.code).toBe(-32002);
+    await db.query("delete from public.diagram_nodes where workspace_id = $1 and diagram_id = 'dia_pay'", [workspace]);
+    await db.query("delete from public.diagrams where workspace_id = $1 and id in ('dia_pay', 'dia_empty')", [workspace]);
   });
 
   it("records the assistant's changes in the audit log under the key's name", async () => {

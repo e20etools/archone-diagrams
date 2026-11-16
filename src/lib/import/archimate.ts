@@ -14,6 +14,11 @@ import type { Sheet } from "./xlsx";
  * the exact type and kind also travel as properties, so a file written here comes back as it
  * left. Coming in from another tool, elements this app has no type for arrive as the nearest
  * one, and the review step is where a person corrects that.
+ *
+ * ArchiMate 4: the file written here is still the ArchiMate 3 exchange format, which is what
+ * the tools named above read. A file that uses concepts ArchiMate 4 takes away, or its single
+ * Process, Role and Collaboration, is read all the same, and archimate4Notes() says which of
+ * its elements a move to ArchiMate 4 would have to remodel.
  */
 
 export const ARCHIMATE_ELEMENT: Record<string, string> = {
@@ -51,7 +56,48 @@ const FROM_ELEMENT: Record<string, string> = {
   DataObject: "database", Artifact: "storage", SystemSoftware: "database",
   Node: "server", Device: "server", TechnologyService: "service", TechnologyInterface: "gateway", TechnologyCollaboration: "cluster", Path: "network", CommunicationNetwork: "network",
   Facility: "server", Equipment: "server",
+  // Removed in ArchiMate 4, still found in files written by tools that follow ArchiMate 3.
+  ApplicationInteraction: "component", TechnologyInteraction: "service", TechnologyProcess: "service", TechnologyFunction: "service", TechnologyEvent: "event", ApplicationEvent: "event",
+  // ArchiMate 4 has one Process, Role and Collaboration where ArchiMate 3 had one per layer.
+  Process: "process", Function: "process", Event: "event", Role: "actor", Collaboration: "system", Interface: "service", Service: "service",
 };
+
+/**
+ * What ArchiMate 4 does with concepts of ArchiMate 3, as far as its published summary says:
+ * seven are removed, each with a way to model it instead, and the processes of the three
+ * layers become one.
+ */
+const ARCHIMATE_4: Record<string, { name: string; instead: string }> = {
+  BusinessInteraction: { name: "Business Interaction", instead: "model it as a Process with the roles that take part" },
+  ApplicationInteraction: { name: "Application Interaction", instead: "model it as a Process with the components that take part" },
+  TechnologyInteraction: { name: "Technology Interaction", instead: "model it as a Process with the nodes that take part" },
+  Representation: { name: "Representation", instead: "use Material for paper, or a Data Object or Artifact for a digital form" },
+  Contract: { name: "Contract", instead: "model it as a Business Object" },
+  Constraint: { name: "Constraint", instead: "model it as a Requirement" },
+  Gap: { name: "Gap", instead: "model it as an Assessment of the difference between two Plateaus" },
+};
+const MERGED_PROCESS = new Set(["BusinessProcess", "ApplicationProcess", "TechnologyProcess"]);
+
+/** For an ArchiMate file: which of its elements ArchiMate 4 removes or merges, in sentences a person can act on. Empty when none. */
+export function archimate4Notes(source: string): string[] {
+  let root: XmlNode | null = null;
+  try {
+    root = parseXml(source);
+  } catch {
+    return [];
+  }
+  if (!root || root.name !== "model") return [];
+  const counts = new Map<string, number>();
+  for (const e of descendants(direct(root, "elements") ?? root, "element")) counts.set(e.attrs.type ?? "", (counts.get(e.attrs.type ?? "") ?? 0) + 1);
+  const notes: string[] = [];
+  for (const [type, info] of Object.entries(ARCHIMATE_4)) {
+    const n = counts.get(type) ?? 0;
+    if (n) notes.push(`${n} ${n === 1 ? "element is a" : "elements are"} ${info.name}${n === 1 ? "" : "s"}, which ArchiMate 4 removes: ${info.instead}.`);
+  }
+  const merged = [...MERGED_PROCESS].reduce((n, type) => n + (counts.get(type) ?? 0), 0);
+  if (merged) notes.push(`${merged} ${merged === 1 ? "element is a" : "elements are"} Business, Application or Technology Process${merged === 1 ? "" : "es"}. ArchiMate 4 has one Process for all three.`);
+  return notes;
+}
 const PROPS = { type: "archone:type", owner: "archone:owner", lifecycle: "archone:lifecycle", technology: "archone:technology", tags: "archone:tags", kind: "archone:kind", protocol: "archone:protocol", port: "archone:port" } as const;
 
 const xid = (kind: string, id: string) => `${kind}-${id.replace(/[^A-Za-z0-9_.-]/g, "_")}`;

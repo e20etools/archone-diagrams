@@ -6,6 +6,7 @@ import { TypeIcon } from "@/components/icons";
 import { Badge, Button, CommitInput, Field, IconButton, Select, formatDateTime } from "@/components/ui";
 import { CATEGORY_INFO, LIFECYCLE_INFO, OBJECT_TYPES, RELATION_KIND_INFO, objectType, type Category } from "@/lib/catalog";
 import { allOwners, diagramsUsing, possibleParents, relationshipsOf, updateObject, updateRelationship } from "@/lib/model";
+import { cloudSuggestions } from "@/lib/cloudCatalog";
 import { useMe } from "@/lib/cloud/me";
 import { useCanEdit } from "@/lib/cloud/session";
 import { TRUTH_STATE_LABEL, confirmTruth, truthMatters, truthOf } from "@/lib/freshness";
@@ -65,6 +66,7 @@ export function ObjectEditor({ ws, object }: { ws: Workspace; object: ModelObjec
   const patch = (change: Parameters<typeof updateObject>[2]) => apply((w) => updateObject(w, object.id, change));
   const parents = possibleParents(ws, object.id, object.typeId);
   const owners = allOwners(ws);
+  const technologies = [...new Set(Object.values(ws.objects).map((o) => o.technology.trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
   // The data lens has its own controls; it is kept out of the free-form list.
   const fields = Object.entries(object.fields).filter(([key]) => !isDataField(key));
   const lens = dataLens(object);
@@ -118,7 +120,18 @@ export function ObjectEditor({ ws, object }: { ws: Workspace; object: ModelObjec
           </datalist>
         </Field>
         <Field label="Technology">
-          <CommitInput value={object.technology} onCommit={(technology) => patch({ technology })} placeholder="For example PostgreSQL" />
+          <CommitInput value={object.technology} onCommit={(technology) => patch({ technology })} list="technology-options" placeholder="For example PostgreSQL" />
+          {/* Technologies already in the model first, then cloud services by name, so one service is spelled one way. */}
+          <datalist id="technology-options">
+            {technologies.map((t) => (
+              <option key={t} value={t} />
+            ))}
+            {cloudSuggestions(object.typeId)
+              .filter((s) => !technologies.includes(s.name))
+              .map((s) => (
+                <option key={s.name} value={s.name} label={s.provider} />
+              ))}
+          </datalist>
         </Field>
       </div>
       <Field label="Tags" hint="Separate tags with commas.">

@@ -726,6 +726,65 @@ try {
     await large.close();
   }
 
+  // A template: a typical architecture put into the model with one diagram of it.
+  await page.goto(base, { waitUntil: "networkidle0" });
+  await page.waitForSelector("[data-template-open]");
+  const templateBase = Object.keys((await stored()).objects).length;
+  await page.click("[data-template-open]");
+  await page.waitForSelector("[data-templates] [data-template]");
+  const templatesOffered = await count(page, "[data-templates] [data-template]");
+  await page.click('[data-template="ai-agent"]');
+  await page.waitForFunction(() => location.pathname.startsWith("/diagram/"));
+  await page.waitForSelector(".object-node");
+  await sleep(500);
+  const templated = await stored();
+  check(
+    "a template adds its objects to the model and opens a diagram of them",
+    templatesOffered >= 5 && Object.keys(templated.objects).length === templateBase + 7 && (await count(page, ".object-node")) === 6 && Object.values(templated.diagrams).some((d) => d.name === "AI agent with tools"),
+    `${templatesOffered} templates, ${Object.keys(templated.objects).length - templateBase} objects added, ${await count(page, ".object-node")} boxes`,
+  );
+  await page.click(".object-node");
+  await page.waitForSelector("#technology-options option");
+  check("the technology field offers cloud service names", (await page.$$eval("#technology-options option", (o) => o.map((x) => x.value))).includes("Amazon S3"));
+  await shot(page, "18-template");
+
+  // The MCP server's diagram view, opened the way an assistant's client opens it: in a frame, fed over postMessage.
+  {
+    const { createMcpHandler } = await import(join(root, "supabase/functions/mcp/handler.js"));
+    const mcp = createMcpHandler(() => ({ SUPABASE_URL: "https://example.supabase.co", SUPABASE_ANON_KEY: "anon" }));
+    const read = await (await mcp(new Request("https://example.supabase.co/functions/v1/mcp", { method: "POST", headers: { Authorization: "Bearer ark_x", "Content-Type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "resources/read", params: { uri: "ui://archone/diagram.html" } }) }))).json();
+    const html = read.result.contents[0].text;
+    const host = await newPage(browser, errors);
+    await host.setContent(`<!doctype html><body style="margin:0;background:#fff"><iframe id="view" sandbox="allow-scripts" style="width:900px;height:520px;border:0"></iframe><script>
+      window.seen = [];
+      const frame = document.getElementById("view");
+      window.addEventListener("message", (event) => {
+        const m = event.data; if (!m || m.jsonrpc !== "2.0") return;
+        window.seen.push(m.method || "result");
+        if (m.method === "ui/initialize") frame.contentWindow.postMessage({ jsonrpc: "2.0", id: m.id, result: { protocolVersion: "2026-01-26", hostInfo: { name: "check", version: "1" }, hostCapabilities: {}, hostContext: {} } }, "*");
+        if (m.method === "ui/notifications/initialized") frame.contentWindow.postMessage({ jsonrpc: "2.0", method: "ui/notifications/tool-result", params: { content: [], structuredContent: window.picture } }, "*");
+        if (m.method === "ui/notifications/size-changed") window.size = m.params;
+      });
+    </script></body>`);
+    await host.evaluate((html) => {
+      window.picture = { found: true, diagram: { id: "d", name: "Checkout <img src=x onerror=window.pwned=1>", description: "", view: "custom" }, others: [],
+        boxes: [{ id: "a", name: "Web shop", kind: "Web app", lifecycle: "active", x: 0, y: 0 }, { id: "b", name: "<script>window.pwned=1</script>", kind: "Service or API", lifecycle: "deprecated", x: 320, y: 0 }, { id: "c", name: "Orders database", kind: "Database", lifecycle: "active", x: 320, y: 160 }],
+        arrows: [{ from: "a", to: "b", kind: "calls", label: "HTTPS" }, { from: "b", to: "c", kind: "reads writes", label: "" }] };
+      document.getElementById("view").srcdoc = html;
+    }, html);
+    await host.waitForFunction(() => window.size && window.seen.includes("ui/notifications/size-changed") && window.seen.includes("ui/notifications/initialized"), { timeout: 8000 });
+    await sleep(300);
+    const frame = host.frames().find((f) => f !== host.mainFrame());
+    const drawnView = await frame.evaluate(() => ({ boxes: document.querySelectorAll("g.box").length, arrows: document.querySelectorAll("g.arrow line").length, title: document.getElementById("title").textContent, images: document.querySelectorAll("img, script:not(:first-of-type)").length, pwned: !!window.pwned }));
+    check(
+      "the MCP diagram view shakes hands with its host, draws what it is sent, and treats names as text",
+      drawnView.boxes === 3 && drawnView.arrows === 2 && drawnView.title.startsWith("Checkout <img") && drawnView.images === 0 && !drawnView.pwned && (await host.evaluate(() => window.seen[0])) === "ui/initialize" && (await host.evaluate(() => window.size.height)) > 100,
+      `${drawnView.boxes} boxes, ${drawnView.arrows} arrows`,
+    );
+    await shot(host, "17-mcp-diagram-view");
+    await host.close();
+  }
+
   // The architecture as a Word document and as slides, written in the browser.
   await page.goto(`${base}/document`, { waitUntil: "networkidle0" });
   await page.waitForSelector("[data-document-diagrams] li");

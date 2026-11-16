@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { demoWorkspace } from "../demo";
 import { emptyWorkspace, findByName } from "../model";
-import { isArchimate, readArchimate, writeArchimate } from "./archimate";
+import { archimate4Notes, isArchimate, readArchimate, writeArchimate } from "./archimate";
 import { guessMapping, sheetsToProposal } from "./draft";
 import { descendants, parseXml } from "./xml";
 
@@ -99,5 +99,29 @@ describe("ArchiMate import", () => {
     expect(() => readArchimate("<mxfile/>")).toThrow(/not an ArchiMate exchange file/);
     expect(() => readArchimate('<model xmlns="http://www.opengroup.org/xsd/archimate/3.0/"><elements/></model>')).toThrow(/no elements/);
     expect(isArchimate("<mxfile><diagram/></mxfile>")).toBe(false);
+  });
+  it("reads a file that uses what ArchiMate 4 removes or merges, and says what a move would have to remodel", () => {
+    const el = (id: string, type: string, name: string) => `<element identifier="${id}" xsi:type="${type}"><name>${name}</name></element>`;
+    const file = `<model xmlns="http://www.opengroup.org/xsd/archimate/3.0/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><elements>${[
+      el("a", "BusinessInteraction", "Agree the terms"),
+      el("b", "Contract", "Supply contract"),
+      el("c", "Constraint", "Stay in region"),
+      el("d", "BusinessProcess", "Take an order"),
+      el("e", "ApplicationProcess", "Post the entry"),
+      el("f", "Process", "Ship the order"),
+      el("g", "Role", "Approver"),
+      el("h", "ApplicationComponent", "Shop"),
+    ].join("")}</elements></model>`;
+    const kinds = Object.fromEntries(readArchimate(file)[0].rows.slice(1).map((r) => [r[0], r[1]]));
+    expect(kinds).toMatchObject({ "Agree the terms": "Process", "Take an order": "Process", "Ship the order": "Process", Approver: "Person or team", Shop: "Application" });
+    expect(archimate4Notes(file)).toEqual([
+      "1 element is a Business Interaction, which ArchiMate 4 removes: model it as a Process with the roles that take part.",
+      "1 element is a Contract, which ArchiMate 4 removes: model it as a Business Object.",
+      "1 element is a Constraint, which ArchiMate 4 removes: model it as a Requirement.",
+      "2 elements are Business, Application or Technology Processes. ArchiMate 4 has one Process for all three.",
+    ]);
+    // A file written here only meets the merge of the three processes, and only when it holds processes.
+    expect(archimate4Notes(xml).every((n) => n.includes("one Process for all three"))).toBe(true);
+    expect(archimate4Notes("<mxfile/>")).toEqual([]);
   });
 });

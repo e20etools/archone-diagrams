@@ -1,0 +1,30 @@
+# Copy to .github/workflows/architecture.yml in the repository to be checked, and copy
+# archone-gate.mjs into the repository (for example under tools/).
+#
+# Repository secrets to add:
+#   ARCHONE_API_URL   https://<project>.supabase.co/functions/v1/api/v1
+#   ARCHONE_API_KEY   an API key of the workspace (read, or propose when --propose is used)
+name: Architecture gate
+
+on:
+  pull_request:
+    paths:
+      - archone.json
+      - "src/**"
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Check declared connections against the architecture model
+        env:
+          ARCHONE_API_URL: ${{ secrets.ARCHONE_API_URL }}
+          ARCHONE_API_KEY: ${{ secrets.ARCHONE_API_KEY }}
+        run: node tools/archone-gate.mjs --file archone.json --unknown warn --propose

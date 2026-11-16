@@ -8,7 +8,7 @@ import { useCanEdit } from "@/lib/cloud/session";
 import { decodeText, parseCsv } from "@/lib/import/csv";
 import type { ImportedPage } from "@/lib/import/diagramFile";
 import { fieldsOf, guessMapping, pageToProposal, remap, sheetsToProposal, textModelToProposal, type SheetMapping, type SheetRole } from "@/lib/import/draft";
-import { isArchimate, readArchimate } from "@/lib/import/archimate";
+import { archimate4Notes, isArchimate, readArchimate } from "@/lib/import/archimate";
 import { readDrawio } from "@/lib/import/drawio";
 import { isMermaid, readMermaid, type TextModel } from "@/lib/import/mermaid";
 import { isStructurizr, readStructurizr } from "@/lib/import/structurizr";
@@ -21,7 +21,7 @@ const MAX_BYTES = 25 * 1024 * 1024;
 const ACCEPT = ".xlsx,.csv,.tsv,.txt,.vsdx,.drawio,.xml,.archimate,.mmd,.mermaid,.md,.markdown,.dsl";
 
 type Loaded =
-  | { kind: "sheets"; fileName: string; sheets: Sheet[] }
+  | { kind: "sheets"; fileName: string; sheets: Sheet[]; notes?: string[] }
   | { kind: "pages"; fileName: string; format: "visio" | "drawio"; pages: ImportedPage[] }
   | { kind: "text"; fileName: string; format: "mermaid" | "structurizr"; model: TextModel };
 
@@ -56,7 +56,7 @@ async function load(file: File): Promise<Loaded> {
   if (extension === "xml" || extension === "archimate") {
     const source = decodeText(bytes);
     // A file saved by Archi itself (.archimate) is not the exchange format; the reader says how to get one.
-    if (isArchimate(source) || extension === "archimate") return { kind: "sheets", fileName: name, sheets: readArchimate(source) };
+    if (isArchimate(source) || extension === "archimate") return { kind: "sheets", fileName: name, sheets: readArchimate(source), notes: archimate4Notes(source) };
   }
   if (extension === "drawio" || extension === "xml") return { kind: "pages", fileName: name, format: "drawio", pages: await readDrawio(decodeText(bytes)) };
   throw new Error(`"${name}" is not a kind of file this can import. Choose an Excel workbook (.xlsx), a CSV file, a Visio drawing (.vsdx), a draw.io file (.drawio), an ArchiMate exchange file (.xml), a Mermaid file (.mmd or .md) or a Structurizr file (.dsl).`);
@@ -271,6 +271,17 @@ export function ImportDialog({ onClose }: { onClose: () => void }) {
           {!canEdit && <Problem text="You have view access to this workspace, so you cannot import into it. Ask an owner for edit access." />}
           {loaded.kind === "sheets" ? (
             <>
+              {!!loaded.notes?.length && (
+                <div className="rounded-md border border-line bg-paper px-3 py-2 text-[13px]" data-archimate4>
+                  <p className="font-medium">If you move to ArchiMate 4</p>
+                  <ul className="mt-0.5 list-disc pl-5 text-ink-soft">
+                    {loaded.notes.map((note) => (
+                      <li key={note}>{note}</li>
+                    ))}
+                  </ul>
+                  <p className="mt-1 text-ink-soft">The file is imported all the same. This only tells you what a later move would have to remodel.</p>
+                </div>
+              )}
               {loaded.sheets.map((sheet, i) => (
                 <SheetCard key={`${sheet.name}:${i}`} sheet={sheet} mapping={mappings[i] ?? { role: "skip", columns: {} }} onChange={(next) => setMappings((all) => all.map((m, j) => (j === i ? next : m)))} />
               ))}

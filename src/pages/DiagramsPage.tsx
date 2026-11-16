@@ -1,4 +1,4 @@
-import { Copy, FileUp, Plus, Sparkles, Trash2 } from "lucide-react";
+import { Copy, FileUp, LayoutTemplate, Plus, Sparkles, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { AiDraftDialog, NewDiagramDialog } from "@/components/dialogs";
@@ -8,13 +8,14 @@ import { VIEW_TYPE_INFO } from "@/lib/catalog";
 import { demoWorkspace } from "@/lib/demo";
 import { deleteDiagram, duplicateDiagram, sortedDiagrams } from "@/lib/model";
 import { apply, useStore, useWorkspace } from "@/lib/store";
+import { TEMPLATES, applyTemplate } from "@/lib/templates";
 import type { Diagram } from "@/lib/types";
 
 export function DiagramsPage() {
   const ws = useWorkspace();
   const replace = useStore((s) => s.replace);
   const navigate = useNavigate();
-  const [dialog, setDialog] = useState<"new" | "ai" | "import" | null>(null);
+  const [dialog, setDialog] = useState<"new" | "ai" | "import" | "template" | null>(null);
   const [removing, setRemoving] = useState<Diagram | null>(null);
   const diagrams = sortedDiagrams(ws);
   const blank = diagrams.length === 0 && Object.keys(ws.objects).length === 0;
@@ -30,6 +31,9 @@ export function DiagramsPage() {
           <div className="flex gap-2 shrink-0">
             <Button icon={<FileUp size={15} />} title="Import a Visio or draw.io diagram, or a spreadsheet" onClick={() => setDialog("import")}>
               Import
+            </Button>
+            <Button icon={<LayoutTemplate size={15} />} onClick={() => setDialog("template")} data-template-open>
+              Template
             </Button>
             <Button icon={<Sparkles size={15} />} onClick={() => setDialog("ai")}>
               Draft with AI
@@ -55,6 +59,9 @@ export function DiagramsPage() {
             </Button>
             <Button icon={<FileUp size={15} />} onClick={() => setDialog("import")}>
               Import a file
+            </Button>
+            <Button icon={<LayoutTemplate size={15} />} onClick={() => setDialog("template")} data-template-open>
+              Start from a template
             </Button>
             <Button
               onClick={() => {
@@ -120,6 +127,40 @@ export function DiagramsPage() {
         </div>
       )}
 
+      {dialog === "template" && (
+        <Modal title="Start from a template" onClose={() => setDialog(null)} width={620}>
+          <p className="text-ink-soft">A template puts a small, typical architecture into the model and draws one diagram of it. Rename and reshape it afterwards. Objects whose names the model already has are reused.</p>
+          <ul className="mt-3 divide-y divide-line-soft rounded-md border border-line" data-templates>
+            {TEMPLATES.map((t) => (
+              <li key={t.id} className="flex items-start gap-3 px-3 py-2.5">
+                <div className="min-w-0 flex-1">
+                  <p className="font-medium">{t.name}</p>
+                  <p className="text-[13px] text-ink-soft">
+                    {t.about} {t.objects.length} objects, {t.relationships.length} relationships.
+                  </p>
+                </div>
+                <Button
+                  size="sm"
+                  data-template={t.id}
+                  onClick={() => {
+                    let diagramId = "";
+                    apply((w) => {
+                      const made = applyTemplate(w, t.id);
+                      diagramId = made?.diagramId ?? "";
+                      return made?.ws ?? w;
+                    });
+                    setDialog(null);
+                    // A viewer's change is refused by the edit guard, and then there is no new diagram to open.
+                    if (diagramId && useStore.getState().ws.diagrams[diagramId]) navigate(`/diagram/${diagramId}`);
+                  }}
+                >
+                  Use
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </Modal>
+      )}
       {dialog === "new" && <NewDiagramDialog ws={ws} onClose={() => setDialog(null)} />}
       {dialog === "ai" && <AiDraftDialog ws={ws} onClose={() => setDialog(null)} />}
       {dialog === "import" && <ImportDialog onClose={() => setDialog(null)} />}
