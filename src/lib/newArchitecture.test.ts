@@ -100,3 +100,32 @@ describe("a draw.io file matched to the library exactly", () => {
     expect(Object.values(applied.ws.objects).find((o) => o.name === "Amazon S3")?.componentId).toBe(exactComponent("Amazon S3")!.id);
   });
 });
+
+describe("the workspace's own wizard steps", () => {
+  it("replace the built-in ones for that kind, and connect as set", async () => {
+    const { BUILT_IN_STEPS, saveWizard, resetWizard, wizardStepsProblems } = await import("./wizard");
+    const steps = [
+      ...BUILT_IN_STEPS.deployment,
+      { id: "watch", title: "Monitoring", question: "What watches it?", kinds: ["service"], usual: "applications.back-end-service", placeholder: "", links: [{ to: "platforms", kind: "depends_on" as const, label: "Watches", how: "each" as const }] },
+    ];
+    expect(wizardStepsProblems(steps)).toEqual([]);
+    const ws = saveWizard(emptyWorkspace("Sara"), "deployment", steps, "Sara");
+    expect(wizardSteps("deployment", ws).map((s) => s.id)).toEqual(["entry", "platforms", "workloads", "watch"]);
+    expect(wizardSteps("container", ws)).toBe(BUILT_IN_STEPS.container);
+    const t = wizardTemplate("deployment", "x", { platforms: [{ name: "Cluster" }], watch: [{ name: "Zabbix" }] }, ws);
+    expect(t.relationships).toContainEqual(["w2", "w1", "depends_on", "Watches"]);
+    expect(wizardSteps("deployment", resetWizard(ws, "deployment"))).toBe(BUILT_IN_STEPS.deployment);
+  });
+
+  it("say what is wrong before they can be saved", async () => {
+    const { wizardStepsProblems } = await import("./wizard");
+    expect(wizardStepsProblems([])).toContain("Keep at least one step.");
+    const problems = wizardStepsProblems([
+      { id: "a", title: "", question: "", kinds: ["database"], usual: "applications.back-end-service", placeholder: "", inside: "gone", links: [{ to: "nowhere", kind: "calls", label: "", how: "each" }] },
+    ]);
+    expect(problems.join(" ")).toMatch(/needs a title/);
+    expect(problems.join(" ")).toMatch(/not one of the kinds/);
+    expect(problems.join(" ")).toMatch(/sit inside no longer exists/);
+    expect(problems.join(" ")).toMatch(/connection points to a step/);
+  });
+});

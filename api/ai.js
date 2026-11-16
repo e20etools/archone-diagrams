@@ -4121,6 +4121,37 @@ var customRuleSchema = objectType({
 	createdAt: stringType(),
 	updatedAt: stringType()
 });
+/** One question of the wizard, as the workspace has set it. */
+var wizardStepSchema = objectType({
+	id: stringType().min(1).max(40),
+	title: stringType().min(1).max(60),
+	question: stringType().max(200),
+	/** The kinds of component offered; empty offers the whole library. */
+	kinds: arrayType(stringType()).max(30),
+	/** The component an answer becomes when nothing more exact is chosen. */
+	usual: stringType(),
+	single: booleanType().optional(),
+	required: booleanType().optional(),
+	placeholder: stringType().max(80).default(""),
+	/** The answers sit inside the (first) answer of this step, such as the containers inside a system. */
+	inside: stringType().optional(),
+	/** The answers run one after another, in the order given. */
+	chain: booleanType().optional(),
+	/** Lines from this step's answers to another step's. "spread" joins each answer to one answer of the other step in turn. */
+	links: arrayType(objectType({
+		to: stringType(),
+		kind: enumType(RELATION_KINDS),
+		label: stringType().max(80).default(""),
+		how: enumType(["each", "spread"]).default("each")
+	})).max(10).default([])
+});
+/** The wizard's questions for one kind of diagram; the id is the kind. */
+var wizardConfigSchema = objectType({
+	id: enumType(VIEW_TYPES),
+	steps: arrayType(wizardStepSchema).min(1).max(20),
+	author: stringType(),
+	updatedAt: stringType()
+});
 /**
 * A template the workspace made from one of its own diagrams. It keeps the boxes (each a
 * library component), the lines between them and where they stood, and nothing else: no
@@ -4175,6 +4206,8 @@ objectType({
 	rules: recordType(customRuleSchema).default({}),
 	/** Templates made from the workspace's own diagrams. Missing in workspaces saved before they existed. */
 	templates: recordType(savedTemplateSchema).default({}),
+	/** The workspace's own wizard questions, by kind of diagram. A kind without one uses the built-in questions. */
+	wizards: recordType(wizardConfigSchema).default({}),
 	updatedAt: stringType()
 });
 // src/lib/ai/prompt.ts

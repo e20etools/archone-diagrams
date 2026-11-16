@@ -607,7 +607,7 @@ function SystemField({ ws, options, value, onChange }: { ws: Workspace; options:
 /* ---------- 02 wizard ---------- */
 
 function WizardDialog({ ws, start, onBack, onDone }: { ws: Workspace; start: DiagramStart; onBack: () => void; onDone: (diagramId: string) => void }) {
-  const steps = wizardSteps(start.viewType);
+  const steps = wizardSteps(start.viewType, ws);
   const [index, setIndex] = useState(0);
   const [answers, setAnswers] = useState<WizardAnswers>((): WizardAnswers => {
     // A diagram of one system starts from that system.
@@ -616,8 +616,8 @@ function WizardDialog({ ws, start, onBack, onDone }: { ws: Workspace; start: Dia
   });
   const review = index === steps.length;
   const step = steps[index];
-  const template = useMemo(() => wizardTemplate(start.viewType, start.name, answers), [start, answers]);
-  const problem = wizardProblem(start.viewType, answers);
+  const template = useMemo(() => wizardTemplate(start.viewType, start.name, answers, ws), [start, answers, ws]);
+  const problem = wizardProblem(start.viewType, answers, ws);
   const items = step ? (answers[step.id] ?? []) : [];
   const setItems = (next: typeof items) => setAnswers((a) => ({ ...a, [step.id]: next }));
   const listId = step ? `wizard-${step.id}-components` : "";

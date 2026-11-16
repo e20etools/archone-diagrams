@@ -5,6 +5,7 @@ import { IntegrationsCard } from "@/components/cloud/IntegrationsCard";
 import { MembersCard } from "@/components/cloud/MembersCard";
 import { TrustPageCard } from "@/components/cloud/TrustPageCard";
 import { ReviewSettingsCard } from "@/components/cloud/ReviewSettingsCard";
+import { WizardSettingsCard } from "@/components/WizardSettings";
 import { Badge, Button, CommitInput, Field, Input, Modal, countOf, useNotice } from "@/components/ui";
 import { cloudEnabled } from "@/lib/cloud/config";
 import { deleteCurrentWorkspace, errorText, renameCurrentWorkspace, updateMyName, useCanEdit, useSession } from "@/lib/cloud/session";
@@ -126,6 +127,8 @@ export function SettingsPage() {
       {cloudEnabled && <ReviewSettingsCard />}
       {cloudEnabled && <IntegrationsCard />}
       {cloudEnabled && <TrustPageCard />}
+
+      <WizardSettingsCard />
 
       <Card title="AI drafting" text="AI drafts always wait for your review. The key stays on the server and is never sent to the browser.">
         {ai === null ? (

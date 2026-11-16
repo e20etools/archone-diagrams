@@ -298,6 +298,39 @@ export const customRuleSchema = z.object({
 });
 export type CustomRule = z.infer<typeof customRuleSchema>;
 
+/** One question of the wizard, as the workspace has set it. */
+export const wizardStepSchema = z.object({
+  id: z.string().min(1).max(40),
+  title: z.string().min(1).max(60),
+  question: z.string().max(200),
+  /** The kinds of component offered; empty offers the whole library. */
+  kinds: z.array(z.string()).max(30),
+  /** The component an answer becomes when nothing more exact is chosen. */
+  usual: z.string(),
+  single: z.boolean().optional(),
+  required: z.boolean().optional(),
+  placeholder: z.string().max(80).default(""),
+  /** The answers sit inside the (first) answer of this step, such as the containers inside a system. */
+  inside: z.string().optional(),
+  /** The answers run one after another, in the order given. */
+  chain: z.boolean().optional(),
+  /** Lines from this step's answers to another step's. "spread" joins each answer to one answer of the other step in turn. */
+  links: z
+    .array(z.object({ to: z.string(), kind: z.enum(RELATION_KINDS), label: z.string().max(80).default(""), how: z.enum(["each", "spread"]).default("each") }))
+    .max(10)
+    .default([]),
+});
+export type WizardStepConfig = z.infer<typeof wizardStepSchema>;
+
+/** The wizard's questions for one kind of diagram; the id is the kind. */
+export const wizardConfigSchema = z.object({
+  id: z.enum(VIEW_TYPES),
+  steps: z.array(wizardStepSchema).min(1).max(20),
+  author: z.string(),
+  updatedAt: z.string(),
+});
+export type WizardConfig = z.infer<typeof wizardConfigSchema>;
+
 export const PERSPECTIVE_IDS = ["applications", "data", "infrastructure", "business"] as const;
 
 /**
@@ -337,6 +370,8 @@ export const workspaceSchema = z.object({
   rules: z.record(customRuleSchema).default({}),
   /** Templates made from the workspace's own diagrams. Missing in workspaces saved before they existed. */
   templates: z.record(savedTemplateSchema).default({}),
+  /** The workspace's own wizard questions, by kind of diagram. A kind without one uses the built-in questions. */
+  wizards: z.record(wizardConfigSchema).default({}),
   updatedAt: z.string(),
 });
 export type Workspace = z.infer<typeof workspaceSchema>;

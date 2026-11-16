@@ -141,6 +141,12 @@ export function createDemoBackend(): Backend {
       else if (old.enabled !== after.enabled) log(db, workspaceId, "rule", rowId, after.title, after.enabled ? "switched on" : "switched off");
       else log(db, workspaceId, "rule", rowId, after.title, "updated");
     }
+    for (const [rowId, after] of Object.entries(change.wizards ?? {})) {
+      const old = before.wizards?.[rowId];
+      if (!after) {
+        if (old) log(db, workspaceId, "wizard", rowId, rowId, "reset");
+      } else log(db, workspaceId, "wizard", rowId, rowId, old ? "updated" : "created", { steps: [old?.steps.length ?? null, after.steps.length] });
+    }
     for (const [rowId, after] of Object.entries(change.templates ?? {})) {
       const old = before.templates?.[rowId];
       if (!after) {
@@ -188,7 +194,7 @@ export function createDemoBackend(): Backend {
       diagrams: Object.keys(tables.diagrams).length,
       createdBy: me().id,
       createdAt: new Date().toISOString(),
-      tables: { ...(JSON.parse(JSON.stringify(tables)) as Tables), proposals: {}, adrs: {}, rules: {}, templates: {} },
+      tables: { ...(JSON.parse(JSON.stringify(tables)) as Tables), proposals: {}, adrs: {}, rules: {}, templates: {}, wizards: {} },
     };
     versionsOf(db, workspaceId).unshift(version);
     return version.id;
@@ -405,6 +411,7 @@ export function createDemoBackend(): Backend {
       refuseOutsideDomains(db, workspaceId, change);
       refuseOutsideCategories(db, workspaceId, change);
       if (Object.keys(change.rules ?? {}).length && roleOf(db, workspaceId, me().id) !== "owner") throw new BackendError("forbidden", "Only an owner can change the workspace's rules.");
+      if (Object.keys(change.wizards ?? {}).length && roleOf(db, workspaceId, me().id) !== "owner") throw new BackendError("forbidden", "Only an owner can change the wizard's questions.");
       logChanges(db, workspaceId, db.rows[workspaceId] ?? emptyTables(), change);
       db.rows[workspaceId] = patchTables(db.rows[workspaceId] ?? emptyTables(), change);
       write(db);
@@ -716,7 +723,7 @@ export function createDemoBackend(): Backend {
       for (const m of db.members.filter((x) => x.workspaceId === workspaceId && canEditRole(x.role))) db.members.push({ workspaceId: scenarioId, userId: m.userId, role: m.role });
       const source = db.rows[workspaceId] ?? emptyTables();
       // A scenario is judged by the same rules as the model it came from.
-      db.rows[scenarioId] = { ...(JSON.parse(JSON.stringify(source)) as Tables), proposals: {}, adrs: {}, rules: JSON.parse(JSON.stringify(source.rules ?? {})) as Tables["rules"], templates: {} };
+      db.rows[scenarioId] = { ...(JSON.parse(JSON.stringify(source)) as Tables), proposals: {}, adrs: {}, rules: JSON.parse(JSON.stringify(source.rules ?? {})) as Tables["rules"], templates: {}, wizards: JSON.parse(JSON.stringify(source.wizards ?? {})) as Tables["wizards"] };
       log(db, workspaceId, "scenario", scenarioId, name.trim(), "created");
       log(db, scenarioId, "scenario", scenarioId, name.trim(), "created", { "copied from": db.workspaces[workspaceId].name });
       write(db);

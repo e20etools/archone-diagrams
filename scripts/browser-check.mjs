@@ -904,6 +904,41 @@ try {
       !!systemPrefilled && wizardDiagram?.viewType === "container" && wizardObjects.length === 5 && wizardObjects.every((o) => o.componentId) && wizardLines.length >= 4,
       `${systemPrefilled} :: ${wizardDiagram?.viewType}, ${wizardObjects.length} objects, ${wizardLines.length} lines`,
     );
+    // The wizard's steps are set in Settings: a step added there is asked next time.
+    await page.goto(`${base}/settings`, { waitUntil: "networkidle0" });
+    await page.waitForSelector("[data-wizard-settings]");
+    await page.$eval('[data-wizard-kind="container"]', (b) => b.click());
+    await page.click("[data-wizard-add]");
+    await page.waitForSelector('[data-wizard-step-editor] input[aria-label="Step title"]');
+    await page.$eval('[data-wizard-step-editor] input[aria-label="Step title"]', (e) => e.select());
+    await page.type('[data-wizard-step-editor] input[aria-label="Step title"]', "Monitoring");
+    await page.type('[data-wizard-step-editor] input[aria-label="Question"]', "What watches it?");
+    await page.$eval('[data-wizard-step-editor] [data-wizard-kind-option="application"]', (b) => b.click());
+    await page.$eval('[data-wizard-step-editor] [data-wizard-kind-option="service"]', (b) => b.click());
+    await page.$eval('[data-wizard-step-editor] input[aria-label="Usual component"]', (e) => e.select());
+    await page.type('[data-wizard-step-editor] input[aria-label="Usual component"]', "Back-end service");
+    await page.$eval('[data-wizard-step-row="system"] [data-wizard-step-remove]', (b) => b.click()).catch(() => undefined);
+    const problemsShown = await page.$("[data-wizard-problems]");
+    await page.click("[data-wizard-step-row] [data-wizard-step-open='system']").catch(() => undefined);
+    // Removing the system step was refused by the checks? It is allowed: the steps that sat inside it simply no longer do.
+    await shot(page, "33-wizard-settings");
+    await page.click("[data-wizard-save]");
+    await sleep(300);
+    const kept = (await stored()).wizards?.container?.steps.map((s) => s.title) ?? [];
+    check("an owner changes the wizard's steps in Settings: adds one, removes one", kept.includes("Monitoring") && !kept.includes("The system") && !problemsShown, kept.join(", "));
+    await startNew("Wizard with own steps", "container");
+    await page.click('[data-way="wizard"]');
+    await page.waitForSelector("[data-wizard-step]");
+    const askedSteps = await page.$$eval('ol[aria-label="Steps"] li', (els) => els.map((e) => e.textContent.trim()));
+    check("the wizard asks the workspace's own steps", askedSteps.includes("Monitoring") && !askedSteps.includes("The system"), askedSteps.join(" | "));
+    await page.keyboard.press("Escape");
+    await page.goto(`${base}/settings`, { waitUntil: "networkidle0" });
+    await page.$eval('[data-wizard-kind="container"]', (b) => b.click());
+    await page.waitForSelector("[data-wizard-reset]");
+    await page.click("[data-wizard-reset]");
+    await sleep(400);
+    check("the built-in steps come back with one click", !(await stored()).wizards?.container, JSON.stringify(Object.keys((await stored()).wizards ?? {})));
+
     // 03 A copy with separate objects; the original stays as it is.
     await startNew("Copy check", "custom");
     await page.click('[data-way="existing"]');
