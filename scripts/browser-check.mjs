@@ -252,12 +252,38 @@ try {
   // A second view of the same model, then editing on the canvas.
   await page.goto(base, { waitUntil: "networkidle0" });
   await clickText(page, "New diagram");
-  await waitText(page, "What it shows");
+  await page.waitForSelector("[data-new-kind]");
   await sleep(200);
-  // Typed with no click first: the dialog itself has to put the keyboard in the name field.
-  check("a dialog opens with the keyboard in its first field", await page.evaluate(() => !!document.activeElement?.matches('[role=dialog] input[placeholder^="For example:"]')));
-  await page.keyboard.type("Landscape check");
-  await clickText(page, "Next: how to build it");
+  // The keyboard starts on the chosen kind; arrows move through the kinds and Enter goes on.
+  check("the dialog opens with the keyboard on the chosen kind of diagram", await page.evaluate(() => !!document.activeElement?.matches('[role=dialog] [data-view-type="landscape"]')));
+  await page.keyboard.press("ArrowRight");
+  const movedTo = await page.evaluate(() => document.activeElement?.getAttribute("data-view-type"));
+  await page.keyboard.press("ArrowLeft");
+  const kindView = await page.evaluate(() => ({
+    categories: [...document.querySelectorAll("[data-view-category]")].map((e) => e.getAttribute("data-view-category")).join(","),
+    kinds: [...document.querySelectorAll("[data-view-type]")].map((e) => e.getAttribute("data-view-type")).join(","),
+    thumbs: document.querySelectorAll("[data-view-type] svg").length,
+    name: document.querySelector('input[aria-label="Diagram name"]').value,
+    starts: document.querySelector("[data-starts-with]").textContent,
+  }));
+  await shot(page, "29-new-diagram-kind");
+  check(
+    "the kinds are shown by category with a picture each, a suggested name and what the diagram starts with",
+    movedTo === "context" && kindView.categories === "applications,data,infrastructure,business,custom" && kindView.kinds === "landscape,context,container" && kindView.thumbs === 3 && kindView.name === "System landscape" && /Starts with \d+ objects/.test(kindView.starts),
+    JSON.stringify({ movedTo, ...kindView }),
+  );
+  await page.$eval("[data-view-category=business]", (b) => b.click());
+  const businessDefaults = await page.evaluate(() => ({ kind: document.querySelector("[data-view-type][aria-checked=true]")?.getAttribute("data-view-type"), direction: document.querySelector("[data-direction][aria-checked=true]")?.getAttribute("data-direction"), name: document.querySelector('input[aria-label="Diagram name"]').value }));
+  check("choosing Business picks its kind, reads left to right and names it", businessDefaults.kind === "business" && businessDefaults.direction === "LR" && businessDefaults.name === "Business process", JSON.stringify(businessDefaults));
+  await page.$eval("[data-view-category=applications]", (b) => b.click());
+  await page.$eval('[data-view-type="landscape"]', (b) => b.click());
+  await page.$eval('input[aria-label="Diagram name"]', (e) => e.select());
+  await page.keyboard.press("Backspace");
+  const nameRequired = await page.evaluate(() => ({ note: !!document.querySelector("[data-name-required]"), blocked: document.querySelector("[data-new-next]").disabled }));
+  check("a diagram cannot be made without a name", nameRequired.note && nameRequired.blocked, JSON.stringify(nameRequired));
+  await page.type('input[aria-label="Diagram name"]', "Landscape check");
+  await page.$eval('[data-view-type="landscape"]', (b) => b.focus());
+  await page.keyboard.press("Enter");
   await page.waitForSelector("[data-new-ways]");
   const ways = await page.$$eval("[data-new-ways] [data-way]", (els) => els.map((e) => e.dataset.way));
   check("after the kind, eight ways to build the diagram are offered", ways.join(",") === "manual,wizard,existing,template,text,voice,import,archived", ways.join(","));
@@ -834,14 +860,17 @@ try {
     const startNew = async (name, kind) => {
       await page.goto(base, { waitUntil: "networkidle0" });
       await page.click("[data-new-diagram]");
-      await page.waitForSelector(`[data-view-type="${kind}"]`);
-      await page.type('[role=dialog] input[placeholder^="For example:"]', name);
+      await page.waitForSelector("[data-new-kind]");
+      const area = { landscape: "applications", context: "applications", container: "applications", dataflow: "data", deployment: "infrastructure", business: "business", custom: "custom" }[kind];
+      await page.$eval(`[data-view-category="${area}"]`, (e) => e.click());
       await page.$eval(`[data-view-type="${kind}"]`, (e) => e.click());
       if (kind === "container" || kind === "context") {
-        await page.waitForSelector('select[aria-label="Which system"]');
-        const value = await page.$eval('select[aria-label="Which system"]', (s) => [...s.options].find((o) => o.textContent.includes("Software system"))?.value ?? s.options[1].value);
-        await page.select('select[aria-label="Which system"]', value);
+        await page.waitForSelector('input[aria-label="Which system"]');
+        const system = await page.$eval("#new-diagram-systems", (list) => [...list.options].find((o) => o.textContent.includes("Software system"))?.value ?? list.options[0].value);
+        await page.type('input[aria-label="Which system"]', system);
       }
+      await page.$eval('input[aria-label="Diagram name"]', (e) => e.select());
+      await page.type('input[aria-label="Diagram name"]', name);
       await page.click("[data-new-next]");
       await page.waitForSelector("[data-new-ways]");
     };

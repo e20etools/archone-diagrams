@@ -1,7 +1,18 @@
 import {
+  AppWindow,
   Archive,
   ArchiveRestore,
+  ArrowDown,
   ArrowLeft,
+  ArrowRight,
+  Briefcase,
+  Check,
+  CircleCheck,
+  Database,
+  Lock,
+  Search,
+  Server,
+  Shapes,
   Copy,
   FileUp,
   ImageUp,
@@ -20,7 +31,7 @@ import { AiDraftDialog } from "@/components/dialogs";
 import { ImportDialog, type DiagramStart } from "@/components/ImportDialog";
 import { TemplatePicker, TemplatePreview } from "@/components/TemplatePicker";
 import { Button, Field, Input, Modal, Select, Textarea, cx, formatDate } from "@/components/ui";
-import { CATEGORIES as AREAS, CATEGORY_INFO as AREA_INFO, VIEWS_BY_CATEGORY, viewCategory } from "@/lib/categories";
+import { CATEGORIES as AREAS, CATEGORY_INFO as AREA_INFO, VIEWS_BY_CATEGORY, viewCategory, type Category } from "@/lib/categories";
 import { VIEW_TYPE_INFO, objectType } from "@/lib/catalog";
 import { useCanEdit, useCategoryRank } from "@/lib/cloud/session";
 import { useMe } from "@/lib/cloud/me";
@@ -28,7 +39,8 @@ import { componentById } from "@/lib/library";
 import { archiveDiagram, archivedDiagrams, copyDiagram, restoreDiagram, sortedObjects } from "@/lib/model";
 import { addView, apply } from "@/lib/store";
 import { allTemplates, applyTemplateValue, type Perspective } from "@/lib/templates";
-import type { Diagram, ViewType, Workspace } from "@/lib/types";
+import { VIEW_TYPES, type Diagram, type ViewType, type Workspace } from "@/lib/types";
+import { suggestObjects } from "@/lib/views";
 import { componentFor, stepComponents, wizardProblem, wizardSteps, wizardTemplate, type WizardAnswers } from "@/lib/wizard";
 
 /**
@@ -83,20 +95,33 @@ export function NewArchitectureDialog({ ws, onClose }: { ws: Workspace; onClose:
   const rankIn = useCategoryRank();
   const [stage, setStage] = useState<"kind" | "ways">("kind");
   const [way, setWay] = useState<Way | "image" | null>(null);
-  const [name, setName] = useState("");
-  const [viewType, setViewType] = useState<ViewType>(() => {
+  const [viewType, setViewTypeState] = useState<ViewType>(() => {
     const offered = AREAS.filter((a) => rankIn(a) >= 3).flatMap((a) => VIEWS_BY_CATEGORY[a]);
-    const preferred: ViewType = Object.keys(ws.objects).length ? "landscape" : "custom";
+    // The kind chosen last time comes first, when the person may still create it.
+    const remembered = rememberedKind();
+    const preferred: ViewType = remembered ?? (Object.keys(ws.objects).length ? "landscape" : "custom");
     return offered.includes(preferred) ? preferred : (offered[0] ?? preferred);
   });
+  const [area, setArea] = useState<Category>(() => viewCategory(viewType));
   const [scopeId, setScopeId] = useState("");
-  const [direction, setDirection] = useState<"TB" | "LR">("TB");
+  const [typedName, setTypedName] = useState<string | null>(null);
+  const [chosenDirection, setChosenDirection] = useState<"TB" | "LR" | null>(null);
   const needsScope = viewType === "context" || viewType === "container";
   const scopes = sortedObjects(ws).filter((o) => objectType(o.typeId).level <= 3);
-  const ready = (!needsScope || !!scopeId) && rankIn(viewCategory(viewType)) >= 3;
-  const fallbackName = needsScope && scopeId && ws.objects[scopeId] ? `${VIEW_TYPE_INFO[viewType].label}: ${ws.objects[scopeId].name}` : VIEW_TYPE_INFO[viewType].label;
+  const scopeName = needsScope && scopeId ? ws.objects[scopeId]?.name : undefined;
+  // The name follows the kind and the system until the person types one of their own.
+  const suggestedName = suggestName(viewType, scopeName);
+  const name = typedName ?? suggestedName;
+  // A diagram is not made without a name.
+  const ready = (!needsScope || !!scopeId) && rankIn(viewCategory(viewType)) >= 3 && name.trim().length > 0;
+  const direction = chosenDirection ?? (viewType === "business" || viewType === "deployment" ? "LR" : "TB");
+  const fallbackName = suggestedName;
+  const setViewType = (next: ViewType) => {
+    setViewTypeState(next);
+    setArea(viewCategory(next));
+  };
   const start: DiagramStart = { name: name.trim(), viewType, scopeId: needsScope ? scopeId : null };
-  const named: DiagramStart = { ...start, name: start.name || fallbackName };
+  const named: DiagramStart = { ...start, name: start.name.trim() };
   const back = () => setWay(null);
   const open = (id: string) => {
     onClose();
@@ -129,47 +154,220 @@ export function NewArchitectureDialog({ ws, onClose }: { ws: Workspace; onClose:
   if (way === "import") return <ImportDialog start={start} onClose={onClose} />;
   if (way === "archived") return <ArchivedDialog ws={ws} onClose={back} onRestored={open} />;
 
-  if (stage === "kind")
+  const next = () => {
+    if (!ready) return;
+    rememberKind(viewType);
+    setStage("ways");
+  };
+
+  if (stage === "kind") {
+    const allowedHere = rankIn(area) >= 3;
+    const startsWith = !ready ? null : viewType === "custom" ? 0 : suggestObjects(ws, viewType, needsScope ? scopeId : null).length;
+    const moveKind = (step: number) => {
+      const kinds = VIEWS_BY_CATEGORY[area];
+      const at = kinds.indexOf(viewType);
+      const target = kinds[(Math.max(at, 0) + step + kinds.length) % kinds.length];
+      if (allowedHere && target) {
+        setViewType(target);
+        document.querySelector<HTMLElement>(`[data-view-type="${target}"]`)?.focus();
+      }
+    };
+    const moveArea = (step: number) => {
+      const target = AREAS[(AREAS.indexOf(area) + step + AREAS.length) % AREAS.length];
+      pickArea(target);
+      document.querySelector<HTMLElement>(`[data-view-category="${target}"]`)?.focus();
+    };
+    const pickArea = (target: Category) => {
+      setArea(target);
+      if (rankIn(target) >= 3 && viewCategory(viewType) !== target) setViewTypeState(VIEWS_BY_CATEGORY[target][0]);
+    };
     return (
       <Modal
         title="New diagram"
-        width={660}
+        width={760}
         onClose={onClose}
         footer={
           <>
             <Button onClick={onClose}>Cancel</Button>
-            <Button variant="primary" disabled={!ready} data-new-next onClick={() => setStage("ways")}>
+            <Button variant="primary" disabled={!ready} data-new-next onClick={next}>
               Next: how to build it
             </Button>
           </>
         }
       >
-        <div className="space-y-4">
-          <Field label="Name">
-            <Input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder={`For example: ${fallbackName}`} onKeyDown={(e) => e.key === "Enter" && ready && setStage("ways")} />
-          </Field>
-          <KindPicker viewType={viewType} onChange={setViewType} />
-          {needsScope && (
-            <Field label="Which system" hint={scopes.length ? "The diagram shows this system and what surrounds it, or what is inside it." : "Create an object first, or pick another kind of diagram."}>
-              <Select value={scopeId} onChange={(e) => setScopeId(e.target.value)} aria-label="Which system">
-                <option value="">Choose an object</option>
-                {scopes.map((o) => (
-                  <option key={o.id} value={o.id}>
-                    {o.name} ({objectType(o.typeId).label})
-                  </option>
-                ))}
-              </Select>
-            </Field>
-          )}
-          <Field label="Layout direction">
-            <Select value={direction} onChange={(e) => setDirection(e.target.value as "TB" | "LR")}>
-              <option value="TB">Top to bottom</option>
-              <option value="LR">Left to right</option>
-            </Select>
-          </Field>
+        <div
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !(e.target instanceof HTMLTextAreaElement) && !(e.target instanceof HTMLButtonElement)) {
+              e.preventDefault();
+              next();
+            }
+          }}
+        >
+          <Steps at={1} />
+          <div className="mt-3 grid grid-cols-[176px_minmax(0,1fr)] rounded-lg border border-line overflow-hidden" data-new-kind>
+            <div className="border-r border-line bg-paper p-1.5 space-y-0.5" role="tablist" aria-label="Category" aria-orientation="vertical">
+              {AREAS.map((a) => {
+                const rank = rankIn(a);
+                const Icon = AREA_ICON[a];
+                return (
+                  <button
+                    key={a}
+                    type="button"
+                    role="tab"
+                    aria-selected={area === a}
+                    tabIndex={area === a ? 0 : -1}
+                    data-view-category={a}
+                    data-allowed={rank >= 3}
+                    onClick={() => pickArea(a)}
+                    onKeyDown={(e) => {
+                      if (e.key === "ArrowDown") (e.preventDefault(), moveArea(1));
+                      if (e.key === "ArrowUp") (e.preventDefault(), moveArea(-1));
+                      if (e.key === "ArrowRight") (e.preventDefault(), document.querySelector<HTMLElement>(`[data-view-type="${viewCategory(viewType) === a ? viewType : VIEWS_BY_CATEGORY[a][0]}"]`)?.focus());
+                    }}
+                    className={cx(
+                      "w-full flex items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-sm",
+                      area === a ? "bg-blueprint-soft text-blueprint font-medium" : rank >= 3 ? "text-ink hover:bg-surface" : "text-ink-faint hover:bg-surface",
+                    )}
+                  >
+                    <Icon size={16} className="shrink-0" />
+                    <span className="min-w-0 flex-1 truncate">{AREA_INFO[a].label}</span>
+                    {rank >= 3 ? (
+                      <span className="text-xs tabular-nums text-ink-faint">{VIEWS_BY_CATEGORY[a].length}</span>
+                    ) : (
+                      <span className="flex items-center gap-0.5 text-[11px] text-ink-faint">
+                        <Lock size={11} />
+                        {rank === 0 ? "no access" : "view only"}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="p-3.5 min-w-0">
+              <p className="text-[13px] text-ink-soft">
+                {AREA_INFO[area].hint}
+              </p>
+              {!allowedHere && (
+                <p className="mt-2 flex items-start gap-1.5 rounded-md bg-paper border border-line px-3 py-2 text-[13px] text-ink-soft" data-category-locked={area}>
+                  <Lock size={14} className="mt-0.5 shrink-0" />
+                  {rankIn(area) === 0
+                    ? `You have no access to ${AREA_INFO[area].label} diagrams in this workspace.`
+                    : `You can view ${AREA_INFO[area].label} diagrams but not create them.`}{" "}
+                  Ask an owner if you need to.
+                </p>
+              )}
+              <div role="radiogroup" aria-label="Kind of diagram" className={cx("mt-2.5 grid gap-2", VIEWS_BY_CATEGORY[area].length > 1 ? "grid-cols-3" : "grid-cols-1 max-w-[260px]")}>
+                {VIEWS_BY_CATEGORY[area].map((type) => {
+                  const on = viewType === type && allowedHere;
+                  return (
+                    <button
+                      key={type}
+                      type="button"
+                      role="radio"
+                      aria-checked={on}
+                      aria-disabled={!allowedHere}
+                      tabIndex={on || (!allowedHere && type === VIEWS_BY_CATEGORY[area][0]) ? 0 : -1}
+                      autoFocus={on}
+                      data-view-type={type}
+                      disabled={!allowedHere}
+                      onClick={() => setViewType(type)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          if (viewType !== type) setViewType(type);
+                          else next();
+                        }
+                        if (e.key === "ArrowRight") (e.preventDefault(), moveKind(1));
+                        if (e.key === "ArrowLeft") {
+                          e.preventDefault();
+                          if (VIEWS_BY_CATEGORY[area].indexOf(type) === 0) document.querySelector<HTMLElement>(`[data-view-category="${area}"]`)?.focus();
+                          else moveKind(-1);
+                        }
+                      }}
+                      className={cx(
+                        "rounded-lg border bg-surface p-2.5 text-left disabled:cursor-not-allowed disabled:opacity-50",
+                        on ? "border-blueprint ring-1 ring-blueprint" : "border-line hover:border-ink-faint",
+                      )}
+                    >
+                      <span className="mb-2 flex h-16 items-center justify-center rounded-md bg-paper">
+                        <KindThumb viewType={type} />
+                      </span>
+                      <span className="block text-[13px] font-medium leading-tight">{KIND_TITLE[type]}</span>
+                      <span className="mt-0.5 block text-xs text-ink-soft leading-snug">{VIEW_TYPE_INFO[type].hint}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              <div className={cx("mt-3.5 grid gap-2.5", needsScope ? "grid-cols-2" : "grid-cols-1")}>
+                {needsScope && (
+                  <SystemField
+                    ws={ws}
+                    options={scopes}
+                    value={scopeId}
+                    onChange={setScopeId}
+                  />
+                )}
+                <label className="block min-w-0">
+                  <span className="block text-xs text-ink-soft mb-1">
+                    Name <span className="text-danger">*</span>
+                  </span>
+                  <Input value={name} onChange={(e) => setTypedName(e.target.value)} aria-label="Diagram name" aria-required="true" aria-invalid={!name.trim()} placeholder={fallbackName} maxLength={300} />
+                  {!name.trim() && (
+                    <span className="mt-0.5 block text-xs text-danger" data-name-required>
+                      Enter a name for the diagram.
+                    </span>
+                  )}
+                </label>
+              </div>
+              <div className="mt-3 flex flex-wrap items-center gap-2.5">
+                <span className="text-xs text-ink-soft">Direction</span>
+                <span className="inline-flex rounded-md border border-line overflow-hidden" role="radiogroup" aria-label="Layout direction">
+                  {(
+                    [
+                      ["TB", "Down", ArrowDown],
+                      ["LR", "Across", ArrowRight],
+                    ] as const
+                  ).map(([value, label, Icon]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      role="radio"
+                      aria-checked={direction === value}
+                      data-direction={value}
+                      onClick={() => setChosenDirection(value)}
+                      className={cx("flex items-center gap-1 px-3 py-1.5 text-[13px]", direction === value ? "bg-blueprint-soft text-blueprint font-medium" : "text-ink-soft hover:bg-paper")}
+                    >
+                      <Icon size={13} />
+                      {label}
+                    </button>
+                  ))}
+                </span>
+                <span
+                  className={cx(
+                    "ml-auto flex items-center gap-1 rounded-md px-2.5 py-1 text-xs",
+                    startsWith === null ? "bg-paper text-ink-soft" : startsWith > 0 ? "bg-ok-soft text-ok" : "bg-paper text-ink-soft",
+                  )}
+                  data-starts-with={startsWith ?? ""}
+                >
+                  {startsWith === null ? (
+                    needsScope && !scopeId ? "Choose a system first" : "Pick a kind you may create"
+                  ) : startsWith > 0 ? (
+                    <>
+                      <CircleCheck size={13} />
+                      Starts with {startsWith} {startsWith === 1 ? "object" : "objects"} from your model
+                    </>
+                  ) : (
+                    "Starts empty: you add the components"
+                  )}
+                </span>
+              </div>
+            </div>
+          </div>
         </div>
       </Modal>
     );
+  }
 
   const archivedCount = archivedDiagrams(ws).length;
   const others = Object.values(ws.diagrams).filter((d) => !d.archive?.archived).length;
@@ -188,7 +386,8 @@ export function NewArchitectureDialog({ ws, onClose }: { ws: Workspace; onClose:
         </>
       }
     >
-      <p className="text-ink-soft -mt-1 mb-3">
+      <Steps at={2} />
+      <p className="text-ink-soft mt-3 mb-3">
         <span className="font-medium text-ink">{named.name}</span>, a {AREA_INFO[viewCategory(viewType)].label} diagram ({VIEW_TYPE_INFO[viewType].label}). The ways that bring in something new
         make a draft you review before anything is saved.
       </p>
@@ -242,44 +441,166 @@ export function NewArchitectureDialog({ ws, onClose }: { ws: Workspace; onClose:
   );
 }
 
-/** The kinds of diagram, by category; the ones the member may not create are shown but not offered. */
-export function KindPicker({ viewType, onChange }: { viewType: ViewType; onChange: (v: ViewType) => void }) {
-  const rankIn = useCategoryRank();
+const AREA_ICON: Record<Category, typeof AppWindow> = { applications: AppWindow, data: Database, infrastructure: Server, business: Briefcase, custom: Shapes };
+
+/** Titles on the cards: the category names the C4 views, so the card can be short. */
+const KIND_TITLE: Record<ViewType, string> = {
+  landscape: "System landscape",
+  context: "Level 1: System context",
+  container: "Level 2: Containers",
+  dataflow: "Data flows",
+  deployment: "Infrastructure and hosting",
+  business: "Business process",
+  custom: "Free canvas",
+};
+
+export function suggestName(viewType: ViewType, scopeName?: string): string {
+  if (scopeName && viewType === "context") return `${scopeName}: system context`;
+  if (scopeName && viewType === "container") return `${scopeName}: containers`;
+  return { landscape: "System landscape", context: "System context", container: "Containers", dataflow: "Data flows", deployment: "Infrastructure", business: "Business process", custom: "New diagram" }[viewType];
+}
+
+const KIND_KEY = "archone.lastKind";
+function rememberedKind(): ViewType | null {
+  try {
+    const v = localStorage.getItem(KIND_KEY);
+    return VIEW_TYPES.includes(v as ViewType) ? (v as ViewType) : null;
+  } catch {
+    return null;
+  }
+}
+function rememberKind(v: ViewType) {
+  try {
+    localStorage.setItem(KIND_KEY, v);
+  } catch {
+    // Not remembered; the next dialog starts from the usual kind.
+  }
+}
+
+function Steps({ at }: { at: 1 | 2 }) {
   return (
-    <fieldset>
-      <legend className="text-[13px] font-medium text-ink-soft mb-1.5">What it shows</legend>
-      <div className="space-y-2.5">
-        {AREAS.map((area) => {
-          const allowed = rankIn(area) >= 3;
-          return (
-            <div key={area} data-view-category={area}>
-              <p className="text-xs font-semibold text-ink-soft mb-1">
-                {AREA_INFO[area].label}
-                {!allowed && <span className="ml-1.5 font-normal text-ink-faint">{rankIn(area) === 0 ? "no access" : "view only"}</span>}
-              </p>
-              <div className={cx("grid gap-1.5", VIEWS_BY_CATEGORY[area].length > 1 && "sm:grid-cols-3")}>
-                {VIEWS_BY_CATEGORY[area].map((type) => (
-                  <label
-                    key={type}
-                    className={cx(
-                      "flex items-start gap-2.5 rounded-md border px-3 py-2",
-                      !allowed ? "opacity-50 cursor-not-allowed border-line" : "cursor-pointer",
-                      allowed && (viewType === type ? "border-blueprint bg-blueprint-soft" : "border-line hover:border-ink-faint"),
-                    )}
-                  >
-                    <input type="radio" name="view-type" data-view-type={type} className="mt-1 accent-blueprint" disabled={!allowed} checked={viewType === type} onChange={() => onChange(type)} />
-                    <span>
-                      <span className="block font-medium">{VIEW_TYPE_INFO[type].label}</span>
-                      <span className="block text-[13px] text-ink-soft">{VIEW_TYPE_INFO[type].hint}</span>
-                    </span>
-                  </label>
-                ))}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </fieldset>
+    <ol className="flex items-center gap-2 text-xs" aria-label="Steps" data-new-steps={at}>
+      {["What it shows", "How to build it"].map((label, i) => (
+        <li key={label} className={cx("flex items-center gap-1.5 rounded-full px-2.5 py-1", i + 1 === at ? "bg-blueprint-soft text-blueprint font-medium" : "text-ink-faint")} aria-current={i + 1 === at ? "step" : undefined}>
+          <span className={cx("grid h-4 w-4 place-items-center rounded-full text-[10px]", i + 1 === at ? "bg-blueprint text-white" : i + 1 < at ? "bg-blueprint-soft text-blueprint" : "border border-line")}>
+            {i + 1 < at ? <Check size={10} /> : i + 1}
+          </span>
+          {label}
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+/** A picture of what each kind of diagram looks like, so the choice is made by eye. */
+function KindThumb({ viewType }: { viewType: ViewType }) {
+  const main = "stroke-blueprint";
+  const quiet = "stroke-ink-faint";
+  const data = "stroke-ok";
+  const box = (x: number, y: number, w: number, h: number, cls: string, extra = {}) => <rect x={x} y={y} width={w} height={h} rx={3} fill="none" className={cls} strokeWidth={1.3} {...extra} />;
+  const line = (d: string) => <path d={d} fill="none" className={quiet} strokeWidth={1.1} />;
+  const shapes: Record<ViewType, ReactNode> = {
+    landscape: (
+      <>
+        {box(4, 6, 26, 13, main)}
+        {box(37, 6, 26, 13, main)}
+        {box(70, 6, 26, 13, main)}
+        <circle cx={50} cy={36} r={5} fill="none" className={quiet} strokeWidth={1.3} />
+        {line("M47 31 L22 19 M50 31 L50 19 M53 31 L78 19")}
+      </>
+    ),
+    context: (
+      <>
+        {box(34, 15, 32, 15, main, { strokeWidth: 2 })}
+        {box(3, 4, 22, 11, quiet)}
+        {box(75, 4, 22, 11, quiet)}
+        {box(75, 30, 22, 11, quiet)}
+        {line("M25 10 L34 19 M66 19 L75 10 M66 26 L75 35")}
+      </>
+    ),
+    container: (
+      <>
+        <rect x={4} y={3} width={92} height={38} rx={4} fill="none" className={main} strokeWidth={1.2} strokeDasharray="3 2" />
+        {box(12, 15, 20, 12, main)}
+        {box(40, 15, 20, 12, main)}
+        {box(68, 15, 20, 12, data)}
+        {line("M32 21 L40 21 M60 21 L68 21")}
+      </>
+    ),
+    dataflow: (
+      <>
+        {box(6, 14, 22, 14, main)}
+        <ellipse cx={74} cy={13} rx={12} ry={4} fill="none" className={data} strokeWidth={1.3} />
+        <path d="M62 13 V31 A12 4 0 0 0 86 31 V13" fill="none" className={data} strokeWidth={1.3} />
+        {line("M28 21 L62 21")}
+        <path d="M58 18 L62 21 L58 24" fill="none" className={quiet} strokeWidth={1.1} />
+      </>
+    ),
+    deployment: (
+      <>
+        <rect x={34} y={4} width={62} height={36} rx={4} fill="none" className={quiet} strokeWidth={1.3} />
+        {box(42, 12, 20, 11, main)}
+        {box(68, 12, 20, 11, main)}
+        {box(55, 27, 20, 9, data)}
+        {box(4, 16, 18, 12, quiet)}
+        {line("M22 22 L34 22")}
+      </>
+    ),
+    business: (
+      <>
+        <circle cx={9} cy={22} r={5} fill="none" className={quiet} strokeWidth={1.3} />
+        {box(20, 15, 22, 14, main, { rx: 6 })}
+        <path d="M54 14 L62 22 L54 30 L46 22 Z" fill="none" className={main} strokeWidth={1.3} />
+        {box(68, 15, 18, 14, main, { rx: 6 })}
+        <circle cx={93} cy={22} r={4.5} fill="none" className={quiet} strokeWidth={2} />
+        {line("M14 22 L20 22 M42 22 L46 22 M62 22 L68 22 M86 22 L88 22")}
+      </>
+    ),
+    custom: (
+      <>
+        <rect x={6} y={4} width={88} height={36} rx={4} fill="none" className={quiet} strokeWidth={1.1} strokeDasharray="2 3" />
+        <path d="M50 15 V29 M43 22 H57" fill="none" className={main} strokeWidth={1.6} />
+      </>
+    ),
+  };
+  return (
+    <svg width={100} height={44} viewBox="0 0 100 44" aria-hidden="true">
+      {shapes[viewType]}
+    </svg>
+  );
+}
+
+/** The system a C4 Level 1 or 2 diagram is about, found by typing part of its name. */
+function SystemField({ ws, options, value, onChange }: { ws: Workspace; options: ReturnType<typeof sortedObjects>; value: string; onChange: (id: string) => void }) {
+  const [text, setText] = useState(value ? (ws.objects[value]?.name ?? "") : "");
+  const listId = "new-diagram-systems";
+  return (
+    <label className="block min-w-0">
+      <span className="block text-xs text-ink-soft mb-1">Which system</span>
+      <span className="relative block">
+        <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-faint" />
+        <Input
+          className="pl-8"
+          list={listId}
+          value={text}
+          aria-label="Which system"
+          placeholder={options.length ? "Type to find a system" : "Create an object first"}
+          onChange={(e) => {
+            setText(e.target.value);
+            const exact = options.find((o) => o.name.toLowerCase() === e.target.value.trim().toLowerCase());
+            onChange(exact?.id ?? "");
+          }}
+        />
+      </span>
+      <datalist id={listId}>
+        {options.map((o) => (
+          <option key={o.id} value={o.name}>
+            {objectType(o.typeId).label}
+          </option>
+        ))}
+      </datalist>
+      {text && !value && <span className="mt-0.5 block text-xs text-danger">No object with that name. Pick one from the list.</span>}
+    </label>
   );
 }
 

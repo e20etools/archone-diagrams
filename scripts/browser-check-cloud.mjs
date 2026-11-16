@@ -723,8 +723,10 @@ try {
   await visit(ben, base, "[data-template-open]");
   await ben.evaluate(() => [...document.querySelectorAll("button")].find((b) => b.textContent.trim() === "New diagram")?.click());
   await ben.waitForSelector('[data-view-category="business"]');
-  const kindsOffered = await ben.$$eval("[data-view-type]", (inputs) => inputs.filter((i) => !i.disabled).map((i) => i.dataset.viewType));
-  check("a new diagram can be made only in the categories the member edits", kindsOffered.join(",") === "dataflow,business,custom", kindsOffered.join(","));
+  const kindsOffered = await ben.$$eval("[data-view-category]", (tabs) => tabs.filter((t) => t.dataset.allowed === "true").map((t) => t.dataset.viewCategory));
+  await ben.$eval('[data-view-category="applications"]', (b) => b.click());
+  const lockedNote = await ben.$eval("[data-category-locked]", (e) => e.textContent).catch(() => "");
+  check("a new diagram can be made only in the categories the member edits; the others say why", kindsOffered.join(",") === "data,business,custom" && lockedNote.includes("no access"), `${kindsOffered.join(",")} :: ${lockedNote}`);
   await ben.keyboard.press("Escape");
   await visit(ben, `${base}/model`, "tbody tr");
   const benRows = await ben.$$eval("tbody tr", (rows) => rows.map((r) => r.querySelector("td").innerText.trim().split("\n")[0]));
