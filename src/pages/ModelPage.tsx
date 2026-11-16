@@ -283,7 +283,7 @@ export function ModelPage() {
                       <td className="px-4 py-2.5">
                         <button type="button" className="flex items-center gap-2 text-left" onClick={() => select(o.id)}>
                           <span style={{ color: CATEGORY_INFO[type.category].color }}>
-                            <TypeIcon typeId={o.typeId} size={16} />
+                            <TypeIcon typeId={o.typeId} componentId={o.componentId} size={16} />
                           </span>
                           <span>
                             <span className="font-medium">{o.name}</span>
@@ -369,7 +369,7 @@ export function ModelPage() {
         <aside className="w-[360px] shrink-0 overflow-y-auto bg-surface border-l border-line" aria-label="Object details">
           <div className="flex items-start gap-2.5 px-4 py-3.5">
             <span className="mt-0.5" style={{ color: CATEGORY_INFO[objectType(selected.typeId).category].color }}>
-              <TypeIcon typeId={selected.typeId} size={18} />
+              <TypeIcon typeId={selected.typeId} componentId={selected.componentId} size={18} />
             </span>
             <div className="min-w-0 flex-1">
               <h2 className="text-sm font-semibold break-words">{selected.name}</h2>

@@ -110,6 +110,7 @@ export interface ObjectInput {
   technology?: string;
   fields?: Record<string, string>;
   provenance?: Provenance;
+  componentId?: string;
 }
 
 export const cleanTags = (tags: string[]) => [...new Set(tags.map((t) => t.trim().toLowerCase()).filter(Boolean))].sort();
@@ -129,6 +130,7 @@ export function createObject(ws: Workspace, input: ObjectInput): { ws: Workspace
     parentId,
     technology: input.technology?.trim() ?? "",
     fields: input.fields ?? {},
+    ...(input.componentId ? { componentId: input.componentId } : {}),
     provenance: input.provenance ?? manual,
     createdAt: stamp,
     updatedAt: stamp,
@@ -153,6 +155,7 @@ export function updateObject(ws: Workspace, id: string, patch: ObjectPatch): Wor
   if (patch.tags) next.tags = cleanTags(patch.tags);
   if (patch.name !== undefined) next.name = patch.name.trim() || current.name;
   if ("links" in patch) setLinks(next, patch.links);
+  if ("componentId" in patch && !patch.componentId) delete next.componentId;
 
   let objects = { ...ws.objects, [id]: next };
   // A new parent or a new type can break the level rule; repair instead of leaving an invalid tree.

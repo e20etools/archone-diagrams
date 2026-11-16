@@ -848,6 +848,46 @@ A live link can ask for a password, and can stop working after 1, 7, 30 or 90 da
 Snapshot links already had a password of their own (the diagram inside the link is
 encrypted). SSO on links needs the paid sign-on features and is not done.
 
+### The component library
+
+A library of 1,761 components to draw with, on its own page (Library) and in the panel on
+the left of every diagram. Search it, open a section, then drag a component onto the canvas
+or click it.
+
+- **General components (480 in 22 sections):** business and strategy, people, applications,
+  platforms and middleware, integration, databases and data, hardware and compute, storage
+  and backup, data centre and facilities, network, security, identity and access, end-user
+  computing, communications, containers and Kubernetes, engineering and DevOps, monitoring
+  and operations, AI and analytics, IoT and OT, cloud (any provider), external services, and
+  Gulf government and payment services (Nafath, Yakeen, SADAD, mada, ZATCA e-invoicing and
+  others).
+- **Cloud providers (1,281 services):** Amazon Web Services, Microsoft Azure, Google Cloud,
+  Oracle Cloud Infrastructure, IBM Cloud, Alibaba Cloud and Huawei Cloud, each in the
+  provider's own sections. The AWS, Azure, Google Cloud and IBM names start from draw.io's
+  shape libraries (Apache License 2.0), cleaned of repeats, retired products and icons that
+  are not services; Google Cloud's were brought up to date. Oracle and Huawei are not in
+  draw.io and its Alibaba list is out of date, so those three were listed by hand.
+- **Icons:** every component is drawn with an icon for what it does (a firewall, a
+  warehouse, a queue), from Lucide (ISC licence). Cloud services are drawn the same way, with
+  the provider named beside them; the providers' own artwork is not included.
+- **No repeats:** a name appears once in a section (case and punctuation ignored), and a
+  cloud service once per provider. A test holds this.
+- **What it becomes:** an ordinary object of one of the model's types (a firewall is a
+  network device, Amazon S3 is storage), so checks, views and dependencies work as before.
+  The object remembers its component, is drawn with its icon, and a cloud service gets its
+  provider's name as its technology. An existing object can be told which component it is.
+- **Basic information:** each component asks for what matters about it, from 44 sets of
+  fields: a server's host name, serial number and warranty; a database's engine, recovery
+  point and recovery time; a network device's management IP and firmware; a laptop's owner,
+  asset tag and disk encryption; a data centre's tier and power; a cloud service's account,
+  region and resource ID. Answers are kept as the object's fields, so they travel with it
+  through versions, scenarios, exports and the API. A number, IP address, date or web
+  address that does not look like one is marked, and kept.
+
+Not done: choosing a component in the spreadsheet import and showing it in the exports, the
+component in the REST API and the MCP server, and icons of your own uploaded for a
+component.
+
 ### Large models
 
 Measured on the build machine with a generated model (domains of systems of services and
@@ -886,9 +926,9 @@ build does not reload.
 ## Check it
 
 ```bash
-npm test                   # 376 tests: model, flows, links, protected live links, decisions, arranging, health, CALM, scenario merging, the trust page, the document, your own rules, large models, templates, the pull-request gate, the APM import, AI, questions, checks, MCP, import readers, sync engine, comparison, and the database rules and the API on a real Postgres
+npm test                   # 386 tests: model, the component library, flows, links, protected live links, decisions, arranging, health, CALM, scenario merging, the trust page, the document, your own rules, large models, templates, the pull-request gate, the APM import, AI, questions, checks, MCP, import readers, sync engine, comparison, and the database rules and the API on a real Postgres
 npm run build              # type-check and production build into dist/
-npm run test:browser       # 145 end-to-end checks of browser-only mode (run after a build)
+npm run test:browser       # 155 end-to-end checks of browser-only mode (run after a build)
 npm run test:browser:cloud # 87 end-to-end checks of hosted mode with several people
 ```
 

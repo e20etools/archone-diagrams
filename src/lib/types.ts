@@ -57,6 +57,8 @@ export const modelObjectSchema = z.object({
   fields: z.record(z.string()),
   /** Missing when there are none, so an object without links reads back as it was sent. */
   links: z.array(linkSchema).optional(),
+  /** The library component it was made from, for its icon and its basic information. Missing for a plain object. */
+  componentId: z.string().optional(),
   provenance: provenanceSchema,
   createdAt: z.string(),
   updatedAt: z.string(),

@@ -15,6 +15,7 @@ import { DiagramsPage } from "@/pages/DiagramsPage";
 import { EmbedPage } from "@/pages/EmbedPage";
 import { HealthPage } from "@/pages/HealthPage";
 import { ModelPage } from "@/pages/ModelPage";
+import { LibraryPage } from "@/pages/LibraryPage";
 import { PresentPage } from "@/pages/PresentPage";
 import { ReviewPage, ReviewsPage } from "@/pages/ReviewsPages";
 import { RulesPage } from "@/pages/RulesPage";
@@ -41,6 +42,7 @@ export default function App() {
         <Route path="/" element={<DiagramsPage />} />
         <Route path="/diagram/:id" element={<DiagramEditorPage />} />
         <Route path="/model" element={<ModelPage />} />
+        <Route path="/library" element={<LibraryPage />} />
         <Route path="/analysis" element={<AnalysisPage />} />
         <Route path="/ask" element={<AskPage />} />
         <Route path="/health" element={<HealthPage />} />

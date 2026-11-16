@@ -22,7 +22,7 @@ const percent = (value: number) => `${value.toFixed(value >= 99.995 || value ===
 function ObjectLink({ object }: { object: ModelObject }) {
   return (
     <Link to={`/model?object=${object.id}`} className="inline-flex items-center gap-1.5 font-medium hover:underline">
-      <TypeIcon typeId={object.typeId} size={14} />
+      <TypeIcon typeId={object.typeId} componentId={object.componentId} size={14} />
       {object.name}
     </Link>
   );
@@ -80,7 +80,7 @@ function Failure({ ws }: { ws: Workspace }) {
                       setQuery("");
                     }}
                   >
-                    <TypeIcon typeId={o.typeId} size={14} />
+                    <TypeIcon typeId={o.typeId} componentId={o.componentId} size={14} />
                     <span className="truncate">{o.name}</span>
                     <span className="ml-auto text-xs text-ink-faint">{objectType(o.typeId).label}</span>
                   </button>

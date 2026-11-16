@@ -131,6 +131,7 @@ const OBJECT_FIELDS: [keyof ModelObject, string][] = [
   ["parentId", "Inside"],
   ["fields", "Details"],
   ["links", "Links"],
+  ["componentId", "Component"],
 ];
 const RELATIONSHIP_FIELDS: [keyof Relationship, string][] = [
   ["sourceId", "From"],

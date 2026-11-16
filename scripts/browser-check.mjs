@@ -1007,6 +1007,90 @@ try {
   const shareWithLink = await page.evaluate(() => JSON.stringify(JSON.parse(localStorage.getItem("archone.workspace.v1")).objects));
   check("undo brings the link back", shareWithLink.includes("github.com/example/order-service"));
 
+  // The component library: searched and placed from the editor, and browsed on its own page.
+  await page.goto(`${base}/diagram/${landscapeId}`, { waitUntil: "networkidle0" });
+  await page.waitForSelector("[data-library-panel]");
+  const boxesBeforeLibrary = await count(page, ".object-node");
+  await page.type('input[aria-label="Find a component in the library"]', "next-generation firewall");
+  await page.waitForSelector('[data-library-panel] [data-component="security.next-generation-firewall"]');
+  await page.$eval('[data-library-panel] [data-component="security.next-generation-firewall"]', (b) => b.click());
+  await page.waitForFunction((n) => document.querySelectorAll(".object-node").length === n + 1, {}, boxesBeforeLibrary);
+  await sleep(400);
+  const firewall = Object.values((await stored()).objects).find((o) => o.componentId === "security.next-generation-firewall");
+  const firewallBox = await page.$eval(`.react-flow__node[data-id="${firewall?.id}"] .object-node__meta`, (e) => e.textContent).catch(() => "");
+  check(
+    "a component from the library becomes an object of its kind, drawn with its own icon and name",
+    firewall && firewall.typeId === "network" && firewall.name === "Next-generation firewall" && firewallBox.startsWith("Security") && (await page.$eval(`.react-flow__node[data-id="${firewall.id}"] svg.lucide`, (e) => e.getAttribute("class"))).includes("brick-wall-shield"),
+    JSON.stringify({ typeId: firewall?.typeId, firewallBox }),
+  );
+  await shot(page, "25-library-component");
+  await page.waitForSelector('aside[aria-label="Details"] [data-basic-information="security-control"]');
+  const askedFor = await page.$$eval('[data-basic-information] [aria-label]', (els) => els.map((e) => e.getAttribute("aria-label")));
+  check("its details ask for the basic information of a security control", ["Vendor", "Product", "Deployment", "Protects", "Licence ends"].every((l) => askedFor.includes(l)), askedFor.join(", "));
+  await page.type('[data-basic-information] input[aria-label="Vendor"]', "Example Networks");
+  await page.keyboard.press("Enter");
+  await page.select('[data-basic-information] select[aria-label="Deployment"]', "Inline appliance");
+  await sleep(350);
+  const filledIn = (await stored()).objects[firewall.id].fields;
+  check("what is filled in is kept with the object, under the field's name", filledIn.Vendor === "Example Networks" && filledIn.Deployment === "Inline appliance" && (await page.$eval("[data-basic-information] legend", (e) => e.innerText)).includes("2 of"), JSON.stringify(filledIn));
+  await page.$eval('[data-basic-information] input[aria-label="Vendor"]', (e) => e.select());
+  await page.keyboard.press("Backspace");
+  await page.keyboard.press("Enter");
+  await sleep(300);
+  check("emptying a field removes it instead of keeping an empty value", !("Vendor" in (await stored()).objects[firewall.id].fields));
+  // Changing what an existing object is.
+  await page.$eval('[data-component-field] + button, [data-component-field] button', (b) => b.click());
+  await page.waitForSelector('[role=dialog] [data-library-panel]');
+  await page.type('[role=dialog] input[aria-label="Find a component in the library"]', "web application firewall");
+  await page.waitForSelector('[role=dialog] [data-component="security.web-application-firewall"]');
+  await page.$eval('[role=dialog] [data-component="security.web-application-firewall"]', (b) => b.click());
+  await sleep(400);
+  const changed = (await stored()).objects[firewall.id];
+  check("an object can be told it is another component; its type follows and what was filled in stays", changed.componentId === "security.web-application-firewall" && changed.typeId === "gateway" && changed.fields.Deployment === "Inline appliance", JSON.stringify({ c: changed.componentId, t: changed.typeId }));
+  // Dragging a cloud service from the panel onto the canvas.
+  await page.$eval('input[aria-label="Find a component in the library"]', (e) => e.select());
+  await page.keyboard.press("Backspace");
+  await page.select('[data-library-panel] select[aria-label="Part of the library"]', "aws");
+  await page.$eval('[data-library-section="aws.storage"]', (b) => b.click());
+  await page.waitForSelector('[data-component="aws.simple-storage-service-s3"]');
+  const before2 = await count(page, ".object-node");
+  await page.evaluate(() => {
+    const tile = document.querySelector('[data-component="aws.simple-storage-service-s3"]');
+    const pane = document.querySelector(".react-flow");
+    const data = new DataTransfer();
+    tile.dispatchEvent(new DragEvent("dragstart", { bubbles: true, dataTransfer: data }));
+    const r = pane.getBoundingClientRect();
+    pane.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: data, clientX: r.x + r.width / 2, clientY: r.y + 80 }));
+  });
+  await page.waitForFunction((n) => document.querySelectorAll(".object-node").length === n + 1, {}, before2);
+  await sleep(350);
+  const s3 = Object.values((await stored()).objects).find((o) => o.componentId === "aws.simple-storage-service-s3");
+  check("a cloud service dragged onto the canvas is storage, named by its provider", s3 && s3.typeId === "storage" && s3.technology === "AWS Simple Storage Service (S3)", JSON.stringify(s3 && { t: s3.typeId, tech: s3.technology }));
+
+  await page.goto(`${base}/library`, { waitUntil: "networkidle0" });
+  await page.waitForSelector("[data-library-page]");
+  const headline = await page.$eval("[data-library-page] h1 + p", (e) => e.innerText);
+  const generalSections = await page.$$eval("[data-library-page] aside [data-library-section]", (els) => els.map((e) => e.innerText.split("\n")[0]));
+  check("the library page lists the general sections and the cloud providers", /\d,?\d{3} components/.test(headline) && ["Hardware and compute", "Data centre and facilities", "Network", "Security", "End-user computing", "Databases and data", "Applications"].every((x) => generalSections.includes(x)), `${headline} :: ${generalSections.join(" / ")}`);
+  await page.select('[data-library-page] select[aria-label="Part of the library"]', "oci");
+  await sleep(250);
+  const ociSections = await page.$$eval("[data-library-page] aside [data-library-section]", (els) => els.length);
+  await page.$eval('[data-library-section="oci.databases"]', (b) => b.click());
+  await sleep(200);
+  await page.$eval('[data-library-grid] [data-component="oci.autonomous-database"]', (b) => b.click());
+  await page.waitForSelector('[data-library-detail="oci.autonomous-database"]');
+  const ociFields = await page.$$eval("[data-library-fields] li", (els) => els.map((e) => e.innerText.split("\n")[0]));
+  check("a provider's services are shown with what they become and the information they ask for", ociSections >= 8 && ociFields.includes("Engine and version") && ociFields.includes("Region"), ociFields.join(", "));
+  await shot(page, "26-library-page");
+  await page.type('input[aria-label="Search the library"]', "kafka");
+  await sleep(250);
+  const kafka = await page.$$eval("[data-library-grid] [data-component]", (els) => els.map((e) => e.getAttribute("data-component")));
+  check("searching the library looks through every section and provider", kafka.length >= 5 && kafka.some((id) => id.startsWith("aws.")) && kafka.some((id) => id.startsWith("platforms.")), kafka.join(", "));
+  await clickText(page, "Add to the model");
+  await page.waitForFunction(() => location.pathname === "/model");
+  await sleep(300);
+  check("a component can be added to the model from the library page", Object.values((await stored()).objects).some((o) => o.componentId === "oci.autonomous-database" && o.typeId === "database"));
+
   // Settings and backup.
   await page.goto(`${base}/settings`, { waitUntil: "networkidle0" });
   await waitText(page, "No AI model connected");

@@ -62,6 +62,7 @@ export function toRow(table: TableName, workspaceId: string, key: string, value:
         fields: o.fields,
         // Always sent, so that removing the last link clears the column.
         links: o.links?.length ? o.links : null,
+        component_id: o.componentId ?? null,
         provenance: o.provenance,
         created_at: o.createdAt,
         updated_at: o.updatedAt,
@@ -148,6 +149,7 @@ export function fromRow(table: TableName, row: Row): { key: string; value: unkno
         technology: text(row.technology),
         fields: (row.fields ?? {}) as Record<string, string>,
         ...linksOf(row.links),
+        ...(typeof row.component_id === "string" && row.component_id ? { componentId: row.component_id } : {}),
         provenance: (row.provenance ?? { origin: "manual" }) as ModelObject["provenance"],
         createdAt: iso(row.created_at),
         updatedAt: iso(row.updated_at),

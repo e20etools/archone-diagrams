@@ -73,7 +73,7 @@ function ObjectLinks({ ws, adr, canEdit }: { ws: Workspace; adr: Adr; canEdit: b
           .filter((id) => ws.objects[id])
           .map((id) => (
             <li key={id} className="inline-flex items-center gap-1.5 rounded-md border border-line bg-surface pl-2 pr-1 h-7 text-[13px]">
-              <TypeIcon typeId={ws.objects[id].typeId} size={14} />
+              <TypeIcon typeId={ws.objects[id].typeId} componentId={ws.objects[id].componentId} size={14} />
               <Link to={`/model?object=${id}`} className="hover:underline" title={objectType(ws.objects[id].typeId).label}>
                 {ws.objects[id].name}
               </Link>
@@ -101,7 +101,7 @@ function ObjectLinks({ ws, adr, canEdit }: { ws: Workspace; adr: Adr; canEdit: b
                       setQuery("");
                     }}
                   >
-                    <TypeIcon typeId={o.typeId} size={14} />
+                    <TypeIcon typeId={o.typeId} componentId={o.componentId} size={14} />
                     <span className="truncate">{o.name}</span>
                     <span className="ml-auto text-xs text-ink-faint">{objectType(o.typeId).label}</span>
                   </button>

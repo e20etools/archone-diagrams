@@ -64,7 +64,7 @@ function AnswerCard({ ws, question, answer }: { ws: Workspace; question: string;
                 {objects.slice(0, 24).map((o) => (
                   <li key={o.id} className="inline-flex items-center rounded-md border border-line bg-paper text-[13px]">
                     <Link to={`/model?object=${o.id}`} className="inline-flex items-center gap-1.5 pl-2 pr-1.5 py-1 hover:text-blueprint">
-                      <TypeIcon typeId={o.typeId} size={13} />
+                      <TypeIcon typeId={o.typeId} componentId={o.componentId} size={13} />
                       {o.name}
                     </Link>
                     <Link to={`/analysis?object=${o.id}`} title={`Dependencies of ${o.name}`} aria-label={`Dependencies of ${o.name}`} className="px-1.5 py-1 border-l border-line text-ink-soft hover:text-blueprint">

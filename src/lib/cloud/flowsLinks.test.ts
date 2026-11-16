@@ -32,7 +32,7 @@ const object = (id: string, name: string, extra: Partial<ModelObject> = {}): Mod
   provenance: { origin: "manual" }, createdAt: stamp, updatedAt: stamp, ...extra,
 });
 const api = object("api", "API", { links: [{ label: "Repository", url: "https://github.com/team/api" }, { label: "", url: "https://grafana.example.com/d/api" }] });
-const web = object("web", "Web");
+const web = object("web", "Web", { componentId: "applications.web-application" });
 const calls: Relationship = {
   id: "r1", sourceId: "web", targetId: "api", kind: "calls", label: "asks", protocol: "HTTPS", port: "443", description: "",
   links: [{ label: "Contract", url: "https://example.com/openapi.json" }], provenance: { origin: "manual" }, createdAt: stamp, updatedAt: stamp,
@@ -110,9 +110,16 @@ describe("flows and links in the database", () => {
     expect(flows.flows).toEqual([{ id: "f", name: "", description: "", steps: [{ id: "s", fromId: "a", toId: "b", text: "" }] }]);
   });
 
+  it("keep the library component an object was made from, and clear it when it is taken away", async () => {
+    expect((await read("vera", "objects")).web.componentId).toBe("applications.web-application");
+    expect("componentId" in (await read("vera", "objects")).api).toBe(false);
+    await expect(as("edgar", (q) => q("update public.objects set component_id = $2 where workspace_id = $1 and id = 'api'", [ws, "x".repeat(121)]))).rejects.toThrow(/check constraint/);
+  });
+
   it("go into a scenario with the rest of the model", async () => {
     const scenario = (await as("edgar", (q) => q("select public.create_scenario($1, 'Next year') as id", [ws])))[0].id;
     expect((await read("edgar", "objects", scenario)).api.links).toEqual(api.links);
+    expect((await read("edgar", "objects", scenario)).web.componentId).toBe("applications.web-application");
     expect((await read("edgar", "relationships", scenario)).r1.links).toEqual(calls.links);
     expect((await read("edgar", "diagrams", scenario)).d1.flows).toEqual(checkout.flows);
   });

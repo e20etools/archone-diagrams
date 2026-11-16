@@ -8,6 +8,8 @@ import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
 import { DRAG_MIME, DiagramCanvas, type CanvasHandle, type CanvasSelection, type DragItem } from "@/components/canvas/DiagramCanvas";
 import { AiDraftDialog, ExportMenu, ShareDialog } from "@/components/dialogs";
 import { FlowBar, FlowsPanel, NO_FLOW, useFlowCursor, useFlowKeys } from "@/components/Flows";
+import { LibraryPanel } from "@/components/LibraryBrowser";
+import { componentById, componentSubtitle, objectFromComponent, type LibraryComponent } from "@/lib/library";
 import { addStep, flowsOf } from "@/lib/flows";
 import { TypeIcon } from "@/components/icons";
 import { ObjectEditor, ProvenanceNote, RelationshipEditor, RelationshipList, UsedIn, DecisionsAbout } from "@/components/ObjectPanel";
@@ -80,15 +82,18 @@ function Palette({
   ws,
   diagram,
   onAddType,
+  onAddComponent,
   onAddObject,
   onCollapse,
 }: {
   ws: Workspace;
   diagram: Diagram;
   onAddType: (typeId: string) => void;
+  onAddComponent: (component: LibraryComponent) => void;
   onAddObject: (objectId: string) => void;
   onCollapse: () => void;
 }) {
+  const [basicOpen, setBasicOpen] = useState(true);
   const [tab, setTab] = useState<"new" | "model">("new");
   const [query, setQuery] = useState("");
   const available = useMemo(() => {
@@ -102,7 +107,7 @@ function Palette({
   };
   const unplaced = Object.keys(ws.objects).length - Object.keys(diagram.nodes).length;
   return (
-    <aside className="w-[264px] shrink-0 flex flex-col bg-surface border-r border-line">
+    <aside className="w-[284px] shrink-0 flex flex-col bg-surface border-r border-line">
       <div className="flex items-end gap-1 pl-3 pr-1.5 pt-2">
         <div className="flex-1">
           <Tabs
@@ -120,8 +125,15 @@ function Palette({
       </div>
       {tab === "new" ? (
         <div className="min-h-0 overflow-y-auto px-3 py-3 space-y-3.5">
-          <p className="text-[13px] text-ink-soft">Drag a type onto the canvas, or click it. Each box becomes an object in the model.</p>
-          {CATEGORIES.map((category) => (
+          <p className="text-[13px] text-ink-soft">Drag a component onto the canvas, or click it. Each box becomes an object in the model.</p>
+          <LibraryPanel onPick={onAddComponent} />
+          <div className="border-t border-line-soft pt-2.5">
+          <button type="button" className="w-full flex items-center justify-between text-[13px] font-medium" aria-expanded={basicOpen} onClick={() => setBasicOpen(!basicOpen)}>
+            Basic types
+            <span className="text-xs text-ink-faint">{basicOpen ? "Hide" : "Show"}</span>
+          </button>
+          </div>
+          {basicOpen && CATEGORIES.map((category) => (
             <div key={category}>
               <div className="text-xs text-ink-faint mb-1">{CATEGORY_INFO[category].label}</div>
               <div className="grid grid-cols-2 gap-1.5">
@@ -173,7 +185,7 @@ function Palette({
                   className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left cursor-grab hover:bg-line-soft active:cursor-grabbing"
                 >
                   <span className="text-ink-soft shrink-0">
-                    <TypeIcon typeId={o.typeId} size={15} />
+                    <TypeIcon typeId={o.typeId} componentId={o.componentId} size={15} />
                   </span>
                   <span className="min-w-0">
                     <span className="block truncate text-[13px] font-medium">{o.name}</span>
@@ -361,11 +373,11 @@ function ObjectInspector({
     <>
       <div className="flex items-start gap-2.5 px-4 py-3.5">
         <span className="mt-0.5" style={{ color: CATEGORY_INFO[type.category].color }}>
-          <TypeIcon typeId={object.typeId} size={18} />
+          <TypeIcon typeId={object.typeId} componentId={object.componentId} size={18} />
         </span>
         <div className="min-w-0 flex-1">
           <h2 className="text-sm font-semibold break-words">{object.name}</h2>
-          <p className="text-[13px] text-ink-soft">{type.label}</p>
+          <p className="text-[13px] text-ink-soft">{componentSubtitle(object) ?? type.label}</p>
         </div>
         <IconButton label="Close panel" onClick={() => onSelect(NONE)}>
           <X size={16} />
@@ -663,6 +675,22 @@ function Editor({ ws, diagram }: { ws: Workspace; diagram: Diagram }) {
     [diagramId],
   );
 
+  const addComponent = useCallback(
+    (component: LibraryComponent, position?: { x: number; y: number }) => {
+      let createdId = "";
+      apply((w) => {
+        const view = w.diagrams[diagramId];
+        const input = objectFromComponent(component);
+        const parentId = view.scopeId && canSetParent(w, null, input.typeId, view.scopeId) ? view.scopeId : null;
+        const made = createObject(w, { ...input, parentId });
+        createdId = made.object.id;
+        return addObjectsToDiagram(made.ws, diagramId, [createdId], position);
+      });
+      if (createdId) setSelection({ objectId: createdId, edgeId: null });
+    },
+    [diagramId],
+  );
+
   const addExisting = useCallback(
     (id: string, position?: { x: number; y: number }) => {
       apply((w) => addObjectsToDiagram(w, diagramId, [id], position));
@@ -672,8 +700,15 @@ function Editor({ ws, diagram }: { ws: Workspace; diagram: Diagram }) {
   );
 
   const onDropItem = useCallback(
-    (item: DragItem, position: { x: number; y: number }) => (item.kind === "type" ? addType(item.id, position) : addExisting(item.id, position)),
-    [addType, addExisting],
+    (item: DragItem, position: { x: number; y: number }) => {
+      if (item.kind === "type") return addType(item.id, position);
+      if (item.kind === "component") {
+        const component = componentById(item.id);
+        return component ? addComponent(component, position) : undefined;
+      }
+      return addExisting(item.id, position);
+    },
+    [addType, addComponent, addExisting],
   );
 
   const onOpen = useCallback(
@@ -848,7 +883,7 @@ function Editor({ ws, diagram }: { ws: Workspace; diagram: Diagram }) {
       )}
       <div className="min-h-0 flex-1 flex">
         {paletteOpen ? (
-          <Palette ws={ws} diagram={diagram} onAddType={addType} onAddObject={addExisting} onCollapse={() => togglePalette(false)} />
+          <Palette ws={ws} diagram={diagram} onAddType={addType} onAddComponent={addComponent} onAddObject={addExisting} onCollapse={() => togglePalette(false)} />
         ) : (
           <div className="w-11 shrink-0 flex justify-center pt-2 bg-surface border-r border-line">
             <IconButton label="Show the panel for adding objects" onClick={() => togglePalette(true)}>

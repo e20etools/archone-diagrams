@@ -27,12 +27,13 @@ import { memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, use
 import { TypeIcon } from "@/components/icons";
 import { LIFECYCLE_INFO, RELATION_KIND_INFO, objectType, ownerColor, typeColor } from "@/lib/catalog";
 import { NODE_H, NODE_W, boundsOf } from "@/lib/layout";
+import { componentSubtitle } from "@/lib/library";
 import { childrenOf } from "@/lib/model";
 import type { Diagram, ModelObject, Workspace } from "@/lib/types";
 import { scopeMembers, visibleEdges } from "@/lib/views";
 
 export type Highlight = "focus" | "up" | "down" | "dim";
-export type DragItem = { kind: "type"; id: string } | { kind: "object"; id: string };
+export type DragItem = { kind: "type"; id: string } | { kind: "object"; id: string } | { kind: "component"; id: string };
 export const DRAG_MIME = "application/x-archone-item";
 
 export interface CanvasHandle {
@@ -97,6 +98,8 @@ const lifecycleTone = { planned: "#2447d6", active: "#1f8a4c", deprecated: "#c97
 const ObjectNode = memo(function ObjectNode({ data }: NodeProps<Node<ObjectNodeData>>) {
   const { object, color, childCount, direction, highlight, comments, onOpen, notation } = data;
   const type = objectType(object.typeId);
+  // A box made from the library says what it is ("Firewall"), not only its type ("Network device").
+  const component = componentSubtitle(object);
   const archimate = notation === "archimate" ? archimateElement(object.typeId) : null;
   const bpmn = notation === "bpmn" ? bpmnShape(object.typeId) : null;
   const drafted = object.provenance.origin === "ai-prompt" || object.provenance.origin === "ai-image";
@@ -104,14 +107,14 @@ const ObjectNode = memo(function ObjectNode({ data }: NodeProps<Node<ObjectNodeD
     <div className="object-node" data-highlight={highlight} data-notation={notation && notation !== "plain" ? notation : undefined} data-layer={archimate?.layer} data-shape={bpmn?.shape} style={{ ["--node-color" as string]: color }}>
       <Handle type="target" position={direction === "TB" ? Position.Top : Position.Left} />
       <span className="object-node__icon">
-        <TypeIcon typeId={object.typeId} size={17} />
+        <TypeIcon typeId={object.typeId} componentId={object.componentId} size={17} />
       </span>
       <div className="min-w-0 flex-1">
         <div className="object-node__name" title={object.name}>
           {object.name}
         </div>
         <div className="object-node__meta">
-          <span>{archimate?.name ?? bpmn?.name ?? type.label}</span>
+          <span>{archimate?.name ?? bpmn?.name ?? component ?? type.label}</span>
           {object.technology && <span className="object-node__tech">{object.technology}</span>}
         </div>
       </div>

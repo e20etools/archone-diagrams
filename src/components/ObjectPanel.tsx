@@ -4,7 +4,9 @@ import { useState } from "react";
 import { MAX_LINKS, linkLabel, safeUrl } from "@/lib/links";
 import { ADR_STATUS_LABEL, adrLabel, adrsAbout } from "@/lib/adr";
 import { Link } from "react-router-dom";
+import { BasicInformation, ComponentField } from "@/components/BasicInformation";
 import { TypeIcon } from "@/components/icons";
+import { profileOf } from "@/lib/library";
 import { Badge, Button, CommitInput, Field, IconButton, Input, Select, formatDateTime } from "@/components/ui";
 import { CATEGORY_INFO, LIFECYCLE_INFO, OBJECT_TYPES, RELATION_KIND_INFO, objectType, type Category } from "@/lib/catalog";
 import { allOwners, diagramsUsing, possibleParents, relationshipsOf, updateObject, updateRelationship } from "@/lib/model";
@@ -134,7 +136,9 @@ export function ObjectEditor({ ws, object }: { ws: Workspace; object: ModelObjec
   const owners = allOwners(ws);
   const technologies = [...new Set(Object.values(ws.objects).map((o) => o.technology.trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
   // The data lens has its own controls; it is kept out of the free-form list.
-  const fields = Object.entries(object.fields).filter(([key]) => !isDataField(key));
+  // The data lens and the basic information have their own controls; they are kept out of the free-form list.
+  const asked = new Set(profileOf(object).fields.map((f) => f.label));
+  const fields = Object.entries(object.fields).filter(([key]) => !isDataField(key) && !asked.has(key));
   const lens = dataLens(object);
   const setField = (oldKey: string, key: string, value: string) => {
     const next: Record<string, string> = {};
@@ -166,6 +170,7 @@ export function ObjectEditor({ ws, object }: { ws: Workspace; object: ModelObjec
           </Select>
         </Field>
       </div>
+      <ComponentField object={object} />
       <Field label="Part of" hint={parents.length ? undefined : "No object on a higher level exists yet."}>
         <Select value={object.parentId ?? ""} onChange={(e) => patch({ parentId: e.target.value || null })}>
           <option value="">Nothing (top level)</option>
@@ -206,6 +211,7 @@ export function ObjectEditor({ ws, object }: { ws: Workspace; object: ModelObjec
       <Field label="Description">
         <CommitInput multiline rows={3} value={object.description} onCommit={(description) => patch({ description })} />
       </Field>
+      <BasicInformation object={object} />
       <fieldset data-data-lens>
         <legend className="text-[13px] font-medium text-ink-soft mb-1">Data it holds</legend>
         <div className="grid grid-cols-2 gap-2.5">
@@ -377,7 +383,7 @@ export function RelationshipList({ ws, objectId, onPick }: { ws: Workspace; obje
           className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left text-[13px] hover:bg-line-soft"
         >
           <span className="text-ink-soft shrink-0">
-            <TypeIcon typeId={other.typeId} size={14} />
+            <TypeIcon typeId={other.typeId} componentId={other.componentId} size={14} />
           </span>
           <span className="truncate font-medium">{other.name}</span>
           <span className="ml-auto pl-2 text-ink-faint whitespace-nowrap">{r.label || RELATION_KIND_INFO[r.kind].verb}</span>

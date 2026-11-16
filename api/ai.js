@@ -3848,6 +3848,8 @@ var modelObjectSchema = objectType({
 	fields: recordType(stringType()),
 	/** Missing when there are none, so an object without links reads back as it was sent. */
 	links: arrayType(linkSchema).optional(),
+	/** The library component it was made from, for its icon and its basic information. Missing for a plain object. */
+	componentId: stringType().optional(),
 	provenance: provenanceSchema,
 	createdAt: stringType(),
 	updatedAt: stringType()

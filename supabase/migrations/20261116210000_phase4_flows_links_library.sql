@@ -1,4 +1,5 @@
--- ArchONE Diagrams, phase 4: flows, links to the real thing, and protected live links.
+-- ArchONE Diagrams, phase 4: flows, links to the real thing, protected live links, and the
+-- component library.
 --
 -- 1. A diagram can carry flows: a use case told step by step over its boxes.
 -- 2. An object or a relationship can link to where it really lives: a repository, a runbook,
@@ -10,6 +11,9 @@
 
 alter table public.objects add column links jsonb check (links is null or (jsonb_typeof(links) = 'array' and jsonb_array_length(links) <= 20));
 alter table public.relationships add column links jsonb check (links is null or (jsonb_typeof(links) = 'array' and jsonb_array_length(links) <= 20));
+-- 4. An object can remember which library component it was made from ("network.firewall",
+--    "aws.simple-storage-service-s3"), for its icon and the basic information it asks for.
+alter table public.objects add column component_id text check (component_id is null or char_length(component_id) <= 120);
 alter table public.diagrams add column flows jsonb check (flows is null or (jsonb_typeof(flows) = 'array' and jsonb_array_length(flows) <= 30 and pg_column_size(flows) <= 400000));
 
 -- A scenario keeps the links and the flows of what it copies.
@@ -43,8 +47,8 @@ begin
   -- commenters are held on the published version, and a scenario must not show them more.
   insert into public.workspace_members (workspace_id, user_id, role)
     select v_id, m.user_id, m.role from public.workspace_members m where m.workspace_id = p_workspace and m.role in ('owner', 'editor');
-  insert into public.objects (workspace_id, id, type_id, name, description, owner, lifecycle, tags, parent_id, technology, fields, links, provenance, created_at, updated_at)
-    select v_id, o.id, o.type_id, o.name, o.description, o.owner, o.lifecycle, o.tags, o.parent_id, o.technology, o.fields, o.links, o.provenance, o.created_at, o.updated_at
+  insert into public.objects (workspace_id, id, type_id, name, description, owner, lifecycle, tags, parent_id, technology, fields, links, component_id, provenance, created_at, updated_at)
+    select v_id, o.id, o.type_id, o.name, o.description, o.owner, o.lifecycle, o.tags, o.parent_id, o.technology, o.fields, o.links, o.component_id, o.provenance, o.created_at, o.updated_at
     from public.objects o where o.workspace_id = p_workspace and not o.deleted;
   insert into public.relationships (workspace_id, id, source_id, target_id, kind, label, protocol, port, description, links, provenance, created_at, updated_at)
     select v_id, r.id, r.source_id, r.target_id, r.kind, r.label, r.protocol, r.port, r.description, r.links, r.provenance, r.created_at, r.updated_at

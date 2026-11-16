@@ -60,7 +60,7 @@ function ReachTable({ ws, reaches, onFocus, empty }: { ws: Workspace; reaches: R
               <td className="px-4 py-2.5">
                 <button type="button" className="flex items-center gap-2 text-left font-medium text-blueprint hover:underline" onClick={() => onFocus(o.id)}>
                   <span className="text-ink-soft">
-                    <TypeIcon typeId={o.typeId} size={15} />
+                    <TypeIcon typeId={o.typeId} componentId={o.componentId} size={15} />
                   </span>
                   {o.name}
                 </button>

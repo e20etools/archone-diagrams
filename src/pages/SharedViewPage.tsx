@@ -127,7 +127,7 @@ export function DiagramViewer({ ws, diagram, subtitle, note, badge = "View only"
           <aside className="w-[320px] shrink-0 overflow-y-auto bg-surface border-l border-line" aria-label="Object details">
             <div className="flex items-start gap-2.5 px-4 py-3.5">
               <span className="mt-0.5 text-ink-soft">
-                <TypeIcon typeId={object.typeId} size={18} />
+                <TypeIcon typeId={object.typeId} componentId={object.componentId} size={18} />
               </span>
               <div className="min-w-0 flex-1">
                 <h2 className="text-sm font-semibold break-words">{object.name}</h2>
