@@ -11,7 +11,7 @@ import type { Sheet } from "./xlsx";
  * until a person accepts it, and every accepted item records the file it came from.
  */
 
-export const IMPORT_ENGINE = { spreadsheet: "Spreadsheet import", visio: "Visio import", drawio: "draw.io import", mermaid: "Mermaid import", structurizr: "Structurizr import" } as const;
+export const IMPORT_ENGINE = { spreadsheet: "Spreadsheet import", visio: "Visio import", drawio: "draw.io import", mermaid: "Mermaid import", structurizr: "Structurizr import", apm: "APM import" } as const;
 export type ImportKind = keyof typeof IMPORT_ENGINE;
 
 const MAX_OBJECTS = 3000;

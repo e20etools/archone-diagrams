@@ -134,6 +134,8 @@ export const proposedObjectSchema = z.object({
   provided: z.array(z.string()).optional(),
   /** For a draft from a meeting: the sentence this came from and who said it. */
   evidence: z.string().optional(),
+  /** Free-form fields an import brings, for example the vendor and version an application portfolio records. */
+  fields: z.record(z.string()).optional(),
 });
 export type ProposedObject = z.infer<typeof proposedObjectSchema>;
 
@@ -156,7 +158,7 @@ export const proposalSchema = z.object({
   id: z.string(),
   origin: z.enum(["ai-prompt", "ai-image", "import", "api"]),
   /** For an import: what kind of file it was. */
-  importKind: z.enum(["spreadsheet", "visio", "drawio", "mermaid", "structurizr"]).optional(),
+  importKind: z.enum(["spreadsheet", "visio", "drawio", "mermaid", "structurizr", "apm"]).optional(),
   /** A spreadsheet fills the model without drawing anything; a diagram file becomes a diagram laid out as it was drawn. */
   /** What a drafted proposal was drafted from, when it was not a description. */
   sourceKind: z.enum(["transcript"]).optional(),

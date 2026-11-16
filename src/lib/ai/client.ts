@@ -48,6 +48,9 @@ export function setAuthTokenProvider(provider: (() => Promise<string | null>) | 
   tokenProvider = provider;
 }
 
+/** The signed-in person's token, for other endpoints of this server that ask who is calling. */
+export const authToken = async (): Promise<string | null> => (tokenProvider ? tokenProvider().catch(() => null) : null);
+
 export interface AiStatus {
   configured: boolean;
   engine: string | null;

@@ -11,6 +11,8 @@ import { aiStatus, handleAiRequest, type AiEnv } from "./server-core";
  *                      accounts, only signed-in people may draft. Set AI_REQUIRE_SIGN_IN=false to switch that off.
  */
 
+import { accounts, signedIn } from "./signin";
+
 export type ServerEnv = AiEnv & {
   AI_ACCESS_CODE?: string;
   AI_ALLOWED_ORIGIN?: string;
@@ -22,29 +24,6 @@ export type ServerEnv = AiEnv & {
   VITE_SUPABASE_ANON_KEY?: string;
   VITE_SUPABASE_PUBLISHABLE_KEY?: string;
 };
-
-/** The accounts service to check sign-ins against, or null when the app runs without accounts. */
-function accounts(env: ServerEnv): { url: string; key: string } | null {
-  if ((env.AI_REQUIRE_SIGN_IN ?? "").toLowerCase() === "false") return null;
-  const url = (env.SUPABASE_URL || env.VITE_SUPABASE_URL || "").trim().replace(/\/$/, "");
-  const key = (env.SUPABASE_PUBLISHABLE_KEY || env.SUPABASE_ANON_KEY || env.VITE_SUPABASE_PUBLISHABLE_KEY || env.VITE_SUPABASE_ANON_KEY || "").trim();
-  return url && key ? { url, key } : null;
-}
-
-/** Asks the accounts service whether the token belongs to a signed-in person. */
-async function signedIn(request: Request, service: { url: string; key: string }, fetchImpl: typeof fetch): Promise<boolean> {
-  const header = request.headers.get("authorization") ?? "";
-  const token = header.toLowerCase().startsWith("bearer ") ? header.slice(7).trim() : "";
-  if (!token || token.length > 4096) return false;
-  try {
-    const response = await fetchImpl(`${service.url}/auth/v1/user`, { headers: { apikey: service.key, authorization: `Bearer ${token}` } });
-    if (!response.ok) return false;
-    const user = (await response.json()) as { id?: unknown };
-    return typeof user.id === "string" && user.id.length > 0;
-  } catch {
-    return false;
-  }
-}
 
 /** A 5 MB image is about 7 MB of base64; anything larger is refused before it is read. */
 const MAX_BODY_BYTES = 7_600_000;

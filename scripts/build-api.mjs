@@ -1,5 +1,6 @@
 // Bundles the AI endpoint into self-contained files the hosts can run without a compile step:
 //   api/ai.js                           Vercel Function behind /api/ai
+//   api/apm.js                          Vercel Function behind /api/apm, which reads the APM feeds
 //   supabase/functions/ai/handler.js    used by the Supabase / Lovable Cloud Edge Function
 //   supabase/functions/api/handler.js   the public REST API, served by a Supabase Edge Function
 //   supabase/functions/mcp/handler.js   the MCP server for assistants, served the same way
@@ -14,6 +15,7 @@ import { build } from "vite";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const targets = [
   { entry: "server/vercel-entry.ts", out: "api/ai.js" },
+  { entry: "server/apm-vercel-entry.ts", out: "api/apm.js" },
   { entry: "server/edge-entry.ts", out: "supabase/functions/ai/handler.js" },
   { entry: "server/api-entry.ts", out: "supabase/functions/api/handler.js" },
   { entry: "server/mcp-entry.ts", out: "supabase/functions/mcp/handler.js" },

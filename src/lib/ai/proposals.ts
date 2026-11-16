@@ -129,6 +129,7 @@ export function importUpdates(ws: Workspace, o: ProposedObject): string[] {
   if (gives.has("lifecycle") && o.lifecycle && o.lifecycle !== match.lifecycle) changes.push("Lifecycle");
   if (gives.has("technology") && o.technology !== match.technology) changes.push("Technology");
   if (gives.has("tags") && [...(o.tags ?? [])].sort().join("|") !== [...match.tags].sort().join("|")) changes.push("Tags");
+  if (gives.has("fields") && Object.entries(o.fields ?? {}).some(([key, value]) => (match.fields[key] ?? "") !== value)) changes.push("Details");
   return changes;
 }
 
@@ -173,6 +174,8 @@ export function applyProposal(ws: Workspace, id: string, user: string): ApplyRes
         if (gives.has("lifecycle") && o.lifecycle) patch.lifecycle = o.lifecycle;
         if (gives.has("technology")) patch.technology = o.technology;
         if (gives.has("tags")) patch.tags = o.tags ?? [];
+        // Fields the import brings are written over the same fields; the object's other fields stay.
+        if (gives.has("fields")) patch.fields = { ...next.objects[o.matchId].fields, ...(o.fields ?? {}) };
       }
       const parentId = gives.has("parent") && o.parentKey ? keyToId.get(o.parentKey) : undefined;
       if (parentId && parentId !== next.objects[o.matchId].parentId && canSetParent(next, o.matchId, patch.typeId ?? next.objects[o.matchId].typeId, parentId)) patch.parentId = parentId;
@@ -191,6 +194,7 @@ export function applyProposal(ws: Workspace, id: string, user: string): ApplyRes
       owner: o.owner,
       lifecycle: o.lifecycle,
       tags: o.tags,
+      fields: o.fields,
       parentId: parentId && canSetParent(next, null, o.typeId, parentId) ? parentId : null,
       provenance,
     });

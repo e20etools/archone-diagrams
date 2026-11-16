@@ -3920,7 +3920,9 @@ var proposedObjectSchema = objectType({
 	/** The fields the file gave a value for. On an existing object, accepting writes exactly these. */
 	provided: arrayType(stringType()).optional(),
 	/** For a draft from a meeting: the sentence this came from and who said it. */
-	evidence: stringType().optional()
+	evidence: stringType().optional(),
+	/** Free-form fields an import brings, for example the vendor and version an application portfolio records. */
+	fields: recordType(stringType()).optional()
 });
 var proposedRelationshipSchema = objectType({
 	key: stringType(),
@@ -3949,7 +3951,8 @@ var proposalSchema = objectType({
 		"visio",
 		"drawio",
 		"mermaid",
-		"structurizr"
+		"structurizr",
+		"apm"
 	]).optional(),
 	/** A spreadsheet fills the model without drawing anything; a diagram file becomes a diagram laid out as it was drawn. */
 	/** What a drafted proposal was drafted from, when it was not a description. */
@@ -4484,7 +4487,7 @@ async function handleAiRequest(body, env, fetchImpl = fetch) {
 		}
 	};
 }
-// src/lib/ai/http.ts
+// src/lib/ai/signin.ts
 /** The accounts service to check sign-ins against, or null when the app runs without accounts. */
 function accounts(env) {
 	if ((env.AI_REQUIRE_SIGN_IN ?? "").toLowerCase() === "false") return null;
@@ -4512,6 +4515,17 @@ async function signedIn(request, service, fetchImpl) {
 		return false;
 	}
 }
+// src/lib/ai/http.ts
+/**
+* The AI endpoint as a web-standard handler (Request in, Response out), so the same code
+* runs as a Vercel Function, as a Supabase/Lovable Edge Function, and in local development.
+*
+* Extra environment variables read here:
+*   AI_ACCESS_CODE     optional shared code; when set, drafting needs the same code from the browser
+*   AI_ALLOWED_ORIGIN  optional origin (or comma-separated origins, or *) allowed to call from another domain
+*   SUPABASE_URL and SUPABASE_ANON_KEY (or the VITE_ names the app itself uses): when the app has
+*                      accounts, only signed-in people may draft. Set AI_REQUIRE_SIGN_IN=false to switch that off.
+*/
 /** A 5 MB image is about 7 MB of base64; anything larger is refused before it is read. */
 var MAX_BODY_BYTES = 76e5;
 function sameCode(given, expected) {

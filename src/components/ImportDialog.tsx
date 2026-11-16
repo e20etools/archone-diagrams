@@ -8,6 +8,7 @@ import { useCanEdit } from "@/lib/cloud/session";
 import { decodeText, parseCsv } from "@/lib/import/csv";
 import type { ImportedPage } from "@/lib/import/diagramFile";
 import { fieldsOf, guessMapping, pageToProposal, remap, sheetsToProposal, textModelToProposal, type SheetMapping, type SheetRole } from "@/lib/import/draft";
+import { ApmImport } from "@/components/ApmImport";
 import { archimate4Notes, isArchimate, readArchimate } from "@/lib/import/archimate";
 import { readDrawio } from "@/lib/import/drawio";
 import { isMermaid, readMermaid, type TextModel } from "@/lib/import/mermaid";
@@ -242,6 +243,7 @@ export function ImportDialog({ onClose }: { onClose: () => void }) {
             <input ref={picker} type="file" accept={ACCEPT} className="sr-only" aria-label="File to import" onChange={(e) => void choose(e.target.files?.[0])} />
           </div>
           {problem && <Problem text={problem} />}
+          <ApmImport canEdit={canEdit} onDone={onClose} />
           <ul className="space-y-2.5">
             <li className="flex gap-3">
               <FileSpreadsheet size={18} className="mt-0.5 shrink-0 text-ink-soft" />

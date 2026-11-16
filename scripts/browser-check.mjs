@@ -1024,7 +1024,7 @@ try {
   servers.push({ kill: () => provider.close() });
   const base2 = "http://127.0.0.1:4312";
   servers.push(
-    await preview(4312, { AI_PROVIDER: "openai-compatible", AI_API_KEY: "test-key-not-real", AI_MODEL: "stand-in-model", AI_BASE_URL: "http://127.0.0.1:4399/v1", AI_ACCESS_CODE: "pilot" }),
+    await preview(4312, { AI_PROVIDER: "openai-compatible", AI_API_KEY: "test-key-not-real", AI_MODEL: "stand-in-model", AI_BASE_URL: "http://127.0.0.1:4399/v1", AI_ACCESS_CODE: "pilot", APM_FEED_URL: "http://127.0.0.1:4398" }),
   );
   const page2 = await newPage(await browser.createBrowserContext(), errors);
   page2.removeAllListeners("console"); // the 401 below is expected
@@ -1077,6 +1077,53 @@ try {
   await sleep(500);
   check("the imported diagram is drawn with its AI badge", (await count(page2, ".object-node")) === 3 && (await page2.evaluate(() => document.body.innerText.includes("AI draft"))));
   await shot(page2, "11-image-import");
+
+  // Applications from APM: a stand-in for APM's feeds, read through this app's own server.
+  {
+    const apmToken = `apmf_${"c".repeat(64)}`;
+    const apmSeen = [];
+    const apmFeeds = {
+      applications: [{ id: "t1", number: 1, name: "CyberArk", description: "Privileged access management.", vendor: "CyberArk", version: "14.x", category: "Security" }, { id: "t2", number: 2, name: "Jenkins", description: "Build server.", vendor: "CloudBees", version: "2.x", category: "CI/CD" }],
+      classifications: [{ id: "t1", name: "CyberArk", classifications: { hosting: "on_premise", license: "commercial" } }],
+      lifecycle: [{ id: "t1", name: "CyberArk", lifecycle_status: "Tolerate" }, { id: "t2", name: "Jenkins", lifecycle_status: "Migrate" }],
+      integrations: [{ source: "Jenkins", target: "CyberArk", type: "API", description: "Reads build secrets" }],
+    };
+    const apm = createServer((req, res) => {
+      const dataset = /^\/api\/public\/feeds\/([a-z]+)\.json$/.exec(req.url ?? "")?.[1];
+      apmSeen.push(`${dataset} ${req.headers.authorization === `Bearer ${apmToken}` ? "ok" : "bad"}`);
+      if (req.headers.authorization !== `Bearer ${apmToken}`) return void res.writeHead(401).end("Invalid feed token");
+      res.writeHead(dataset && apmFeeds[dataset] ? 200 : 404, { "content-type": "application/json" }).end(JSON.stringify(apmFeeds[dataset] ?? null));
+    });
+    await new Promise((ready) => apm.listen(4398, "127.0.0.1", ready));
+    servers.push({ kill: () => apm.close() });
+    const apmBefore = Object.keys(JSON.parse(await page2.evaluate(() => localStorage.getItem("archone.workspace.v1"))).objects).length;
+    await page2.goto(base2, { waitUntil: "networkidle0" });
+    await clickText(page2, "Import");
+    await page2.waitForSelector("[data-apm-import] [data-apm-token]");
+    check("when the server knows where APM is, importing offers it and asks for a feed token", (await hasText(page2, "From APM & Landscape")) && (await page2.$eval("[data-apm-run]", (e) => e.disabled)));
+    await page2.type("[data-apm-token]", `apmf_${"d".repeat(64)}`);
+    await page2.click("[data-apm-run]");
+    await waitText(page2, "APM did not accept the feed token");
+    await page2.$eval("[data-apm-token]", (e) => e.select());
+    await page2.keyboard.press("Backspace");
+    await page2.type("[data-apm-token]", apmToken);
+    await page2.click("[data-apm-run]");
+    await page2.waitForFunction(() => location.pathname.startsWith("/ai/"));
+    await waitText(page2, "Read from the application portfolio");
+    check("the applications arrive as a draft that says where it came from, and nothing is in the model yet", (await hasText(page2, "2 applications and 1 integrations read from APM at 127.0.0.1:4398")) && apmSeen.slice(-4).join() === "applications ok,classifications ok,lifecycle ok,integrations ok" && Object.keys(JSON.parse(await page2.evaluate(() => localStorage.getItem("archone.workspace.v1"))).objects).length === apmBefore);
+    await shot(page2, "19-apm-draft");
+    await clickText(page2, "Accept all");
+    await clickText(page2, "Save accepted to the model");
+    await sleep(700);
+    const apmAfter = JSON.parse(await page2.evaluate(() => localStorage.getItem("archone.workspace.v1")));
+    const cyber = Object.values(apmAfter.objects).find((o) => o.name === "CyberArk");
+    const jenkins = Object.values(apmAfter.objects).find((o) => o.name === "Jenkins");
+    check(
+      "accepted, each application is saved with its APM facts, and the integration as a relationship",
+      cyber?.fields.Vendor === "CyberArk" && cyber.fields.TIME === "Tolerate" && cyber.fields.Hosting === "On premise" && cyber.fields["APM id"] === "t1" && jenkins?.lifecycle === "deprecated" && Object.values(apmAfter.relationships).some((r) => r.sourceId === jenkins.id && r.targetId === cyber.id && r.kind === "calls"),
+      cyber ? Object.keys(cyber.fields).join(", ") : "not saved",
+    );
+  }
 
   // Ask the architecture with an AI model: only with the person's say-so, and only for what the rules cannot answer.
   await page2.goto(`${base2}/ask`, { waitUntil: "networkidle0" });

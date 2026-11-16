@@ -9,7 +9,7 @@ type Env = Record<string, string | undefined>;
 type Handle = (request: Request) => Promise<Response>;
 
 /** Runs a web-standard handler (Request in, Response out) behind Node's connect middleware. */
-function serve(getHandler: () => Promise<Handle>) {
+function serve(getHandler: () => Promise<Handle>, path = "/api/ai") {
   return (req: IncomingMessage, res: ServerResponse) => {
     const chunks: Buffer[] = [];
     req.on("data", (chunk: Buffer) => chunks.push(chunk));
@@ -17,7 +17,7 @@ function serve(getHandler: () => Promise<Handle>) {
       const headers = new Headers();
       for (const [name, value] of Object.entries(req.headers)) if (typeof value === "string") headers.set(name, value);
       const hasBody = req.method !== "GET" && req.method !== "HEAD";
-      const request = new Request(`http://${req.headers.host ?? "localhost"}/api/ai`, {
+      const request = new Request(`http://${req.headers.host ?? "localhost"}${path}`, {
         method: req.method,
         headers,
         body: hasBody ? Buffer.concat(chunks) : undefined,
@@ -53,11 +53,18 @@ function localAiEndpoint(env: Env): Plugin {
           return http.createAiHandler(() => env);
         }),
       );
+      server.middlewares.use(
+        "/api/apm",
+        serve(async () => {
+          const http = (await server.ssrLoadModule("/src/lib/apm/http.ts")) as typeof import("./src/lib/apm/http");
+          return http.createApmHandler(() => env);
+        }, "/api/apm"),
+      );
     },
     configurePreviewServer(server) {
       // The bundled function reads process.env, as it does on the host.
       for (const [name, value] of Object.entries(env)) {
-        if (/^(AI_|ANTHROPIC_|OPENAI_|LOVABLE_)/.test(name) && process.env[name] === undefined) process.env[name] = value;
+        if (/^(AI_|ANTHROPIC_|OPENAI_|LOVABLE_|APM_)/.test(name) && process.env[name] === undefined) process.env[name] = value;
       }
       const bundle = pathToFileURL(fileURLToPath(new URL("./api/ai.js", import.meta.url))).href;
       server.middlewares.use(
@@ -66,6 +73,14 @@ function localAiEndpoint(env: Env): Plugin {
           const module = (await import(/* @vite-ignore */ bundle)) as { default: { fetch: Handle } };
           return module.default.fetch;
         }),
+      );
+      const apm = pathToFileURL(fileURLToPath(new URL("./api/apm.js", import.meta.url))).href;
+      server.middlewares.use(
+        "/api/apm",
+        serve(async () => {
+          const module = (await import(/* @vite-ignore */ apm)) as { default: { fetch: Handle } };
+          return module.default.fetch;
+        }, "/api/apm"),
       );
     },
   };

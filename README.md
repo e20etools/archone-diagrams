@@ -763,6 +763,37 @@ dialog lists it with the documented way to model it instead. Not checked: the re
 types of ArchiMate 4 (the export writes Composition, Serving, Flow, Triggering and
 Association), and an ArchiMate 4 exchange file from a real tool.
 
+### Applications from APM & Landscape
+
+Import → **From APM & Landscape** reads the application portfolio that APM publishes and
+makes a draft of it, reviewed like any other import. APM stays the record of which
+applications exist, who sells them and what is planned for them; this model is the record
+of how they connect.
+
+- **What it reads:** four of APM's read-only feeds (applications, classifications,
+  lifecycle, integrations) at `<APM>/api/public/feeds/<dataset>.json`, with a feed token.
+- **What it writes, once accepted:** each application as an object of kind Application with
+  its description and the fields `APM id`, `APM number`, `Vendor`, `Version`, `Category`,
+  `TIME`, `Hosting`, `Business capability` and `License`; each integration as a
+  relationship (API as calls, Database as reads or writes, Event and File as flows to, SSO
+  as depends on). TIME becomes the lifecycle: Invest and Tolerate are active, Migrate and
+  Eliminate are deprecated.
+- **A second import updates instead of duplicating.** An object is tied to its application
+  by `APM id`, so a rename on either side does not break the tie; the first time, it is
+  matched by name. A matched object keeps its kind, owner, tags and place, and its other
+  fields. Applications APM no longer lists are named in the draft's note and left alone.
+  Nothing is ever deleted by an import.
+- **Setting it up:** set `APM_FEED_URL` on the host to APM's address. In APM, a Full user
+  creates a feed token under Connections, as a Power BI or Excel feed that covers those four
+  datasets, and pastes it when importing. The token goes to this app's server for that one
+  import and is not kept. Or set `APM_FEED_TOKEN` on the host: then nobody pastes anything,
+  and the server uses the token only for a signed-in person.
+- The server fetches from the configured address only, refuses redirects, and answers only
+  this site's own pages. APM allows 60 feed requests an hour per token; one import uses four.
+- **Not done:** nothing is written back to APM, the import runs when someone asks for it
+  and not on a schedule, and licence values are not read. It has been run against a
+  stand-in for APM's feeds built from APM's own code, not against the live APM.
+
 ### Large models
 
 Measured on the build machine with a generated model (domains of systems of services and
@@ -801,9 +832,9 @@ build does not reload.
 ## Check it
 
 ```bash
-npm test                   # 346 tests: model, decisions, arranging, health, CALM, scenario merging, the trust page, the document, your own rules, large models, templates, the pull-request gate, AI, questions, checks, MCP, import readers, sync engine, comparison, and the database rules and the API on a real Postgres
+npm test                   # 353 tests: model, decisions, arranging, health, CALM, scenario merging, the trust page, the document, your own rules, large models, templates, the pull-request gate, the APM import, AI, questions, checks, MCP, import readers, sync engine, comparison, and the database rules and the API on a real Postgres
 npm run build              # type-check and production build into dist/
-npm run test:browser       # 129 end-to-end checks of browser-only mode (run after a build)
+npm run test:browser       # 132 end-to-end checks of browser-only mode (run after a build)
 npm run test:browser:cloud # 85 end-to-end checks of hosted mode with several people
 ```
 
@@ -903,6 +934,7 @@ src/components/     canvas, panels, dialogs; cloud/ holds sign-in, members, comm
 src/pages/          one file per screen
 server/             sources of the hosted AI function
 api/ai.js           generated Vercel Function
+api/apm.js          generated Vercel Function that reads the APM feeds
 supabase/migrations/     the database schema and access rules
 supabase/functions/ai/   Edge Function wrapper for Supabase or Lovable Cloud
 supabase/functions/api/  Edge Function that serves the REST API
