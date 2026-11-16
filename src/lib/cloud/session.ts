@@ -11,7 +11,8 @@ import type { Comment, CommentDraft, Person, Review, ReviewSettings, ReviewStage
 import { cloudEnabled, demoBackend, supabaseKey, supabaseUrl } from "./config";
 import { normalizeForCloud } from "./rows";
 import { SyncEngine, type SyncState } from "./sync";
-import { emptyTables, fromTables, toTables, withoutDangling, type Tables } from "./tables";
+import type { TrustPage, TrustPageInput } from "../trust";
+import { emptyTables, fromTables, toTables, withoutDangling, type ChangeSet, type Tables } from "./tables";
 
 /**
  * Who is signed in, which workspace is open, and the live connection that keeps it saved and
@@ -545,4 +546,20 @@ export async function createScenario(name: string, note: string): Promise<void> 
 /** The model of another workspace the person belongs to, for comparing a scenario with where it came from. */
 export async function tablesOfWorkspace(workspaceId: string): Promise<Tables> {
   return (await getBackend()).load(workspaceId);
+}
+
+/** The open workspace's public trust page settings; null when it was never set up or this person is not an owner. */
+export async function trustPage(): Promise<TrustPage | null> {
+  const { workspaceId } = get();
+  return workspaceId ? (await getBackend()).trustPage(workspaceId) : null;
+}
+export async function saveTrustPage(page: TrustPageInput): Promise<TrustPage> {
+  const { workspaceId } = get();
+  if (!workspaceId) throw new Error("No workspace is open.");
+  return (await getBackend()).setTrustPage(workspaceId, page);
+}
+
+/** Saves a scenario's chosen changes into its main model. The main model's own rules decide whether this person may. */
+export async function bringIntoWorkspace(workspaceId: string, change: ChangeSet): Promise<void> {
+  await (await getBackend()).push(workspaceId, change);
 }

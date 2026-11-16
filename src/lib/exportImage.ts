@@ -7,7 +7,7 @@ import { downloadBlob } from "./exporters";
 const PADDING = 56;
 const MAX_SIDE = 6000;
 
-interface Capture {
+export interface Capture {
   dataUrl: string;
   width: number;
   height: number;
@@ -35,6 +35,9 @@ async function capture(container: HTMLElement, nodes: Node[], format: "png" | "s
   const dataUrl = format === "png" ? await toPng(viewportElement, { ...options, pixelRatio: 2 }) : await toSvg(viewportElement, options);
   return { dataUrl, width, height };
 }
+
+/** The picture of a diagram as data, for exports that place it inside a document. */
+export const capturePng = (container: HTMLElement, nodes: Node[]): Promise<Capture> => capture(container, nodes, "png");
 
 async function dataUrlToBlob(dataUrl: string): Promise<Blob> {
   return (await fetch(dataUrl)).blob();

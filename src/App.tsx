@@ -9,6 +9,7 @@ import { AskPage } from "@/pages/AskPage";
 import { AuditPage } from "@/pages/AuditPage";
 import { ChecksPage } from "@/pages/ChecksPage";
 import { DecisionsPage } from "@/pages/DecisionsPage";
+import { DocumentPage } from "@/pages/DocumentPage";
 import { DiagramEditorPage } from "@/pages/DiagramEditorPage";
 import { DiagramsPage } from "@/pages/DiagramsPage";
 import { EmbedPage } from "@/pages/EmbedPage";
@@ -19,6 +20,7 @@ import { ReviewPage, ReviewsPage } from "@/pages/ReviewsPages";
 import { ScenariosPage } from "@/pages/ScenariosPage";
 import { SettingsPage } from "@/pages/SettingsPage";
 import { SharedViewPage } from "@/pages/SharedViewPage";
+import { TrustPage } from "@/pages/TrustPage";
 import { VersionPage, VersionsPage } from "@/pages/VersionsPages";
 
 function NotFound() {
@@ -42,6 +44,7 @@ export default function App() {
         <Route path="/ask" element={<AskPage />} />
         <Route path="/health" element={<HealthPage />} />
         <Route path="/checks" element={<ChecksPage />} />
+        <Route path="/document" element={<DocumentPage />} />
         <Route path="/decisions" element={<DecisionsPage />} />
         <Route path="/decisions/:id" element={<DecisionsPage />} />
         <Route path="/ai" element={<AiInboxPage />} />
@@ -67,6 +70,8 @@ export default function App() {
       <Route path="/share" element={<SharedViewPage />} />
       {/* A live link shows one diagram from the hosted backend, also without signing in. */}
       {cloudEnabled && <Route path="/embed/:token" element={<EmbedPage />} />}
+      {/* The public trust page: where personal data is kept and who receives it. No sign-in. */}
+      {cloudEnabled && <Route path="/trust/:token" element={<TrustPage />} />}
       {/* With a hosted backend, everything else waits for sign-in and an open workspace. */}
       {/* Presenting shows one diagram with nothing around it; it still needs the workspace, so it waits for sign-in too. */}
       <Route path="/present/:id" element={cloudEnabled ? <CloudGate><PresentPage /></CloudGate> : <PresentPage />} />

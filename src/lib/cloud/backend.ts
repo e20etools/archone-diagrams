@@ -1,5 +1,6 @@
 import type { AuditCheck, AuditPage, AuditQuery } from "./audit";
 import type { Comment, CommentDraft, CommentPatch, Review, ReviewSettings, ReviewStage, VersionInfo } from "./collab";
+import type { TrustPage, TrustPageInput } from "../trust";
 import type { ChangeSet, Tables } from "./tables";
 
 /**
@@ -31,6 +32,8 @@ export interface WorkspaceSummary {
   /** The workspace this one is a scenario of, or null for a workspace in its own right. */
   scenarioOf: string | null;
   scenarioNote: string;
+  /** When the workspace was created. For a scenario, that is when it was copied from its main model. */
+  createdAt: string | null;
   /** The domains an editor is limited to, or null when they may change the whole model. */
   domains: string[] | null;
 }
@@ -178,6 +181,10 @@ export interface Backend {
 
   /** Copies the model into a new workspace tied to this one, and returns the new workspace's id. */
   createScenario(workspaceId: string, name: string, note: string): Promise<string>;
+
+  /** The public trust page's settings, or null when it was never set up. Owners only. */
+  trustPage(workspaceId: string): Promise<TrustPage | null>;
+  setTrustPage(workspaceId: string, page: TrustPageInput): Promise<TrustPage>;
 
   /** The audit log, newest first. Owners only; anyone else gets an empty page. */
   listAudit(workspaceId: string, query: AuditQuery): Promise<AuditPage>;

@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { IntegrationsCard } from "@/components/cloud/IntegrationsCard";
 import { MembersCard } from "@/components/cloud/MembersCard";
+import { TrustPageCard } from "@/components/cloud/TrustPageCard";
 import { ReviewSettingsCard } from "@/components/cloud/ReviewSettingsCard";
 import { Badge, Button, CommitInput, Field, Input, Modal, countOf, useNotice } from "@/components/ui";
 import { cloudEnabled } from "@/lib/cloud/config";
@@ -124,6 +125,7 @@ export function SettingsPage() {
       {cloudEnabled && <MembersCard />}
       {cloudEnabled && <ReviewSettingsCard />}
       {cloudEnabled && <IntegrationsCard />}
+      {cloudEnabled && <TrustPageCard />}
 
       <Card title="AI drafting" text="AI drafts always wait for your review. The key stays on the server and is never sent to the browser.">
         {ai === null ? (

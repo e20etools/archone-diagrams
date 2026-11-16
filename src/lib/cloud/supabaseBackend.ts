@@ -1,3 +1,4 @@
+import type { TrustPage } from "../trust";
 import { AUDIT_PAGE_SIZE, cleanSearch, dayBounds, type AuditEntry } from "./audit";
 import { createClient, type PostgrestError, type RealtimeChannel, type SupabaseClient } from "@supabase/supabase-js";
 import { BackendError, type ApiKeyInfo, type Backend, type CloudUser, type LiveLink, type WebhookInfo, type Invite, type LiveHandlers, type Member, type Peer, type PendingInvite, type Role, type WorkspaceSummary } from "./backend";
@@ -24,6 +25,14 @@ function fail(error: PostgrestError | { message: string; status?: number; code?:
   throw new BackendError(code ? "invalid" : "unknown", message);
 }
 
+const trustRow = (r: Row): TrustPage => ({
+  token: String(r.token ?? ""),
+  enabled: r.enabled === true,
+  title: String(r.title ?? ""),
+  intro: String(r.intro ?? ""),
+  contact: String(r.contact ?? ""),
+  diagramId: typeof r.diagram_id === "string" && r.diagram_id ? r.diagram_id : null,
+});
 const stamp = (value: unknown): string => {
   const date = new Date(String(value));
   return Number.isNaN(date.getTime()) ? new Date(0).toISOString() : date.toISOString();
@@ -171,17 +180,17 @@ export function createSupabaseBackend(url: string, key: string): Backend {
 
     async listWorkspaces() {
       const id = await uid();
-      let { data, error } = await supabase.from("workspace_members").select("role, domains, workspaces (id, name, scenario_of, scenario_note)").eq("user_id", id);
+      let { data, error } = await supabase.from("workspace_members").select("role, domains, workspaces (id, name, scenario_of, scenario_note, created_at)").eq("user_id", id);
       // A database that has not had the domain-limit migration yet has no such column; everything else still works.
       if (error && (error.code === "42703" || /domains/.test(error.message))) {
-        ({ data, error } = (await supabase.from("workspace_members").select("role, workspaces (id, name, scenario_of, scenario_note)").eq("user_id", id)) as unknown as { data: typeof data; error: typeof error });
+        ({ data, error } = (await supabase.from("workspace_members").select("role, workspaces (id, name, scenario_of, scenario_note, created_at)").eq("user_id", id)) as unknown as { data: typeof data; error: typeof error });
       }
       if (error) fail(error, "Your workspaces could not be listed.");
       const out: WorkspaceSummary[] = [];
-      type Listed = { id: string; name: string; scenario_of: string | null; scenario_note: string | null };
+      type Listed = { id: string; name: string; scenario_of: string | null; scenario_note: string | null; created_at?: string | null };
       for (const row of (data ?? []) as unknown as { role: Role; domains: string[] | null; workspaces: Listed | Listed[] | null }[]) {
         const workspace = Array.isArray(row.workspaces) ? row.workspaces[0] : row.workspaces;
-        if (workspace) out.push({ id: workspace.id, name: workspace.name, role: row.role, scenarioOf: workspace.scenario_of ?? null, scenarioNote: workspace.scenario_note ?? "", domains: row.role === "editor" && Array.isArray(row.domains) && row.domains.length ? row.domains : null });
+        if (workspace) out.push({ id: workspace.id, name: workspace.name, role: row.role, scenarioOf: workspace.scenario_of ?? null, scenarioNote: workspace.scenario_note ?? "", createdAt: workspace.created_at ? stamp(workspace.created_at) : null, domains: row.role === "editor" && Array.isArray(row.domains) && row.domains.length ? row.domains : null });
       }
       return out.sort((a, b) => a.name.localeCompare(b.name));
     },
@@ -440,6 +449,18 @@ export function createSupabaseBackend(url: string, key: string): Backend {
     async setMemberDomains(workspaceId, userId, domains) {
       const { error } = await supabase.rpc("set_member_domains", { p_workspace: workspaceId, p_user: userId, p_domains: domains });
       if (error) fail(error, "The limit could not be changed.");
+    },
+    async trustPage(workspaceId) {
+      const { data, error } = await supabase.from("trust_pages").select("token, enabled, title, intro, contact, diagram_id").eq("workspace_id", workspaceId).maybeSingle();
+      // A database without the trust page migration has no such table: the page is simply not set up.
+      if (error && (error.code === "42P01" || error.code === "PGRST205")) return null;
+      if (error) fail(error, "The trust page settings could not be read.");
+      return data ? trustRow(data as Row) : null;
+    },
+    async setTrustPage(workspaceId, page) {
+      const { data, error } = await supabase.rpc("set_trust_page", { p_workspace: workspaceId, p_enabled: page.enabled, p_title: page.title, p_intro: page.intro, p_contact: page.contact, p_diagram: page.diagramId });
+      if (error) fail(error, "The trust page could not be saved.");
+      return trustRow(data as Row);
     },
     async createScenario(workspaceId, name, note) {
       const { data, error } = await supabase.rpc("create_scenario", { p_workspace: workspaceId, p_name: name, p_note: note });

@@ -9,6 +9,7 @@ import { copyFile, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import JSZip from "jszip";
 import puppeteer from "puppeteer-core";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -638,6 +639,35 @@ try {
   await page.goto(`${base}/health?tab=freshness`, { waitUntil: "networkidle0" });
   await page.waitForSelector("[data-freshness]");
   check("freshness says nothing is due in a model that was just made", await hasText(page, "Nothing is due."));
+
+  // The architecture as a Word document and as slides, written in the browser.
+  await page.goto(`${base}/document`, { waitUntil: "networkidle0" });
+  await page.waitForSelector("[data-document-diagrams] li");
+  const docDiagrams = await count(page, "[data-document-diagrams] li");
+  await page.type("[data-document-title]", "Shop architecture review");
+  await page.click("[data-document-word]");
+  await page.waitForFunction(() => document.querySelector("[data-document-done]")?.textContent.includes(".docx"), { timeout: 90000 });
+  await sleep(800);
+  const docxName = (await readdir(downloads)).find((f) => f.endsWith(".docx"));
+  const docx = docxName ? await JSZip.loadAsync(await readFile(join(downloads, docxName))) : null;
+  const docXml = docx ? await docx.file("word/document.xml").async("string") : "";
+  const docPictures = docx ? Object.keys(docx.files).filter((f) => f.startsWith("word/media/")).length : 0;
+  check(
+    "the model is written up as a Word document with a picture of each diagram",
+    /^shop-architecture-review-\d{4}-\d\d-\d\d\.docx$/.test(docxName ?? "") && docPictures === docDiagrams && docXml.includes("Shop architecture review") && docXml.includes("How the parts connect") && !(await hasText(page, "could not be drawn")),
+    `${docPictures} pictures for ${docDiagrams} diagrams`,
+  );
+  if (docxName) await copyFile(join(downloads, docxName), join(shots, "export-sample.docx"));
+  await page.click("[data-document-slides]");
+  await page.waitForFunction(() => document.querySelector("[data-document-done]")?.textContent.includes(".pptx"), { timeout: 90000 });
+  await sleep(800);
+  const pptxName = (await readdir(downloads)).find((f) => f.endsWith(".pptx"));
+  const pptx = pptxName ? await JSZip.loadAsync(await readFile(join(downloads, pptxName))) : null;
+  const slideCount = pptx ? Object.keys(pptx.files).filter((f) => /^ppt\/slides\/slide\d+\.xml$/.test(f)).length : 0;
+  const slidePictures = pptx ? Object.keys(pptx.files).filter((f) => f.startsWith("ppt/media/")).length : 0;
+  check("and as slides, one diagram to a slide", slideCount >= docDiagrams + 2 && slidePictures >= docDiagrams, `${slideCount} slides, ${slidePictures} pictures`);
+  if (pptxName) await copyFile(join(downloads, pptxName), join(shots, "export-sample.pptx"));
+  await shot(page, "14-document");
 
   // A stamped export, and the check its code leads to.
   const stampDiagram = Object.values((await stored()).diagrams).find((d) => d.name === "Inside Online store").id;

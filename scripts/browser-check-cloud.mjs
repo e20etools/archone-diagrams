@@ -713,6 +713,57 @@ try {
   await visit(vera, `${base}/audit`);
   check("someone who is not an owner is not offered the audit log, and gets no entries by its address", (await offered(ana)) && !(await offered(vera)) && (await hasText(vera, "Only owners can read the audit log")) && (await count(vera, "[data-audit-entry]")) === 0);
 
+  // A scenario's agreed changes are brought into the main model, one tick each.
+  await visit(ana, `${base}/scenarios`);
+  await ana.waitForSelector("[data-scenarios]");
+  await clickText(ana, "Open and compare");
+  await ana.waitForSelector("[data-scenario-merge]");
+  const ownWork = await ana.$$eval('[data-merge-group="scenario"] li', (rows) => rows.map((r) => r.innerText.replace(/\s+/g, " ").trim()));
+  const bringLabel = await ana.$eval("[data-merge-bring]", (e) => e.textContent.trim());
+  check("a scenario offers its own changes ticked, apart from what the main model changed since", ownWork.length === 1 && ownWork[0].includes("Renamed in the scenario") && bringLabel === "Bring 1 change into Payments platform", `${bringLabel}; ${ownWork.length} of its own`);
+  await shot(ana, "29-scenario-merge");
+  await ana.click("[data-merge-bring]");
+  await waitText(ana, 'Brought 1 change into "Payments platform".');
+  check("after bringing a change over, the scenario no longer lists it", (await count(ana, '[data-merge-group="scenario"]')) === 0);
+  await clickText(ana, "Back to Payments platform");
+  await ana.waitForSelector("[data-scenarios]");
+  await clickText(ana, "Model", "nav a");
+  await ana.waitForSelector("tbody tr");
+  await waitText(ana, "Renamed in the scenario");
+  check("the change is now in the main model", true);
+
+  // The public trust page: set up by an owner, read by anyone with the address.
+  await visit(vera, `${base}/settings`);
+  await waitText(vera, "Workspace name");
+  await visit(ana, `${base}/settings`, "[data-trust-card] [data-trust-title]");
+  check("only an owner is offered the trust page", (await count(vera, "[data-trust-card]")) === 0 && (await ana.$eval("[data-trust-state]", (e) => e.textContent.trim())) === "Off" && (await ana.$eval("[data-trust-on]", (e) => e.disabled)));
+  await ana.type("[data-trust-title]", "How we handle your data");
+  const trustDiagram = await ana.$eval("[data-trust-diagram-choice]", (e) => e.options[1].value);
+  await ana.select("[data-trust-diagram-choice]", trustDiagram);
+  await ana.$eval("[data-trust-preview-toggle]", (e) => e.click());
+  await ana.waitForSelector("[data-trust-preview] .object-node");
+  check("the owner sees what the page will show before switching it on", (await hasText(ana, "Where personal data is kept")) && (await hasText(ana, "Outside parties that receive personal data")));
+  await ana.$eval("[data-trust-on]", (e) => e.click());
+  await ana.waitForSelector("[data-trust-link] input");
+  const trustUrl = await ana.$eval("[data-trust-link] input", (e) => e.value);
+  await shot(ana, "30-trust-settings");
+  const reader = await open();
+  await visit(reader, trustUrl, "[data-trust-page] .object-node");
+  const readerText = await reader.evaluate(() => document.body.innerText);
+  check(
+    "the trust page opens for someone who is not signed in, with the statements and the chosen diagram",
+    /\/trust\/[a-z0-9]{16,}$/.test(trustUrl) && readerText.includes("How we handle your data") && readerText.includes("Movement between regions") && (await count(reader, "nav[aria-label=Main]")) === 0 && (await count(reader, "input[type=password]")) === 0,
+    trustUrl.replace(/.*\/trust\//, "/trust/"),
+  );
+  await shot(reader, "31-trust-page");
+  await ana.bringToFront();
+  await ana.$eval("[data-trust-off]", (e) => e.click());
+  await until(ana, () => document.querySelector("[data-trust-state]")?.textContent.trim() === "Off", 5000);
+  await reader.reload({ waitUntil: "networkidle0" });
+  await waitText(reader, "This page is not available");
+  check("switching the page off closes its address", (await count(reader, "[data-trust-content]")) === 0);
+  await reader.close();
+
   // The owner deletes the shared workspace while someone else has it open.
   await visit(vera, `${base}/settings`);
   check("someone who is not an owner is not offered deleting the workspace", (await hasText(vera, "Workspace name")) && !(await hasText(vera, "Delete this workspace")));

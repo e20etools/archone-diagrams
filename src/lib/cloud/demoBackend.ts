@@ -1,5 +1,6 @@
 import { nextAdrNumber, reviewAdr } from "../adr";
 import { scopeRefusal } from "./scope";
+import type { TrustPage } from "../trust";
 import type { Workspace } from "../types";
 import { AUDIT_PAGE_SIZE, matchesQuery, type AuditEntry } from "./audit";
 import { BackendError, canCommentRole, canEditRole, type ApiKeyInfo, type Backend, type LiveLink, type WebhookInfo, type CloudUser, type LiveHandlers, type Peer, type Role } from "./backend";
@@ -18,7 +19,7 @@ import { emptyTables, patchTables, sameValue, splitNodeKey, type ChangeSet, type
 
 interface Db {
   users: Record<string, { id: string; email: string; name: string; password: string }>;
-  workspaces: Record<string, { id: string; name: string; scenarioOf?: string; scenarioNote?: string }>;
+  workspaces: Record<string, { id: string; name: string; scenarioOf?: string; scenarioNote?: string; createdAt?: string }>;
   members: { workspaceId: string; userId: string; role: Role; domains?: string[] | null }[];
   invites: { id: string; workspaceId: string; email: string; role: Role; by: string }[];
   rows: Record<string, Tables>;
@@ -29,6 +30,7 @@ interface Db {
   apiKeys?: Record<string, ApiKeyInfo[]>;
   webhooks?: Record<string, WebhookInfo[]>;
   liveLinks?: (LiveLink & { workspaceId: string })[];
+  trustPages?: Record<string, TrustPage>;
   /** A stand-in for the audit log the real database writes with triggers. It covers the model, members and invitations. */
   audit?: Record<string, AuditEntry[]>;
 }
@@ -226,13 +228,13 @@ export function createDemoBackend(): Backend {
       const user = me();
       return db.members
         .filter((m) => m.userId === user.id && db.workspaces[m.workspaceId])
-        .map((m) => ({ id: m.workspaceId, name: db.workspaces[m.workspaceId].name, role: m.role, scenarioOf: db.workspaces[m.workspaceId].scenarioOf ?? null, scenarioNote: db.workspaces[m.workspaceId].scenarioNote ?? "", domains: m.role === "editor" && m.domains?.length ? m.domains : null }))
+        .map((m) => ({ id: m.workspaceId, name: db.workspaces[m.workspaceId].name, role: m.role, scenarioOf: db.workspaces[m.workspaceId].scenarioOf ?? null, scenarioNote: db.workspaces[m.workspaceId].scenarioNote ?? "", createdAt: db.workspaces[m.workspaceId].createdAt ?? null, domains: m.role === "editor" && m.domains?.length ? m.domains : null }))
         .sort((a, b) => a.name.localeCompare(b.name));
     },
     async createWorkspace(name) {
       const db = read();
       const workspaceId = id("ws");
-      db.workspaces[workspaceId] = { id: workspaceId, name: name.trim() };
+      db.workspaces[workspaceId] = { id: workspaceId, name: name.trim(), createdAt: new Date().toISOString() };
       db.members.push({ workspaceId, userId: me().id, role: "owner" });
       log(db, workspaceId, "member", me().id, me().name || me().email, "added", { role: [null, "owner"] });
       db.rows[workspaceId] = emptyTables();
@@ -637,13 +639,29 @@ export function createDemoBackend(): Backend {
       write(db);
       bus.postMessage({ type: "members" } satisfies Message);
     },
+    async trustPage(workspaceId) {
+      const db = read();
+      return roleOf(db, workspaceId, me().id) === "owner" ? (db.trustPages?.[workspaceId] ?? null) : null;
+    },
+    async setTrustPage(workspaceId, page) {
+      const db = read();
+      requireRole(db, workspaceId, (r) => r === "owner");
+      if (page.enabled && !page.title.trim()) throw new BackendError("invalid", "Give the page a heading before switching it on.");
+      if (page.diagramId && !db.rows[workspaceId]?.diagrams[page.diagramId]) throw new BackendError("invalid", "That diagram no longer exists.");
+      const before = db.trustPages?.[workspaceId];
+      const saved: TrustPage = { token: before?.token ?? `${id("trust")}${id("x")}`.replace(/_/g, ""), enabled: page.enabled, title: page.title.trim(), intro: page.intro.trim(), contact: page.contact.trim(), diagramId: page.diagramId || null };
+      (db.trustPages ??= {})[workspaceId] = saved;
+      log(db, workspaceId, "trust page", workspaceId, saved.title, before ? "updated" : "created");
+      write(db);
+      return saved;
+    },
     async createScenario(workspaceId, name, note) {
       await pause();
       const db = read();
       requireRole(db, workspaceId, canEditRole);
       if (db.workspaces[workspaceId].scenarioOf) throw new BackendError("invalid", "A scenario cannot have scenarios of its own. Create it from the main workspace.");
       const scenarioId = id("ws");
-      db.workspaces[scenarioId] = { id: scenarioId, name: name.trim(), scenarioOf: workspaceId, scenarioNote: note };
+      db.workspaces[scenarioId] = { id: scenarioId, name: name.trim(), scenarioOf: workspaceId, scenarioNote: note, createdAt: new Date().toISOString() };
       for (const m of db.members.filter((x) => x.workspaceId === workspaceId && canEditRole(x.role))) db.members.push({ workspaceId: scenarioId, userId: m.userId, role: m.role });
       const source = db.rows[workspaceId] ?? emptyTables();
       db.rows[scenarioId] = { ...(JSON.parse(JSON.stringify(source)) as Tables), proposals: {}, adrs: {} };

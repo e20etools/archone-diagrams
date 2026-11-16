@@ -177,8 +177,9 @@ compared with the main model as it is now.
   commenters do not, so a scenario never shows them more than the published version does.
 - Comments, versions and drafts are not copied. Later changes to members are not carried
   over either.
-- A scenario is compared, not merged: there is no button that writes it back. Deleting the
-  main workspace deletes its scenarios; an owner deletes one scenario under Settings.
+- Agreed changes are brought into the main model from the scenario's page, one tick each
+  (see "Bringing a scenario into the main model" below). Deleting the main workspace
+  deletes its scenarios; an owner deletes one scenario under Settings.
 - A workspace can have 20 scenarios. A scenario cannot be branched again.
 
 ### Editors limited to domains (NFR-02, hosted mode)
@@ -609,6 +610,72 @@ the sentence and who said it, and nothing is saved until it is accepted. It is r
 built-in rules in the browser, with no AI model: it finds what was named and how it was
 said to connect, and does not understand a decision, a doubt or a "no". Audio is not read.
 
+### Bringing a scenario into the main model (hosted mode)
+
+A scenario's Scenarios page lists every difference from the main model with a tick beside
+it, and **Bring changes into** the main model writes the ticked ones there. The differences
+come in three groups:
+
+- **Changed in this scenario**: the scenario's own work, ticked to begin with.
+- **Changed on both sides**: the main model changed the same thing since the scenario was
+  created. Unticked; bringing one over replaces the main model's version.
+- **Changed only in the main model**: the main model moved on. Unticked; bringing one over
+  would undo that change.
+
+What you should know:
+
+- No copy of the starting point is kept. The groups are worked out from when each object,
+  relationship and diagram was last changed, compared with when the scenario was created.
+  Moving a box does not stamp its diagram, so a layout-only difference is offered as the
+  scenario's unless the main diagram's own settings changed since.
+- A ticked relationship or diagram brings the objects it needs with it, and a ticked
+  removal takes the main model's arrows and boxes for that object too. The page says so
+  before anything is written.
+- The changes are saved as the edits of the person who brings them, so the main model's
+  roles, domain limits, review and audit log apply as for any edit. Only its owners and
+  editors are offered the button.
+- A ticked diagram is made to look as it does in the scenario; it is not merged box by box.
+  The scenario itself is left as it is. Decisions and drafts are not brought over.
+
+### Public trust page (hosted mode)
+
+Settings → **Public trust page** lets an owner publish one page, open to anyone who has
+its address, that says where personal data is kept, which outside parties receive it and
+between which regions it moves, with one chosen diagram. It is worked out from the data
+fields ("Personal data", "Data residency") and from which external systems are connected
+to something that holds personal data. An external system's "Public purpose" field is
+shown as what that party does for you.
+
+- **What leaves the workspace:** the names of those external systems with their region and
+  public purpose; for systems that hold personal data and their neighbours, only the
+  region and the fact, without a name; and the chosen diagram's box names, kinds and arrow
+  labels. Descriptions, owners, tags, technology, protocols, classifications and all other
+  fields are not sent. The Preview in Settings shows exactly what the page will show.
+- The database makes this cut itself (`trust_view()`), so the rest never reaches the
+  visitor's browser. A test checks that the database and the app make the same cut.
+- With review switched on, the page shows the approved version.
+- Switching the page off closes its address; switching it on again reopens the same
+  address. Changes to the settings are written to the audit log.
+- The page states what the model records. It is not a legal notice, and a system with no
+  data fields filled in is simply not counted.
+
+### The architecture as a document or slides
+
+**Document** writes the model up as a Word file (.docx) or as PowerPoint slides (.pptx),
+in the browser, with nothing sent anywhere. You choose the title, which diagrams and in
+what order, and which sections follow them.
+
+- Word: a title page, the counts, one chapter per diagram (picture, description, a table
+  of what it shows and a table of how the parts connect), then the inventory, the
+  decisions, findings from the chosen rule packs and the personal-data summary. Headings
+  are real headings, so Word can add a table of contents (References → Table of Contents).
+- Slides: title, counts, one diagram to a slide with its description in the speaker notes,
+  then decisions, findings and the personal-data tables. The inventory is Word only.
+- Each diagram is drawn off-screen and photographed, which takes a moment per diagram. One
+  that cannot be drawn within six seconds goes in without its picture, and the page says so.
+- The pictures are images, not editable shapes. Both files have been opened with
+  LibreOffice here; they have not been opened in Microsoft Word or PowerPoint.
+
 ## Run it
 
 Needs Node.js 20.19 or newer.
@@ -627,10 +694,10 @@ build does not reload.
 ## Check it
 
 ```bash
-npm test                   # 302 tests: model, decisions, arranging, health, CALM, AI, questions, checks, MCP, import readers, sync engine, comparison, and the database rules and the API on a real Postgres
+npm test                   # 316 tests: model, decisions, arranging, health, CALM, scenario merging, the trust page, the document, AI, questions, checks, MCP, import readers, sync engine, comparison, and the database rules and the API on a real Postgres
 npm run build              # type-check and production build into dist/
-npm run test:browser       # 117 end-to-end checks of browser-only mode (run after a build)
-npm run test:browser:cloud # 76 end-to-end checks of hosted mode with several people
+npm run test:browser       # 119 end-to-end checks of browser-only mode (run after a build)
+npm run test:browser:cloud # 83 end-to-end checks of hosted mode with several people
 ```
 
 `test:browser` serves the production build, including `api/ai.js`, and walks through the
@@ -715,6 +782,8 @@ src/lib/            the model and all logic, free of React (tested in *.test.ts)
   exporters.ts      CSV, JSON, Mermaid, PlantUML
   repository.ts     where the workspace is stored (the seam for the phase 2 database)
   checks/           rule packs, the data fields and the data map
+  trust.ts          the public trust page: what it says and what may leave the workspace
+  document/         the architecture as a Word file or slides
   mcp/              the MCP server for assistants
   ask/              ask the architecture: answers read from the model, the model as text for the AI model
   ai/               prompt, draft validation, built-in rules, provider calls, review

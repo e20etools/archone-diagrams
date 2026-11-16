@@ -1,6 +1,6 @@
 import { ArrowLeftRight, GitBranch } from "lucide-react";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { ComparisonList } from "@/components/cloud/ComparisonView";
+import { ScenarioMerge } from "@/components/cloud/ScenarioMerge";
 import { Button, EmptyState, Field, Input, Textarea } from "@/components/ui";
 import { createScenario, errorText, openWorkspace, tablesOfWorkspace, useCanEdit, useSession } from "@/lib/cloud/session";
 import { toTables, type Tables } from "@/lib/cloud/tables";
@@ -72,20 +72,18 @@ export function ScenariosPage() {
         )}
         <h2 className="mt-7 font-semibold">What this scenario changes</h2>
         <p className="text-[13px] text-ink-soft mt-0.5">
-          Compared with {main ? `"${main.name}"` : "the main model"} as it is now, not as it was when the scenario was created. Changes made there since then show up here too, as differences.
+          Compared with {main ? `"${main.name}"` : "the main model"} as it is now. Tick the changes that are agreed and bring them into that model; the rest stay here.
         </p>
         <div className="mt-3" data-scenario-comparison>
           {!main ? (
             <p className="text-ink-soft">You are no longer a member of the workspace this scenario came from, so there is nothing to compare it with.</p>
           ) : current ? (
-            <ComparisonList before={current} after={target} emptyText="Nothing differs yet. Change the model or a diagram in this scenario and come back." />
+            <ScenarioMerge main={main} mainTables={current} scenarioTables={target} since={here.createdAt} onMerged={async () => setCurrent(await tablesOfWorkspace(main.id))} />
           ) : (
             !problem && <p className="text-ink-soft">Reading the main model</p>
           )}
         </div>
-        <p className="mt-6 text-[13px] text-ink-soft">
-          A scenario is not merged back. When it is agreed, make its changes in the main model with this list beside you. To remove the scenario, an owner deletes it under Settings.
-        </p>
+        <p className="mt-6 text-[13px] text-ink-soft">To remove the scenario, an owner deletes it under Settings.</p>
       </div>
     );
   }
