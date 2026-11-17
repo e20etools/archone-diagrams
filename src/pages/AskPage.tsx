@@ -7,6 +7,7 @@ import { AiError, fetchAiStatus, type AiStatus } from "@/lib/ai/client";
 import { answerParts, exampleQuestions, type Answer } from "@/lib/ask/ask";
 import { ask, clearExchanges, getAiChoice, rememberExchange, setAiChoice, useAskHistory } from "@/lib/ask/run";
 import { useSession } from "@/lib/cloud/session";
+import { allowanceText, useAiUsage } from "@/lib/cloud/aiUsage";
 import { useWorkspace } from "@/lib/store";
 import type { Workspace } from "@/lib/types";
 
@@ -97,6 +98,7 @@ function AnswerCard({ ws, question, answer }: { ws: Workspace; question: string;
 
 export function AskPage() {
   const ws = useWorkspace();
+  const allowance = allowanceText(useAiUsage().report);
   const history = useAskHistory();
   // Answers belong to the workspace they were asked in.
   const workspaceKey = useSession((s) => s.workspaceId) ?? "local";
@@ -205,6 +207,11 @@ export function AskPage() {
                 />
                 <span>
                   For other questions, ask the AI model ({ai.engine ?? "configured on this server"}). This sends the names, owners, descriptions and relationships of this model to that provider with each such question.
+                  {allowance && (
+                    <span className="mt-1 block text-xs text-ink-faint" data-ai-allowance>
+                      {allowance}
+                    </span>
+                  )}
                 </span>
               </label>
             ) : (

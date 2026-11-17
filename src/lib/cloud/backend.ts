@@ -55,6 +55,37 @@ export interface Member {
   domains: string[] | null;
   categoryRoles: CategoryRoles;
 }
+/** Fair use of the AI as the database counts it: one's own use and limits, the workspace's, and for owners use by person and by day. */
+export interface AiLimits {
+  hour: number;
+  day: number;
+  tokensDay: number;
+  paused: boolean;
+}
+export interface AiUsePerson {
+  userId: string;
+  name: string;
+  role: string;
+  /** Requests in the last 24 hours, 7 days and 30 days. */
+  day: number;
+  week: number;
+  month: number;
+  tokensDay: number;
+  tokensMonth: number;
+  failed: number;
+  lastUsed: string | null;
+  limits: AiLimits;
+}
+export interface AiUsageReport {
+  me: { hour: number; day: number; tokensDay: number; limits: AiLimits };
+  workspace: { day: number; tokensDay: number; limits: { day: number; tokensDay: number } };
+  /** Owners only. */
+  people: AiUsePerson[] | null;
+  days: { day: string; requests: number; tokens: number }[] | null;
+  /** True in a scenario, which follows the limits of the workspace it was made from. */
+  scenario: boolean;
+}
+
 export interface PendingInvite {
   id: string;
   email: string;
@@ -173,6 +204,8 @@ export interface Backend {
   acceptInvite(inviteId: string): Promise<string>;
   declineInvite(inviteId: string): Promise<void>;
   listPeople(workspaceId: string): Promise<{ members: Member[]; invites: PendingInvite[] }>;
+  /** The AI use and limits of the open workspace; null where the database does not count AI use. */
+  aiUsageReport(workspaceId: string): Promise<AiUsageReport | null>;
   invite(workspaceId: string, email: string, role: Role): Promise<void>;
   cancelInvite(inviteId: string): Promise<void>;
   setRole(workspaceId: string, userId: string, role: Role): Promise<void>;

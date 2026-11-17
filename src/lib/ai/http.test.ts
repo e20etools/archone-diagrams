@@ -95,7 +95,8 @@ describe("AI endpoint over HTTP", () => {
       drafts++;
       return new Response(JSON.stringify(answer), { status: 200 });
     }) as unknown as typeof fetch;
-    const env = { ...configured, VITE_SUPABASE_URL: "https://proj.supabase.co/", VITE_SUPABASE_ANON_KEY: "anon" };
+    // Fair use is tested on its own below.
+    const env = { ...configured, VITE_SUPABASE_URL: "https://proj.supabase.co/", VITE_SUPABASE_ANON_KEY: "anon", AI_FAIR_USE: "off" };
     const handle = createAiHandler(() => env, network);
 
     expect(await (await handle(new Request(URL_))).json()).toMatchObject({ needsSignIn: true });
@@ -109,6 +110,71 @@ describe("AI endpoint over HTTP", () => {
     expect(seen.at(-1)).toEqual({ url: "https://proj.supabase.co/auth/v1/user", auth: "Bearer good-token", apikey: "anon" });
     // The switch for a host that wants accounts in the app but an open AI endpoint.
     expect((await createAiHandler(() => ({ ...env, AI_REQUIRE_SIGN_IN: "false" }), network)(post())).status).toBe(200);
+  });
+
+  it("asks the database before every request, counts it, and closes it with the tokens used", async () => {
+    const calls: { name: string; auth: string | null; args: Record<string, unknown> }[] = [];
+    let drafts = 0;
+    let refuse: Record<string, unknown> | null = null;
+    let databaseDown = false;
+    const network = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const headers = new Headers(init?.headers);
+      if (url.endsWith("/auth/v1/user")) return new Response(JSON.stringify({ id: "user-1" }), { status: 200 });
+      const rpc = /\/rest\/v1\/rpc\/(\w+)$/.exec(url)?.[1];
+      if (rpc) {
+        calls.push({ name: rpc, auth: headers.get("authorization"), args: JSON.parse(String(init?.body)) });
+        if (databaseDown) return new Response("{}", { status: 500 });
+        if (rpc === "ai_begin") return new Response(JSON.stringify(refuse ?? { allowed: true, usage: 7, key: "k-7", remaining: { hour: 4, day: 20, tokens: 9000 } }), { status: 200 });
+        return new Response(null, { status: 204 });
+      }
+      drafts++;
+      return new Response(JSON.stringify({ ...answer, usage: { total_tokens: 321 } }), { status: 200 });
+    }) as unknown as typeof fetch;
+    const env = { ...configured, VITE_SUPABASE_URL: "https://proj.supabase.co", VITE_SUPABASE_ANON_KEY: "anon" };
+    const handle = createAiHandler(() => env, network);
+    const signed = { authorization: "Bearer good-token" };
+    const workspace = "5e6b7d00-a3d6-4dce-bbbe-20e319346f51";
+    const withWorkspace = JSON.stringify({ ...JSON.parse(prompt), workspaceId: workspace });
+
+    const without = await handle(post(signed));
+    expect(without.status).toBe(400);
+    expect(await without.json()).toMatchObject({ error: "workspace_required" });
+    // A request that would be refused anyway is not counted.
+    expect((await handle(post(signed, JSON.stringify({ mode: "prompt", text: "", workspaceId: workspace })))).status).toBe(400);
+    expect(calls).toEqual([]);
+
+    const ok = await handle(post(signed, withWorkspace));
+    expect(ok.status).toBe(200);
+    expect(await ok.json()).toMatchObject({ allowance: { hour: 4, day: 20, tokens: 9000 - 321 } });
+    expect(calls).toEqual([
+      { name: "ai_begin", auth: "Bearer good-token", args: { p_workspace: workspace, p_kind: "text", p_global_day: 0 } },
+      { name: "ai_finish", auth: "Bearer good-token", args: { p_usage: 7, p_key: "k-7", p_tokens: 321, p_ok: true } },
+    ]);
+    expect(drafts).toBe(1);
+
+    refuse = { allowed: false, reason: "day", message: "You have used your 40 AI requests for the last 24 hours.", retryAt: "2026-11-18T09:00:00Z" };
+    const limited = await handle(post(signed, withWorkspace));
+    expect(limited.status).toBe(429);
+    expect(await limited.json()).toEqual({ error: "quota", reason: "day", message: "You have used your 40 AI requests for the last 24 hours.", retryAt: "2026-11-18T09:00:00Z" });
+    expect(drafts).toBe(1);
+
+    // When the limits cannot be checked, nothing is sent to the model.
+    refuse = null;
+    databaseDown = true;
+    const down = await handle(post(signed, withWorkspace));
+    expect(down.status).toBe(503);
+    expect(await down.json()).toMatchObject({ error: "limits_unavailable" });
+    expect(drafts).toBe(1);
+
+    // Groq's free plan gets a ceiling for everyone together unless the host sets one.
+    databaseDown = false;
+    calls.length = 0;
+    await createAiHandler(() => ({ ...env, AI_PROVIDER: "groq", AI_API_KEY: "gsk" }), network)(post(signed, withWorkspace));
+    expect(calls[0].args.p_global_day).toBe(900);
+    calls.length = 0;
+    await createAiHandler(() => ({ ...env, AI_GLOBAL_DAILY_REQUESTS: "50" }), network)(post(signed, withWorkspace));
+    expect(calls[0].args.p_global_day).toBe(50);
   });
 
   it("rejects unreadable bodies and unsupported methods", async () => {

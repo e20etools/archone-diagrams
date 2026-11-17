@@ -6,6 +6,7 @@ import type { CanvasHandle } from "@/components/canvas/DiagramCanvas";
 import { LiveLinks } from "@/components/cloud/LiveLinks";
 import type { DiagramStart } from "@/components/ImportDialog";
 import { Button, Field, Input, Modal, Select, Tabs, Textarea, cx } from "@/components/ui";
+import { allowanceText, useAiUsage } from "@/lib/cloud/aiUsage";
 import { AiError, draftFromImage, draftFromPrompt, fetchAiStatus, getAccessCode, type AiStatus, type DraftResult } from "@/lib/ai/client";
 import { draftToProposal, saveProposal } from "@/lib/ai/proposals";
 import { cloudEnabled } from "@/lib/cloud/config";
@@ -46,6 +47,7 @@ export interface DraftStart extends DiagramStart {
 }
 
 export function AiDraftDialog({ ws, targetDiagram, onClose, start }: { ws: Workspace; targetDiagram?: Diagram; onClose: () => void; start?: DraftStart }) {
+  const allowance = allowanceText(useAiUsage().report);
   const navigate = useNavigate();
   const [tab, setTab] = useState<"text" | "image" | "meeting">(start?.tab ?? "text");
   const [transcript, setTranscript] = useState("");
@@ -112,7 +114,14 @@ export function AiDraftDialog({ ws, targetDiagram, onClose, start }: { ws: Works
       onClose={onClose}
       footer={
         <>
-          <span className="mr-auto text-[13px] text-ink-soft">You review every suggestion before anything is saved.</span>
+          <span className="mr-auto text-[13px] text-ink-soft">
+            You review every suggestion before anything is saved.
+            {allowance && (
+              <span className="block text-xs text-ink-faint" data-ai-allowance>
+                {allowance}
+              </span>
+            )}
+          </span>
           <Button onClick={onClose}>Cancel</Button>
           <Button variant="primary" disabled={!ready || busy} icon={<Sparkles size={15} />} onClick={run}>
             {busy ? "Drafting" : "Create draft"}

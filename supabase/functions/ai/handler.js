@@ -4311,6 +4311,42 @@ var libraryItemSchema = objectType({
 	createdAt: stringType(),
 	updatedAt: stringType()
 });
+/**
+* Fair use of the AI in a workspace, set by its owners and applied by the server: whether AI is
+* on, who may use it, which features, limits per person and for the whole workspace (rolling
+* hour and 24 hours), and exceptions per person keyed by their user id.
+*/
+var limit = (max) => numberType().int().min(0).max(max);
+var aiPolicySchema = objectType({
+	id: literalType("workspace"),
+	enabled: booleanType(),
+	who: enumType([
+		"members",
+		"editors",
+		"owners"
+	]),
+	features: objectType({
+		text: booleanType(),
+		image: booleanType(),
+		ask: booleanType()
+	}),
+	perUser: objectType({
+		hour: limit(1e3),
+		day: limit(1e4),
+		tokensDay: limit(1e7)
+	}),
+	workspace: objectType({
+		day: limit(1e5),
+		tokensDay: limit(1e8)
+	}),
+	overrides: recordType(objectType({
+		day: limit(1e4).optional(),
+		hour: limit(1e3).optional(),
+		tokensDay: limit(1e7).optional(),
+		blocked: booleanType().optional()
+	})).default({}),
+	updatedAt: stringType()
+});
 objectType({
 	version: literalType(1),
 	name: stringType(),
@@ -4333,6 +4369,8 @@ objectType({
 	branding: recordType(brandingSchema).default({}),
 	/** The workspace's own changes to the component library and the protocols. */
 	library: recordType(libraryItemSchema).default({}),
+	/** The workspace's limits on AI use, one record keyed "workspace". Missing means the built-in limits. */
+	aiPolicy: recordType(aiPolicySchema).default({}),
 	updatedAt: stringType()
 });
 // src/lib/ai/prompt.ts
@@ -4676,15 +4714,45 @@ function answerText(provider, payload) {
 	const message = data?.choices?.[0]?.message?.content;
 	return (typeof message === "string" ? message : Array.isArray(message) ? message.map((part) => String(part?.text ?? "")).join("\n") : "").replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
 }
-async function handleAiRequest(body, env, fetchImpl = fetch) {
-	const parsed = requestSchema.safeParse(body);
-	if (!parsed.success) return {
+var badRequest = (body) => {
+	return {
 		status: 400,
 		body: {
 			error: "bad_request",
 			message: body?.mode === "ask" ? "Send a question of 3 to 1000 characters. If the model is very large, it may not fit in one question." : "Send a description of at least three characters, or a PNG, JPEG, WebP or GIF image under 5 MB."
 		}
 	};
+};
+/** Checks a request before anything is counted or sent: its kind, or the answer that refuses it. */
+function checkAiRequest(body) {
+	const parsed = requestSchema.safeParse(body);
+	if (!parsed.success) return {
+		ok: false,
+		result: badRequest(body)
+	};
+	return {
+		ok: true,
+		kind: parsed.data.mode === "prompt" ? "text" : parsed.data.mode
+	};
+}
+/**
+* Requests a day for everyone together, so one shared key stays within its provider's allowance.
+* AI_GLOBAL_DAILY_REQUESTS sets it; for Groq's free plan it is 900 unless set, otherwise none.
+*/
+function globalDailyLimit(env) {
+	const set = Number(env.AI_GLOBAL_DAILY_REQUESTS);
+	if (env.AI_GLOBAL_DAILY_REQUESTS?.trim() && Number.isFinite(set)) return Math.max(0, Math.floor(set));
+	return resolveProvider(env)?.id === "groq" ? 900 : 0;
+}
+/** The tokens a provider's answer says it used. */
+function usedTokens(provider, payload) {
+	const usage = payload?.usage ?? {};
+	const n = (v) => typeof v === "number" && Number.isFinite(v) && v > 0 ? Math.round(v) : 0;
+	return provider.id === "anthropic" ? n(usage.input_tokens) + n(usage.output_tokens) : n(usage.total_tokens) || n(usage.prompt_tokens) + n(usage.completion_tokens);
+}
+async function handleAiRequest(body, env, fetchImpl = fetch) {
+	const parsed = requestSchema.safeParse(body);
+	if (!parsed.success) return badRequest(body);
 	const provider = resolveProvider(env);
 	if (!provider) return {
 		status: 501,
@@ -4743,6 +4811,7 @@ async function handleAiRequest(body, env, fetchImpl = fetch) {
 			}
 		};
 	}
+	const tokens = usedTokens(provider, payload);
 	if (parsed.data.mode === "ask") {
 		const answer = answerText(provider, payload).trim().slice(0, 8e3);
 		if (!answer) return {
@@ -4750,14 +4819,16 @@ async function handleAiRequest(body, env, fetchImpl = fetch) {
 			body: {
 				error: "bad_response",
 				message: "The AI model sent an empty answer. Try again."
-			}
+			},
+			tokens
 		};
 		return {
 			status: 200,
 			body: {
 				answer,
 				engine: `${provider.id}:${modelFor(provider, parsed.data)}`
-			}
+			},
+			tokens
 		};
 	}
 	const draft = normalizeDraft(extractJson(answerText(provider, payload)));
@@ -4766,15 +4837,91 @@ async function handleAiRequest(body, env, fetchImpl = fetch) {
 		body: {
 			error: "bad_response",
 			message: "The AI answer was not a valid architecture draft. Try again."
-		}
+		},
+		tokens
 	};
 	return {
 		status: 200,
 		body: {
 			draft,
 			engine: `${provider.id}:${modelFor(provider, parsed.data)}`
+		},
+		tokens
+	};
+}
+// src/lib/ai/fairUse.ts
+var rpc = (service, token, name, args, fetchImpl) => fetchImpl(`${service.url}/rest/v1/rpc/${name}`, {
+	method: "POST",
+	headers: {
+		apikey: service.key,
+		authorization: `Bearer ${token}`,
+		"content-type": "application/json"
+	},
+	body: JSON.stringify(args)
+});
+var UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+var isWorkspaceId = (value) => typeof value === "string" && UUID.test(value);
+/** Asks whether the person may make this request now, and counts it when they may. */
+async function beginUse(service, token, workspaceId, kind, globalDay, fetchImpl) {
+	const unavailable = {
+		ok: false,
+		status: 503,
+		body: {
+			error: "limits_unavailable",
+			message: "The AI limits could not be checked just now. Try again in a moment."
 		}
 	};
+	let answer;
+	try {
+		const response = await rpc(service, token, "ai_begin", {
+			p_workspace: workspaceId,
+			p_kind: kind,
+			p_global_day: globalDay
+		}, fetchImpl);
+		if (!response.ok) return unavailable;
+		answer = await response.json();
+	} catch {
+		return unavailable;
+	}
+	if (!answer || typeof answer !== "object") return unavailable;
+	if (answer.allowed !== true) {
+		const reason = String(answer.reason ?? "refused");
+		return {
+			ok: false,
+			status: reason === "not_member" ? 403 : 429,
+			body: {
+				error: "quota",
+				reason,
+				message: String(answer.message ?? "AI is not available to you right now."),
+				...typeof answer.retryAt === "string" ? { retryAt: answer.retryAt } : {}
+			}
+		};
+	}
+	const remaining = answer.remaining ?? {};
+	const n = (v) => typeof v === "number" && Number.isFinite(v) ? Math.max(0, v) : 0;
+	return {
+		ok: true,
+		ticket: {
+			usage: Number(answer.usage),
+			key: String(answer.key),
+			remaining: {
+				hour: n(remaining.hour),
+				day: n(remaining.day),
+				tokens: n(remaining.tokens)
+			}
+		}
+	};
+}
+/** Closes a counted request with the tokens used. A request the model failed does not count. */
+async function finishUse(service, token, ticket, tokens, ok, fetchImpl) {
+	try {
+		await rpc(service, token, "ai_finish", {
+			p_usage: ticket.usage,
+			p_key: ticket.key,
+			p_tokens: Math.max(0, Math.round(tokens)),
+			p_ok: ok
+		}, fetchImpl);
+	} catch {}
 }
 // src/lib/ai/signin.ts
 /** The accounts service to check sign-ins against, or null when the app runs without accounts. */
@@ -4787,10 +4934,14 @@ function accounts(env) {
 		key
 	} : null;
 }
+/** The caller's sign-in token, from the Authorization header. */
+function bearer(request) {
+	const header = request.headers.get("authorization") ?? "";
+	return header.toLowerCase().startsWith("bearer ") ? header.slice(7).trim() : "";
+}
 /** Asks the accounts service whether the token belongs to a signed-in person. */
 async function signedIn(request, service, fetchImpl) {
-	const header = request.headers.get("authorization") ?? "";
-	const token = header.toLowerCase().startsWith("bearer ") ? header.slice(7).trim() : "";
+	const token = bearer(request);
 	if (!token || token.length > 4096) return false;
 	try {
 		const response = await fetchImpl(`${service.url}/auth/v1/user`, { headers: {
@@ -4814,6 +4965,9 @@ async function signedIn(request, service, fetchImpl) {
 *   AI_ALLOWED_ORIGIN  optional origin (or comma-separated origins, or *) allowed to call from another domain
 *   SUPABASE_URL and SUPABASE_ANON_KEY (or the VITE_ names the app itself uses): when the app has
 *                      accounts, only signed-in people may draft. Set AI_REQUIRE_SIGN_IN=false to switch that off.
+*   AI_FAIR_USE        with accounts, every request is checked against the workspace's limits and
+*                      counted (see fairUse.ts); "off" skips that, for a database without the tables
+*   AI_GLOBAL_DAILY_REQUESTS  requests a day for everyone together (900 for Groq's free plan unless set)
 */
 /** A 5 MB image is about 7 MB of base64; anything larger is refused before it is read. */
 var MAX_BODY_BYTES = 76e5;
@@ -4908,15 +5062,45 @@ function createAiHandler(getEnv, fetchImpl = fetch) {
 				message: "The request could not be read."
 			});
 		}
+		const check = checkAiRequest(body);
+		if (!check.ok) return json(check.result.status, check.result.body);
+		let ticket = null;
+		if (!!service && (env.AI_FAIR_USE ?? "").toLowerCase() !== "off") {
+			const workspaceId = body.workspaceId;
+			if (!isWorkspaceId(workspaceId)) return json(400, {
+				error: "workspace_required",
+				message: "Open a workspace to use AI."
+			});
+			const begun = await beginUse(service, bearer(request), workspaceId, check.kind, globalDailyLimit(env), fetchImpl);
+			if (!begun.ok) return json(begun.status, begun.body);
+			ticket = begun.ticket;
+		}
+		let result;
 		try {
-			const result = await handleAiRequest(body, env, fetchImpl);
-			return json(result.status, result.body);
+			result = await handleAiRequest(body, env, fetchImpl);
 		} catch {
-			return json(500, {
-				error: "server_error",
-				message: "The draft failed on the server. Try again."
+			result = {
+				status: 500,
+				body: {
+					error: "server_error",
+					message: "The draft failed on the server. Try again."
+				},
+				tokens: 0
+			};
+		}
+		if (ticket) {
+			await finishUse(service, bearer(request), ticket, result.tokens ?? 0, result.status === 200, fetchImpl);
+			const used = result.status === 200 ? 1 : 0;
+			return json(result.status, {
+				...result.body,
+				allowance: {
+					hour: ticket.remaining.hour + 1 - used,
+					day: ticket.remaining.day + 1 - used,
+					tokens: Math.max(0, ticket.remaining.tokens - (result.tokens ?? 0))
+				}
 			});
 		}
+		return json(result.status, result.body);
 	};
 }
 export { createAiHandler };

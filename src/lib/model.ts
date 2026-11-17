@@ -41,6 +41,7 @@ export function emptyWorkspace(name = "My workspace"): Workspace {
     reports: {},
     branding: {},
     library: {},
+    aiPolicy: {},
     updatedAt: nowIso(),
   };
 }

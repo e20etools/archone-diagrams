@@ -1353,6 +1353,33 @@ The dev server already uses the host and port Lovable's preview expects (`::`, 8
 Drafting from a picture needs a model that accepts images. `AI_VISION_MODEL` names a second
 model for pictures when the main one reads text only (groq, openai and openai-compatible).
 
+### Fair use of the AI
+
+With accounts, every AI request is checked and counted before it reaches the model, so the
+key is shared fairly and nobody can use more than their share.
+
+- **Owners set the rules** in Settings → AI → Fair use and limits: AI on or off for the
+  workspace; who may use it (every member, owners and editors, or owners only); what it may do
+  (drafts from text and voice, drafts from a picture, answers on the Ask page); limits for
+  each person (requests an hour, requests in 24 hours, tokens in 24 hours); limits for the
+  whole workspace (requests and tokens in 24 hours, scenarios included). Defaults: 10 an hour,
+  40 a day and 40,000 tokens a day per person; 300 requests and 150,000 tokens a day per
+  workspace. Changes are recorded in the audit log.
+- **Exceptions per person:** another daily limit, or AI paused, from the "Use by person" table.
+- **How it is applied:** the AI server calls `ai_begin` in the database with the caller's own
+  sign-in; the database checks the rules and counts the request, or refuses it with the
+  reason and when to try again. After the answer the server calls `ai_finish` with the tokens
+  the model reported. Windows roll (the last hour, the last 24 hours); a request the model
+  fails does not count; a person's own use counts in every workspace, so a scenario or
+  another workspace does not start them afresh. Only the server holds the key that closes a
+  request, and nobody can write the usage table directly. `AI_GLOBAL_DAILY_REQUESTS` caps
+  requests a day for everyone together (900 by default with Groq, to stay inside its free
+  plan); `AI_FAIR_USE=off` switches the checks off for a database without the tables.
+- **What people see:** everyone sees their own use and the workspace's against the limits,
+  and what is left in the draft dialog and on the Ask page. Owners also see use by person
+  (24 hours, 7 days, 30 days, tokens, last used) and requests by day for the last 14 days.
+- In the browser-only copy nobody is counted; `AI_ACCESS_CODE` keeps others off the key.
+
 ### Free AI for training (Groq)
 
 1. Sign in at https://console.groq.com and create a key under API Keys.

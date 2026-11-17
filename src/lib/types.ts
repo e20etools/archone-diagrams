@@ -443,6 +443,24 @@ export const libraryItemSchema = z.object({
 });
 export type LibraryItem = z.infer<typeof libraryItemSchema>;
 
+/**
+ * Fair use of the AI in a workspace, set by its owners and applied by the server: whether AI is
+ * on, who may use it, which features, limits per person and for the whole workspace (rolling
+ * hour and 24 hours), and exceptions per person keyed by their user id.
+ */
+const limit = (max: number) => z.number().int().min(0).max(max);
+export const aiPolicySchema = z.object({
+  id: z.literal("workspace"),
+  enabled: z.boolean(),
+  who: z.enum(["members", "editors", "owners"]),
+  features: z.object({ text: z.boolean(), image: z.boolean(), ask: z.boolean() }),
+  perUser: z.object({ hour: limit(1000), day: limit(10000), tokensDay: limit(10_000_000) }),
+  workspace: z.object({ day: limit(100000), tokensDay: limit(100_000_000) }),
+  overrides: z.record(z.object({ day: limit(10000).optional(), hour: limit(1000).optional(), tokensDay: limit(10_000_000).optional(), blocked: z.boolean().optional() })).default({}),
+  updatedAt: z.string(),
+});
+export type AiPolicy = z.infer<typeof aiPolicySchema>;
+
 export const workspaceSchema = z.object({
   version: z.literal(1),
   name: z.string(),
@@ -465,6 +483,8 @@ export const workspaceSchema = z.object({
   branding: z.record(brandingSchema).default({}),
   /** The workspace's own changes to the component library and the protocols. */
   library: z.record(libraryItemSchema).default({}),
+  /** The workspace's limits on AI use, one record keyed "workspace". Missing means the built-in limits. */
+  aiPolicy: z.record(aiPolicySchema).default({}),
   updatedAt: z.string(),
 });
 export type Workspace = z.infer<typeof workspaceSchema>;

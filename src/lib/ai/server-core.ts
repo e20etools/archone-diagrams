@@ -30,6 +30,8 @@ export interface AiEnv {
 export interface AiResult {
   status: number;
   body: Record<string, unknown>;
+  /** Tokens the model reported using, for fair-use accounting. Not sent to the browser. */
+  tokens?: number;
 }
 
 const MAX_TEXT = 12_000;
@@ -193,20 +195,49 @@ function answerText(provider: Provider, payload: unknown): string {
   return raw.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
 }
 
+/** What a request is, for the fair-use limits: a text or voice draft, a picture, or a question. */
+export type AiKind = "text" | "image" | "ask";
+
+const badRequest = (body: unknown): AiResult => {
+  const asking = (body as { mode?: unknown } | null)?.mode === "ask";
+  return {
+    status: 400,
+    body: {
+      error: "bad_request",
+      message: asking
+        ? "Send a question of 3 to 1000 characters. If the model is very large, it may not fit in one question."
+        : "Send a description of at least three characters, or a PNG, JPEG, WebP or GIF image under 5 MB.",
+    },
+  };
+};
+
+/** Checks a request before anything is counted or sent: its kind, or the answer that refuses it. */
+export function checkAiRequest(body: unknown): { ok: true; kind: AiKind } | { ok: false; result: AiResult } {
+  const parsed = requestSchema.safeParse(body);
+  if (!parsed.success) return { ok: false, result: badRequest(body) };
+  return { ok: true, kind: parsed.data.mode === "prompt" ? "text" : parsed.data.mode };
+}
+
+/**
+ * Requests a day for everyone together, so one shared key stays within its provider's allowance.
+ * AI_GLOBAL_DAILY_REQUESTS sets it; for Groq's free plan it is 900 unless set, otherwise none.
+ */
+export function globalDailyLimit(env: AiEnv & { AI_GLOBAL_DAILY_REQUESTS?: string }): number {
+  const set = Number(env.AI_GLOBAL_DAILY_REQUESTS);
+  if (env.AI_GLOBAL_DAILY_REQUESTS?.trim() && Number.isFinite(set)) return Math.max(0, Math.floor(set));
+  return resolveProvider(env)?.id === "groq" ? 900 : 0;
+}
+
+/** The tokens a provider's answer says it used. */
+function usedTokens(provider: Provider, payload: unknown): number {
+  const usage = (payload as { usage?: Record<string, unknown> } | null)?.usage ?? {};
+  const n = (v: unknown) => (typeof v === "number" && Number.isFinite(v) && v > 0 ? Math.round(v) : 0);
+  return provider.id === "anthropic" ? n(usage.input_tokens) + n(usage.output_tokens) : n(usage.total_tokens) || n(usage.prompt_tokens) + n(usage.completion_tokens);
+}
+
 export async function handleAiRequest(body: unknown, env: AiEnv, fetchImpl: typeof fetch = fetch): Promise<AiResult> {
   const parsed = requestSchema.safeParse(body);
-  if (!parsed.success) {
-    const asking = (body as { mode?: unknown } | null)?.mode === "ask";
-    return {
-      status: 400,
-      body: {
-        error: "bad_request",
-        message: asking
-          ? "Send a question of 3 to 1000 characters. If the model is very large, it may not fit in one question."
-          : "Send a description of at least three characters, or a PNG, JPEG, WebP or GIF image under 5 MB.",
-      },
-    };
-  }
+  if (!parsed.success) return badRequest(body);
   const provider = resolveProvider(env);
   if (!provider) {
     return { status: 501, body: { error: "not_configured", message: "No AI provider is configured on the server." } };
@@ -245,14 +276,15 @@ export async function handleAiRequest(body: unknown, env: AiEnv, fetchImpl: type
   } catch {
     return { status: 502, body: { error: "bad_response", message: "The AI provider sent an answer that could not be read." } };
   }
+  const tokens = usedTokens(provider, payload);
   if (parsed.data.mode === "ask") {
     const answer = answerText(provider, payload).trim().slice(0, 8000);
-    if (!answer) return { status: 502, body: { error: "bad_response", message: "The AI model sent an empty answer. Try again." } };
-    return { status: 200, body: { answer, engine: `${provider.id}:${modelFor(provider, parsed.data)}` } };
+    if (!answer) return { status: 502, body: { error: "bad_response", message: "The AI model sent an empty answer. Try again." }, tokens };
+    return { status: 200, body: { answer, engine: `${provider.id}:${modelFor(provider, parsed.data)}` }, tokens };
   }
   const draft = normalizeDraft(extractJson(answerText(provider, payload)));
   if (!draft) {
-    return { status: 502, body: { error: "bad_response", message: "The AI answer was not a valid architecture draft. Try again." } };
+    return { status: 502, body: { error: "bad_response", message: "The AI answer was not a valid architecture draft. Try again." }, tokens };
   }
-  return { status: 200, body: { draft, engine: `${provider.id}:${modelFor(provider, parsed.data)}` } };
+  return { status: 200, body: { draft, engine: `${provider.id}:${modelFor(provider, parsed.data)}` }, tokens };
 }

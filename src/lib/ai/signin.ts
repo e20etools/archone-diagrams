@@ -22,10 +22,15 @@ export function accounts(env: AccountsEnv): { url: string; key: string } | null 
   return url && key ? { url, key } : null;
 }
 
+/** The caller's sign-in token, from the Authorization header. */
+export function bearer(request: Request): string {
+  const header = request.headers.get("authorization") ?? "";
+  return header.toLowerCase().startsWith("bearer ") ? header.slice(7).trim() : "";
+}
+
 /** Asks the accounts service whether the token belongs to a signed-in person. */
 export async function signedIn(request: Request, service: { url: string; key: string }, fetchImpl: typeof fetch): Promise<boolean> {
-  const header = request.headers.get("authorization") ?? "";
-  const token = header.toLowerCase().startsWith("bearer ") ? header.slice(7).trim() : "";
+  const token = bearer(request);
   if (!token || token.length > 4096) return false;
   try {
     const response = await fetchImpl(`${service.url}/auth/v1/user`, { headers: { apikey: service.key, authorization: `Bearer ${token}` } });

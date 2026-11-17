@@ -1,7 +1,7 @@
 import type { AuditCheck, AuditPage, AuditQuery } from "./audit";
 import { create } from "zustand";
 import { createContext, useContext } from "react";
-import { setAuthTokenProvider } from "../ai/client";
+import { setAiWorkspaceProvider, setAuthTokenProvider } from "../ai/client";
 import { emptyWorkspace, nowIso } from "../model";
 import { LocalStorageRepository } from "../repository";
 import { setChangeGuard, setEditGuard, useStore } from "../store";
@@ -135,6 +135,10 @@ export function startSession(): void {
       set({ notice: "Only an owner can change the workspace's branding." });
       return true;
     }
+    if (before.aiPolicy !== after.aiPolicy && role !== "owner") {
+      set({ notice: "Only an owner can change the AI limits." });
+      return true;
+    }
     if (before.wizards !== after.wizards && role !== "owner") {
       set({ notice: "Only an owner can change the wizard's questions." });
       return true;
@@ -145,6 +149,7 @@ export function startSession(): void {
   });
   void getBackend().then((backend) => {
     setAuthTokenProvider(() => backend.accessToken());
+    setAiWorkspaceProvider(() => get().workspaceId);
     backend.onAuth((user, event) => {
       const previous = get().user;
       if (!user) {
@@ -420,7 +425,7 @@ export async function revertToVersion(version: VersionInfo): Promise<void> {
   const tables = withoutDangling(await versionTablesOf(version.id));
   await backend.saveVersion(workspaceId, `Before reverting to "${version.name}"`.slice(0, 120), "Saved automatically so that the revert can be taken back.", true);
   const current = useStore.getState().ws;
-  useStore.getState().replace({ ...current, ...fromTables({ ...tables, proposals: toTables(current).proposals, adrs: toTables(current).adrs, rules: toTables(current).rules, templates: toTables(current).templates, wizards: toTables(current).wizards, reports: toTables(current).reports, branding: toTables(current).branding, library: toTables(current).library }), updatedAt: nowIso() });
+  useStore.getState().replace({ ...current, ...fromTables({ ...tables, proposals: toTables(current).proposals, adrs: toTables(current).adrs, rules: toTables(current).rules, templates: toTables(current).templates, wizards: toTables(current).wizards, reports: toTables(current).reports, branding: toTables(current).branding, library: toTables(current).library, aiPolicy: toTables(current).aiPolicy }), updatedAt: nowIso() });
   await engine?.flush().catch(() => undefined);
   await refreshCollab();
 }

@@ -10,10 +10,14 @@ function accounts(env) {
 		key
 	} : null;
 }
+/** The caller's sign-in token, from the Authorization header. */
+function bearer(request) {
+	const header = request.headers.get("authorization") ?? "";
+	return header.toLowerCase().startsWith("bearer ") ? header.slice(7).trim() : "";
+}
 /** Asks the accounts service whether the token belongs to a signed-in person. */
 async function signedIn(request, service, fetchImpl) {
-	const header = request.headers.get("authorization") ?? "";
-	const token = header.toLowerCase().startsWith("bearer ") ? header.slice(7).trim() : "";
+	const token = bearer(request);
 	if (!token || token.length > 4096) return false;
 	try {
 		const response = await fetchImpl(`${service.url}/auth/v1/user`, { headers: {

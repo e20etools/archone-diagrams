@@ -483,6 +483,51 @@ try {
   await visit(ben, diagramUrl, ".object-node");
   check("switching review off gives readers the working model again", (await count(vera, ".object-node")) === (await count(ben, ".object-node")));
 
+  /* ---------- fair use of the AI: owners set the limits, everyone sees their own use ---------- */
+  await visit(ana, `${base}/settings`, "[data-ai-fair-use] [data-ai-meter]");
+  const defaults = await ana.$eval('[data-ai-meter="me-day"]', (e) => e.innerText.replace(/\s+/g, " "));
+  await ana.select("[data-ai-who]", "editors");
+  await ana.$eval('[data-ai-limit="hour"]', (e) => e.select());
+  await ana.keyboard.type("6");
+  await ana.keyboard.press("Tab");
+  await ana.waitForSelector('[data-ai-person="Ben Editor"]');
+  await ana.click('[data-ai-pause="Ben Editor"]');
+  await saved(ana);
+  await sleep(600);
+  await visit(ben, `${base}/settings`, "[data-ai-fair-use] [data-ai-meter]");
+  await until(ben, () => document.querySelector("[data-ai-who]")?.value === "editors", 8000).catch(() => undefined);
+  const benView = await ben.evaluate(() => ({
+    who: document.querySelector("[data-ai-who]").value,
+    locked: document.querySelector("[data-ai-who]").disabled && document.querySelector('[data-ai-limit="hour"]').disabled,
+    hour: document.querySelector('[data-ai-limit="hour"]').value,
+    paused: document.querySelector("[data-ai-my-use]").innerText.includes("Paused by an owner"),
+    byPerson: !!document.querySelector("[data-ai-by-person]"),
+  }));
+  await ana.bringToFront();
+  await ana.waitForFunction(() => document.querySelector('[data-ai-person="Ben Editor"]')?.innerText.includes("Paused"));
+  await ana.evaluate(() => document.querySelector("[data-ai-by-person]").scrollIntoView());
+  await shot(ana, "45-ai-fair-use");
+  check(
+    "owners set who may use AI and the limits; others see them, their own use and when they are paused, but not use by person",
+    defaults.includes("of 40 requests") && benView.who === "editors" && benView.locked && benView.hour === "6" && benView.paused && !benView.byPerson,
+    JSON.stringify({ defaults, benView }),
+  );
+  // An editor's attempt to change the limits is refused before it is saved.
+  const refusedChange = await ben.evaluate(async () => {
+    const select = document.querySelector("[data-ai-who]");
+    select.disabled = false;
+    select.value = "members";
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+    await new Promise((r) => setTimeout(r, 400));
+    return document.body.innerText.includes("Only an owner can change the AI limits.");
+  });
+  check("only an owner can change the AI limits", refusedChange);
+  await ana.bringToFront();
+  await ana.click('[data-ai-pause="Ben Editor"]');
+  await ana.select("[data-ai-who]", "members");
+  await saved(ana);
+  await visit(ben, diagramUrl, ".object-node");
+
   /* ---------- live links, API keys and webhooks ---------- */
   await clickText(ben, "Share");
   await ben.waitForSelector("[data-live-links]");

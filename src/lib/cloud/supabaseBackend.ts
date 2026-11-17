@@ -2,7 +2,7 @@ import type { CategoryRoles } from "../categories";
 import type { TrustPage } from "../trust";
 import { AUDIT_PAGE_SIZE, cleanSearch, dayBounds, type AuditEntry } from "./audit";
 import { createClient, type PostgrestError, type RealtimeChannel, type SupabaseClient } from "@supabase/supabase-js";
-import { BackendError, type ApiKeyInfo, type Backend, type FileKind, type StoredFile, type CloudUser, type LiveLink, type WebhookInfo, type Invite, type LiveHandlers, type Member, type Peer, type PendingInvite, type Role, type WorkspaceSummary } from "./backend";
+import { BackendError, type AiUsageReport, type ApiKeyInfo, type Backend, type FileKind, type StoredFile, type CloudUser, type LiveLink, type WebhookInfo, type Invite, type LiveHandlers, type Member, type Peer, type PendingInvite, type Role, type WorkspaceSummary } from "./backend";
 import { snapshotToTables, type Comment, type Review, type ReviewDecision, type ReviewStage, type VersionInfo } from "./collab";
 import { KEY_COLUMNS, SQL_TABLE, fromRow, toRow, type Row } from "./rows";
 import { TABLE_NAMES, emptyTables, splitNodeKey, type ChangeSet, type TableName, type Tables } from "./tables";
@@ -135,7 +135,7 @@ export function createSupabaseBackend(url: string, key: string): Backend {
       for (const column of KEY_COLUMNS[table].slice(1)) query = query.order(column);
       const { data, error } = await query.range(from, from + PAGE - 1);
       // A database from before decisions or the workspace's own rules existed has no table for them; the rest of the workspace still opens.
-      if (error && (table === "adrs" || table === "rules" || table === "templates" || table === "wizards" || table === "reports" || table === "branding" || table === "library") && (error.code === "42P01" || error.code === "PGRST205")) return rows;
+      if (error && (table === "adrs" || table === "rules" || table === "templates" || table === "wizards" || table === "reports" || table === "branding" || table === "library" || table === "aiPolicy") && (error.code === "42P01" || error.code === "PGRST205")) return rows;
       if (error) fail(error, "The workspace could not be loaded.");
       rows.push(...((data ?? []) as Row[]));
       if (!data || data.length < PAGE) return rows;
@@ -384,6 +384,13 @@ export function createSupabaseBackend(url: string, key: string): Backend {
       if (!data?.length) throw new BackendError("forbidden", "Only an owner can delete a version, and not one that was reviewed or is published.");
     },
 
+    async aiUsageReport(workspaceId) {
+      const { data, error } = await supabase.rpc("ai_usage_report", { p_workspace: workspaceId });
+      // A database without the fair-use tables counts nothing; the page then says so.
+      if (error && (error.code === "PGRST202" || error.code === "42883")) return null;
+      if (error) fail(error, "The AI use could not be loaded.");
+      return (data ?? null) as AiUsageReport | null;
+    },
     async reviewSettings(workspaceId) {
       const { data, error } = await supabase.from("workspaces").select("review_required, review_stages, published_version_id").eq("id", workspaceId).maybeSingle();
       if (error) fail(error, "The review settings could not be loaded.");

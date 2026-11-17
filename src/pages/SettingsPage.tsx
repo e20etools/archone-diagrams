@@ -5,6 +5,7 @@ import { IntegrationsCard } from "@/components/cloud/IntegrationsCard";
 import { MembersCard } from "@/components/cloud/MembersCard";
 import { TrustPageCard } from "@/components/cloud/TrustPageCard";
 import { ReviewSettingsCard } from "@/components/cloud/ReviewSettingsCard";
+import { AiFairUseCard } from "@/components/cloud/AiFairUseCard";
 import { WizardSettingsCard } from "@/components/WizardSettings";
 import { AppearanceSection, BrandingSection, MonitoringSection, PermissionsMatrix } from "@/components/SettingsSections";
 import { Badge, Button, CommitInput, Field, Input, Modal, countOf, cx, useNotice } from "@/components/ui";
@@ -288,6 +289,13 @@ export function SettingsPage() {
           ))}
         </ul>
       </Card>
+          {cloudEnabled ? (
+            <AiFairUseCard />
+          ) : (
+            <Card title="Fair use and limits" text="Limits per person and per workspace apply when people sign in with accounts, because each request is counted against the person who made it. In this browser-only copy, an AI access code keeps others from using the server's key.">
+              <p className="text-[13px] text-ink-soft">Set AI_ACCESS_CODE on the server to ask for a code.</p>
+            </Card>
+          )}
         </Group>
 
         <Group id="wizard" title="Diagram wizard">

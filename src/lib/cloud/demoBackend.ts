@@ -1,4 +1,6 @@
 import { CATEGORIES, categoryRank, categoryRefusal, hiddenCategories, viewCategory, type CategoryRoles } from "../categories";
+import { aiPolicyOf } from "../aiPolicy";
+import { emptyWorkspace } from "../model";
 import { nextAdrNumber, reviewAdr } from "../adr";
 import { scopeRefusal } from "./scope";
 import type { TrustPage } from "../trust";
@@ -197,7 +199,7 @@ export function createDemoBackend(): Backend {
       diagrams: Object.keys(tables.diagrams).length,
       createdBy: me().id,
       createdAt: new Date().toISOString(),
-      tables: { ...(JSON.parse(JSON.stringify(tables)) as Tables), proposals: {}, adrs: {}, rules: {}, templates: {}, wizards: {}, reports: {}, branding: {}, library: {} },
+      tables: { ...(JSON.parse(JSON.stringify(tables)) as Tables), proposals: {}, adrs: {}, rules: {}, templates: {}, wizards: {}, reports: {}, branding: {}, library: {}, aiPolicy: {} },
     };
     versionsOf(db, workspaceId).unshift(version);
     return version.id;
@@ -441,6 +443,7 @@ export function createDemoBackend(): Backend {
       if (Object.keys(change.rules ?? {}).length && roleOf(db, workspaceId, me().id) !== "owner") throw new BackendError("forbidden", "Only an owner can change the workspace's rules.");
       if (Object.keys(change.wizards ?? {}).length && roleOf(db, workspaceId, me().id) !== "owner") throw new BackendError("forbidden", "Only an owner can change the wizard's questions.");
       if (Object.keys(change.branding ?? {}).length && roleOf(db, workspaceId, me().id) !== "owner") throw new BackendError("forbidden", "Only an owner can change the workspace's branding.");
+      if (Object.keys(change.aiPolicy ?? {}).length && roleOf(db, workspaceId, me().id) !== "owner") throw new BackendError("forbidden", "Only an owner can change the AI limits.");
       logChanges(db, workspaceId, db.rows[workspaceId] ?? emptyTables(), change);
       db.rows[workspaceId] = patchTables(db.rows[workspaceId] ?? emptyTables(), change);
       write(db);
@@ -534,6 +537,30 @@ export function createDemoBackend(): Backend {
       collabChanged(workspaceId);
     },
 
+    async aiUsageReport(workspaceId) {
+      // The demo has no AI server to count requests, so it shows the limits in force and no use.
+      const db = read();
+      requireRole(db, workspaceId, (r) => r !== null);
+      const root = db.workspaces[workspaceId]?.scenarioOf ?? workspaceId;
+      const policy = aiPolicyOf({ ...emptyWorkspace(""), aiPolicy: db.rows[root]?.aiPolicy ?? {} });
+      const limitsOf = (userId: string) => {
+        const o = policy.overrides[userId] ?? {};
+        return { hour: o.hour ?? policy.perUser.hour, day: o.day ?? policy.perUser.day, tokensDay: o.tokensDay ?? policy.perUser.tokensDay, paused: o.blocked === true };
+      };
+      const owner = roleOf(db, workspaceId, me().id) === "owner";
+      const today = new Date();
+      return {
+        me: { hour: 0, day: 0, tokensDay: 0, limits: limitsOf(me().id) },
+        workspace: { day: 0, tokensDay: 0, limits: { ...policy.workspace } },
+        people: owner
+          ? db.members
+              .filter((m) => m.workspaceId === root)
+              .map((m) => ({ userId: m.userId, name: Object.values(db.users).find((u) => u.id === m.userId)?.name ?? "", role: m.role, day: 0, week: 0, month: 0, tokensDay: 0, tokensMonth: 0, failed: 0, lastUsed: null, limits: limitsOf(m.userId) }))
+          : null,
+        days: owner ? Array.from({ length: 14 }, (_, i) => ({ day: new Date(today.getTime() - (13 - i) * 86_400_000).toISOString().slice(0, 10), requests: 0, tokens: 0 })) : null,
+        scenario: root !== workspaceId,
+      };
+    },
     async reviewSettings(workspaceId) {
       await pause();
       const db = read();
@@ -752,7 +779,7 @@ export function createDemoBackend(): Backend {
       for (const m of db.members.filter((x) => x.workspaceId === workspaceId && canEditRole(x.role))) db.members.push({ workspaceId: scenarioId, userId: m.userId, role: m.role });
       const source = db.rows[workspaceId] ?? emptyTables();
       // A scenario is judged by the same rules as the model it came from.
-      db.rows[scenarioId] = { ...(JSON.parse(JSON.stringify(source)) as Tables), proposals: {}, adrs: {}, rules: JSON.parse(JSON.stringify(source.rules ?? {})) as Tables["rules"], templates: {}, wizards: JSON.parse(JSON.stringify(source.wizards ?? {})) as Tables["wizards"], reports: {}, branding: JSON.parse(JSON.stringify(source.branding ?? {})) as Tables["branding"], library: JSON.parse(JSON.stringify(source.library ?? {})) as Tables["library"] };
+      db.rows[scenarioId] = { ...(JSON.parse(JSON.stringify(source)) as Tables), proposals: {}, adrs: {}, rules: JSON.parse(JSON.stringify(source.rules ?? {})) as Tables["rules"], templates: {}, wizards: JSON.parse(JSON.stringify(source.wizards ?? {})) as Tables["wizards"], reports: {}, branding: JSON.parse(JSON.stringify(source.branding ?? {})) as Tables["branding"], library: JSON.parse(JSON.stringify(source.library ?? {})) as Tables["library"], aiPolicy: {} };
       log(db, workspaceId, "scenario", scenarioId, name.trim(), "created");
       log(db, scenarioId, "scenario", scenarioId, name.trim(), "created", { "copied from": db.workspaces[workspaceId].name });
       write(db);

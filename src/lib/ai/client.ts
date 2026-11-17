@@ -13,7 +13,7 @@ export interface DraftResult {
 
 export class AiError extends Error {
   constructor(
-    public code: "not_configured" | "access_code" | "failed",
+    public code: "not_configured" | "access_code" | "quota" | "failed",
     message: string,
   ) {
     super(message);
@@ -48,6 +48,48 @@ export function setAuthTokenProvider(provider: (() => Promise<string | null>) | 
   tokenProvider = provider;
 }
 
+/** In hosted mode the server applies the open workspace's AI limits, so each request says which workspace it is for. */
+let workspaceProvider: (() => string | null) | null = null;
+export function setAiWorkspaceProvider(provider: (() => string | null) | null): void {
+  workspaceProvider = provider;
+}
+
+/** What is left of the person's AI allowance after the last request, when the server said. */
+export interface AiAllowance {
+  hour: number;
+  day: number;
+  tokens: number;
+}
+let lastAllowance: AiAllowance | null = null;
+const allowanceListeners = new Set<(a: AiAllowance | null) => void>();
+export const currentAllowance = () => lastAllowance;
+export function onAllowance(listener: (a: AiAllowance | null) => void): () => void {
+  allowanceListeners.add(listener);
+  return () => allowanceListeners.delete(listener);
+}
+function noteAllowance(data: Record<string, unknown> | null) {
+  const a = data?.allowance as Partial<AiAllowance> | undefined;
+  if (!a || typeof a.day !== "number") return;
+  lastAllowance = { hour: Number(a.hour) || 0, day: a.day, tokens: Number(a.tokens) || 0 };
+  for (const listener of allowanceListeners) listener(lastAllowance);
+}
+
+/** "Try again after 14:20" for a time today, or with the day for a later one. */
+function retryText(at: unknown): string {
+  if (typeof at !== "string") return "";
+  const when = new Date(at);
+  if (Number.isNaN(when.getTime())) return "";
+  const sameDay = when.toDateString() === new Date().toDateString();
+  const time = when.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return ` Try again after ${sameDay ? time : `${when.toLocaleDateString([], { weekday: "short" })} ${time}`}.`;
+}
+
+/** A request the workspace's fair-use limits refused. */
+const limited = (r: { status: number; data: Record<string, unknown> | null }) =>
+  (r.status === 429 || r.status === 403) && r.data?.error === "quota"
+    ? new AiError("quota", `${String(r.data.message ?? "AI is not available to you right now.")}${retryText(r.data.retryAt)}`)
+    : null;
+
 /** The signed-in person's token, for other endpoints of this server that ask who is calling. */
 export const authToken = async (): Promise<string | null> => (tokenProvider ? tokenProvider().catch(() => null) : null);
 
@@ -66,10 +108,11 @@ async function post(body: unknown): Promise<{ status: number; data: Record<strin
   try {
     const code = getAccessCode();
     const token = tokenProvider ? await tokenProvider().catch(() => null) : null;
+    const workspaceId = workspaceProvider?.() ?? null;
     const response = await fetch(ENDPOINT, {
       method: "POST",
       headers: { "content-type": "application/json", ...(code ? { "x-access-code": code } : {}), ...(token ? { authorization: `Bearer ${token}` } : {}) },
-      body: JSON.stringify(body),
+      body: JSON.stringify(workspaceId ? { ...(body as object), workspaceId } : body),
       signal: controller.signal,
     });
     let data: Record<string, unknown> | null = null;
@@ -78,6 +121,7 @@ async function post(body: unknown): Promise<{ status: number; data: Record<strin
     } catch {
       data = null;
     }
+    noteAllowance(data);
     return { status: response.status, data };
   } finally {
     clearTimeout(timer);
@@ -111,7 +155,7 @@ export async function draftFromPrompt(text: string): Promise<DraftResult> {
     return rules(); // offline or no server: the built-in rules still work
   }
   if (notConfigured(result) || hostFailure(result)) return rules();
-  const refused = denied(result);
+  const refused = denied(result) ?? limited(result);
   if (refused) throw refused;
   const ok = result.status === 200 ? fromServer(result.data) : null;
   if (ok) return ok;
@@ -136,7 +180,7 @@ export async function draftFromImage(file: File, note: string): Promise<DraftRes
       "Reading an image needs an AI model, and none is configured on this server yet. Add an AI key in the hosting settings, or describe the diagram in text instead.",
     );
   }
-  const refused = denied(result);
+  const refused = denied(result) ?? limited(result);
   if (refused) throw refused;
   const ok = result.status === 200 ? fromServer(result.data) : null;
   if (ok) return ok;
@@ -152,7 +196,7 @@ export async function askAi(question: string, context: string): Promise<{ answer
     throw new AiError("failed", "The server could not be reached. Check your connection and try again.");
   }
   if (notConfigured(result)) throw new AiError("not_configured", "No AI model is configured on this server.");
-  const refused = denied(result);
+  const refused = denied(result) ?? limited(result);
   if (refused) throw refused;
   if (result.status === 200 && typeof result.data?.answer === "string" && result.data.answer.trim()) {
     return { answer: result.data.answer, engine: typeof result.data.engine === "string" ? result.data.engine : "AI model" };

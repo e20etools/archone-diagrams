@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { saveComponent, saveProtocol } from "../libraryEdits";
+import { setAiPolicy } from "../aiPolicy";
 import { demoWorkspace } from "../demo";
 import { createObject, createRelationship, deleteObject, emptyWorkspace, placeNodes, updateObject } from "../model";
 import type { Workspace } from "../types";
@@ -85,7 +86,8 @@ describe("rows and tables", () => {
     const firstDiagram = Object.keys(demo.diagrams)[0];
     const branded = { ...demo, branding: { workspace: { id: "workspace" as const, appName: "Bank", logo: "", accent: "#0f766e", theme: "oasis", font: "", updatedAt: "2026-11-17T00:00:00.000Z" } } };
     const withReport = saveReport(branded, { id: newReportId(), name: "Owners", description: "", subject: "components", columns: ["name", "owner"], filters: [{ field: "owner", op: "is empty", value: "" }], groupBy: "type", sortBy: null, sortDesc: false, createdBy: "Sara", createdAt: "2026-11-17T00:00:00.000Z", updatedAt: "2026-11-17T00:00:00.000Z" });
-    const withLibrary = saveProtocol(saveComponent(withReport, { name: "Core ledger", sectionId: "applications", kind: "application", icon: "Landmark", profile: "application", aliases: "GL" }).ws, { name: "ISO 8583", port: "7001", transport: "TCP", group: "Payments", secure: false, use: "" }).ws;
+    const withLibrary0 = saveProtocol(saveComponent(withReport, { name: "Core ledger", sectionId: "applications", kind: "application", icon: "Landmark", profile: "application", aliases: "GL" }).ws, { name: "ISO 8583", port: "7001", transport: "TCP", group: "Payments", secure: false, use: "" }).ws;
+    const withLibrary = setAiPolicy(withLibrary0, (p) => ({ ...p, who: "editors", perUser: { hour: 5, day: 20, tokensDay: 9000 } }));
     const tables = toTables(saveWizard(saveTemplate(withLibrary, templateFromDiagram(withLibrary, firstDiagram, { name: "Mine", perspective: "data", about: "" }, "Sara")!.template), "container", BUILT_IN_STEPS.container, "Sara"));
     for (const table of TABLE_NAMES) {
       const entries = Object.entries(tables[table]);

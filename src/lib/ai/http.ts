@@ -1,4 +1,5 @@
-import { aiStatus, handleAiRequest, type AiEnv } from "./server-core";
+import { aiStatus, checkAiRequest, globalDailyLimit, handleAiRequest, type AiEnv } from "./server-core";
+import { beginUse, finishUse, isWorkspaceId, type Ticket } from "./fairUse";
 
 /**
  * The AI endpoint as a web-standard handler (Request in, Response out), so the same code
@@ -9,14 +10,19 @@ import { aiStatus, handleAiRequest, type AiEnv } from "./server-core";
  *   AI_ALLOWED_ORIGIN  optional origin (or comma-separated origins, or *) allowed to call from another domain
  *   SUPABASE_URL and SUPABASE_ANON_KEY (or the VITE_ names the app itself uses): when the app has
  *                      accounts, only signed-in people may draft. Set AI_REQUIRE_SIGN_IN=false to switch that off.
+ *   AI_FAIR_USE        with accounts, every request is checked against the workspace's limits and
+ *                      counted (see fairUse.ts); "off" skips that, for a database without the tables
+ *   AI_GLOBAL_DAILY_REQUESTS  requests a day for everyone together (900 for Groq's free plan unless set)
  */
 
-import { accounts, signedIn } from "./signin";
+import { accounts, bearer, signedIn } from "./signin";
 
 export type ServerEnv = AiEnv & {
   AI_ACCESS_CODE?: string;
   AI_ALLOWED_ORIGIN?: string;
   AI_REQUIRE_SIGN_IN?: string;
+  AI_FAIR_USE?: string;
+  AI_GLOBAL_DAILY_REQUESTS?: string;
   SUPABASE_URL?: string;
   SUPABASE_ANON_KEY?: string;
   SUPABASE_PUBLISHABLE_KEY?: string;
@@ -93,11 +99,33 @@ export function createAiHandler(getEnv: () => ServerEnv, fetchImpl: typeof fetch
     } catch {
       return json(400, { error: "bad_request", message: "The request could not be read." });
     }
-    try {
-      const result = await handleAiRequest(body, env, fetchImpl);
-      return json(result.status, result.body);
-    } catch {
-      return json(500, { error: "server_error", message: "The draft failed on the server. Try again." });
+    const check = checkAiRequest(body);
+    if (!check.ok) return json(check.result.status, check.result.body);
+
+    // Fair use: the workspace's limits decide, and the request is counted, before the model is asked.
+    let ticket: Ticket | null = null;
+    const governed = !!service && (env.AI_FAIR_USE ?? "").toLowerCase() !== "off";
+    if (governed) {
+      const workspaceId = (body as { workspaceId?: unknown }).workspaceId;
+      if (!isWorkspaceId(workspaceId)) return json(400, { error: "workspace_required", message: "Open a workspace to use AI." });
+      const begun = await beginUse(service!, bearer(request), workspaceId, check.kind, globalDailyLimit(env), fetchImpl);
+      if (!begun.ok) return json(begun.status, begun.body);
+      ticket = begun.ticket;
     }
+    let result;
+    try {
+      result = await handleAiRequest(body, env, fetchImpl);
+    } catch {
+      result = { status: 500, body: { error: "server_error", message: "The draft failed on the server. Try again." } as Record<string, unknown>, tokens: 0 };
+    }
+    if (ticket) {
+      await finishUse(service!, bearer(request), ticket, result.tokens ?? 0, result.status === 200, fetchImpl);
+      const used = result.status === 200 ? 1 : 0;
+      return json(result.status, {
+        ...result.body,
+        allowance: { hour: ticket.remaining.hour + 1 - used, day: ticket.remaining.day + 1 - used, tokens: Math.max(0, ticket.remaining.tokens - (result.tokens ?? 0)) },
+      });
+    }
+    return json(result.status, result.body);
   };
 }
