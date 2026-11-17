@@ -127,4 +127,15 @@ describe("the file library", () => {
     expect(log.map((e) => e.action)).toEqual(expect.arrayContaining(["created", "linked to Data", "unlinked from Data", "updated", "deleted"]));
     expect(log.find((e) => e.action === "deleted")?.entity_name).toBe("Network design.vsdx");
   });
+
+  it("keeps the workspace's own reports: editors make them, every member reads them", async () => {
+    const report = (id: string) => ({ id, name: "Owners", subject: "components", columns: ["name", "owner"], filters: [], groupBy: null, sortBy: null, sortDesc: false, createdAt: "2026-11-17", updatedAt: "2026-11-17" });
+    expect(await attempt("ivan", "insert into public.custom_reports (workspace_id, id, data) values ($1, 'r1', $2) returning id", [ws, report("r1")])).toBe("allowed");
+    expect(await attempt("vera", "insert into public.custom_reports (workspace_id, id, data) values ($1, 'r2', $2) returning id", [ws, report("r2")])).toBe("denied");
+    expect((await as("vera", (q) => q("select data ->> 'name' as name from public.custom_reports"))).map((r) => r.name)).toEqual(["Owners"]);
+    expect(await attempt("stranger", "select id from public.custom_reports")).toBe("nothing");
+    await expect(as("ivan", (q) => q("insert into public.custom_reports (workspace_id, id, data) values ($1, 'r3', $2)", [ws, { ...report("r3"), subject: "people" }]))).rejects.toThrow(/check constraint/);
+    const log = (await db.query<{ action: string }>("select action from public.audit_log where workspace_id = $1 and entity = 'report'", [ws])).rows;
+    expect(log.map((e) => e.action)).toEqual(["created"]);
+  });
 });

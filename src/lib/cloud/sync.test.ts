@@ -4,6 +4,7 @@ import { createObject, createRelationship, deleteObject, emptyWorkspace, placeNo
 import type { Workspace } from "../types";
 import { BackendError } from "./backend";
 import { fromRow, toRow } from "./rows";
+import { newReportId, saveReport } from "../reports";
 import { saveTemplate, templateFromDiagram } from "../templates";
 import { BUILT_IN_STEPS, saveWizard } from "../wizard";
 import { SyncEngine, type SyncState } from "./sync";
@@ -81,7 +82,8 @@ describe("rows and tables", () => {
   it("survives the trip to database columns and back for every table", () => {
     const demo = demoWorkspace("Sara");
     const firstDiagram = Object.keys(demo.diagrams)[0];
-    const tables = toTables(saveWizard(saveTemplate(demo, templateFromDiagram(demo, firstDiagram, { name: "Mine", perspective: "data", about: "" }, "Sara")!.template), "container", BUILT_IN_STEPS.container, "Sara"));
+    const withReport = saveReport(demo, { id: newReportId(), name: "Owners", description: "", subject: "components", columns: ["name", "owner"], filters: [{ field: "owner", op: "is empty", value: "" }], groupBy: "type", sortBy: null, sortDesc: false, createdBy: "Sara", createdAt: "2026-11-17T00:00:00.000Z", updatedAt: "2026-11-17T00:00:00.000Z" });
+    const tables = toTables(saveWizard(saveTemplate(withReport, templateFromDiagram(withReport, firstDiagram, { name: "Mine", perspective: "data", about: "" }, "Sara")!.template), "container", BUILT_IN_STEPS.container, "Sara"));
     for (const table of TABLE_NAMES) {
       const entries = Object.entries(tables[table]);
       expect(entries.length).toBeGreaterThan(table === "proposals" || table === "adrs" || table === "rules" ? -1 : 0);

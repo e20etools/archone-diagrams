@@ -873,6 +873,37 @@ and the protocols on them.
 - Export what the map shows as PNG, SVG, PDF, an animated GIF, draw.io, Mermaid, CSV (every link
   with the components behind it) or JSON.
 
+### Reports
+
+Reports (menu: Reports) lists twenty-one built-in reports by area, each a table worked out from
+the model as it is now, most with a chart:
+
+- Inventory: application portfolio, components by type, technology stack, library components in
+  use, external systems and vendors, shared components (on more than one diagram), network zones.
+- Connections and interfaces: interface catalogue (from, to, kind, protocols, ports, network,
+  direction, encryption), protocols and ports in use, connections in clear text, dependencies
+  between diagrams.
+- Risk and resilience: single points of failure, impact ranking (what depends on each component
+  within five levels and how many diagrams that reaches), critical components and what they rest
+  on.
+- Governance and quality: components without an owner, lifecycle and end of life, components
+  without a description, findings of every check pack, architecture decisions.
+- Data: data stores with classification, personal data, residency and who reads or writes them.
+- Diagrams: the catalogue of diagrams, with their size and the diagrams they depend on and
+  impact.
+
+Filter the rows and sort by any column on the page. Export any report as Excel (with a summary
+sheet), CSV, PDF, Word, PowerPoint (a chart and the table over as many slides as it takes), a web
+page with a filter box, Markdown or JSON; exports carry the rows shown.
+
+New report makes a report of your own: what it lists (components, connections or diagrams), the
+columns in the order ticked (owner, lifecycle, technology, criticality, tags, diagrams, what
+depends on it within five levels, protocols, ports, network, clear-text protocols and more),
+conditions (is, is not, contains, is empty, at least, at most…), a column to count by for the
+chart, and the sort, with a live preview. Owners and editors make, edit, duplicate and delete
+them; they are kept with the workspace (`custom_reports`) for every member, and recorded in the
+audit log.
+
 ### File library
 
 Files (menu: Files) keeps the documents that go with diagrams: vendor documents (datasheets,

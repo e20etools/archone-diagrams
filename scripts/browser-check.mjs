@@ -1682,6 +1682,58 @@ try {
   await clickText(page, "Cancel");
   await shot(page, "10-settings");
 
+  // Reports: built-in ones by area, the workspace's own, and eight export formats.
+  {
+    await page.goto(`${base}/reports`, { waitUntil: "networkidle0" });
+    await page.waitForSelector("[data-report-view]");
+    const rowsOf = () => page.$eval("[data-report-rows]", (e) => Number(e.getAttribute("data-report-rows")));
+    check("the reports open on the application portfolio, with its chart and rows", (await rowsOf()) > 0 && !!(await page.$("[data-report-chart]")), `${await rowsOf()} rows`);
+    await page.click('[data-report-link="interface-catalogue"]');
+    await page.waitForFunction(() => document.querySelector("[data-report-view]")?.getAttribute("data-report-view") === "Interface catalogue");
+    const allRows = await rowsOf();
+    await page.type('input[aria-label="Filter the rows"]', "HTTPS");
+    await sleep(200);
+    const filteredRows = await rowsOf();
+    check("a report's rows can be filtered on the page", filteredRows > 0 && filteredRows < allRows, `${allRows} then ${filteredRows}`);
+    const made = [];
+    for (const format of ["xlsx", "csv", "pdf", "docx", "pptx", "html", "md", "json"]) {
+      await page.click(`[data-report-format="${format}"]`);
+      let got = "";
+      for (let i = 0; i < 40 && !got; i++) {
+        await sleep(200);
+        got = (await readdir(downloads)).find((f) => f === `interface-catalogue.${format}`) ?? "";
+      }
+      if (got) made.push(got);
+    }
+    const reportCsvText = made.includes("interface-catalogue.csv") ? await readFile(join(downloads, "interface-catalogue.csv"), "utf8") : "";
+    const reportDeck = made.includes("interface-catalogue.pptx") ? await JSZip.loadAsync(await readFile(join(downloads, "interface-catalogue.pptx"))) : null;
+    check(
+      "a report exports as Excel, CSV, PDF, Word, PowerPoint, a web page, Markdown and JSON, with the rows shown",
+      made.length === 8 && reportCsvText.trim().split("\r\n").length === filteredRows + 1 && !!reportDeck && Object.keys(reportDeck.files).some((f) => f.startsWith("ppt/slides/slide")),
+      made.join(", "),
+    );
+    for (const f of made) await rm(join(downloads, f));
+    await page.click("[data-report-new]");
+    await page.waitForSelector("[data-report-builder]");
+    await page.type("[data-report-name]", "Components without an owner");
+    await page.click("[data-report-filter-add]");
+    await page.select('[data-report-filter-field="0"]', "owner");
+    await page.select('[data-report-filter-op="0"]', "is empty");
+    await page.select("[data-report-group]", "type");
+    await page.waitForSelector("[data-report-preview]");
+    await page.click("[data-report-save]");
+    await page.waitForFunction(() => document.querySelector("[data-report-view]")?.getAttribute("data-report-view") === "Components without an owner");
+    await page.waitForFunction(() => Object.keys(JSON.parse(localStorage.getItem("archone.workspace.v1")).reports ?? {}).length === 1, { timeout: 5000 });
+    const own = await stored();
+    const saved = Object.values(own.reports ?? {})[0];
+    check("a report of your own is saved with the workspace and runs at once", !!saved && saved.filters[0].op === "is empty" && (await page.$eval("[data-reports-mine]", (e) => e.getAttribute("data-reports-mine"))) === "1" && !!(await page.$("[data-report-chart]")));
+    await shot(page, "10e-reports");
+    await page.click("[data-report-delete]");
+    await page.waitForFunction(() => document.querySelector("[data-reports-mine]")?.getAttribute("data-reports-mine") === "0");
+    await page.waitForFunction(() => Object.keys(JSON.parse(localStorage.getItem("archone.workspace.v1")).reports ?? {}).length === 0, { timeout: 5000 });
+    check("a report of your own can be deleted", true);
+  }
+
   // The file library: upload, link to diagrams, open from a diagram, change links, delete.
   {
     const uploads = await mkdtemp(join(tmpdir(), "archone-up-"));

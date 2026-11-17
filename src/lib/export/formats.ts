@@ -12,7 +12,7 @@ import { escapeXml, pictureFrames, pictureSvg, type Picture } from "./picture";
 export function diagramWorkspace(ws: Workspace, diagram: Diagram): Workspace {
   const objects = Object.fromEntries(diagramObjects(ws, diagram).map((o) => [o.id, { ...o, parentId: o.parentId && diagram.nodes[o.parentId] ? o.parentId : null }]));
   const relationships = Object.fromEntries(diagramRelationships(ws, diagram).map((r) => [r.id, r]));
-  return { ...ws, objects, relationships, diagrams: { [diagram.id]: diagram }, proposals: {}, adrs: {}, templates: {}, wizards: {} };
+  return { ...ws, objects, relationships, diagrams: { [diagram.id]: diagram }, proposals: {}, adrs: {}, templates: {}, wizards: {}, reports: {} };
 }
 
 /* ---------- pictures in the browser ---------- */

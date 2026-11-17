@@ -4192,20 +4192,48 @@ var wizardConfigSchema = objectType({
 	author: stringType(),
 	updatedAt: stringType()
 });
-/**
-* A template the workspace made from one of its own diagrams. It keeps the boxes (each a
-* library component), the lines between them and where they stood, and nothing else: no
-* owners, descriptions, basic information or links, which belong to the real objects.
-*/
+var PERSPECTIVE_IDS = [
+	"applications",
+	"data",
+	"infrastructure",
+	"business"
+];
+var customReportSchema = objectType({
+	id: stringType().min(1).max(80),
+	name: stringType().trim().min(1).max(120),
+	description: stringType().max(500).default(""),
+	subject: enumType([
+		"components",
+		"connections",
+		"diagrams"
+	]),
+	columns: arrayType(stringType().max(80)).min(1).max(20),
+	filters: arrayType(objectType({
+		field: stringType().max(80),
+		op: enumType([
+			"is",
+			"is not",
+			"contains",
+			"does not contain",
+			"is empty",
+			"is not empty",
+			"at least",
+			"at most"
+		]),
+		value: stringType().max(200).default("")
+	})).max(12).default([]),
+	/** Counts the rows by this column, for the chart. */
+	groupBy: stringType().max(80).nullable().default(null),
+	sortBy: stringType().max(80).nullable().default(null),
+	sortDesc: booleanType().default(false),
+	createdBy: stringType().max(120).default(""),
+	createdAt: stringType(),
+	updatedAt: stringType()
+});
 var savedTemplateSchema = objectType({
 	id: stringType(),
 	name: stringType(),
-	perspective: enumType([
-		"applications",
-		"data",
-		"infrastructure",
-		"business"
-	]),
+	perspective: enumType(PERSPECTIVE_IDS),
 	about: stringType(),
 	tags: stringType().default(""),
 	direction: enumType(["TB", "LR"]),
@@ -4248,6 +4276,8 @@ objectType({
 	templates: recordType(savedTemplateSchema).default({}),
 	/** The workspace's own wizard questions, by kind of diagram. A kind without one uses the built-in questions. */
 	wizards: recordType(wizardConfigSchema).default({}),
+	/** The workspace's own reports. Missing in workspaces saved before they existed. */
+	reports: recordType(customReportSchema).default({}),
 	updatedAt: stringType()
 });
 // src/lib/ai/prompt.ts

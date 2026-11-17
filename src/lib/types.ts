@@ -351,6 +351,27 @@ export const PERSPECTIVE_IDS = ["applications", "data", "infrastructure", "busin
  * library component), the lines between them and where they stood, and nothing else: no
  * owners, descriptions, basic information or links, which belong to the real objects.
  */
+/** A report a workspace makes for itself: what it lists, which columns, filters and grouping. */
+export const FILTER_OPS = ["is", "is not", "contains", "does not contain", "is empty", "is not empty", "at least", "at most"] as const;
+export type FilterOp = (typeof FILTER_OPS)[number];
+
+export const customReportSchema = z.object({
+  id: z.string().min(1).max(80),
+  name: z.string().trim().min(1).max(120),
+  description: z.string().max(500).default(""),
+  subject: z.enum(["components", "connections", "diagrams"]),
+  columns: z.array(z.string().max(80)).min(1).max(20),
+  filters: z.array(z.object({ field: z.string().max(80), op: z.enum(FILTER_OPS), value: z.string().max(200).default("") })).max(12).default([]),
+  /** Counts the rows by this column, for the chart. */
+  groupBy: z.string().max(80).nullable().default(null),
+  sortBy: z.string().max(80).nullable().default(null),
+  sortDesc: z.boolean().default(false),
+  createdBy: z.string().max(120).default(""),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+export type CustomReport = z.infer<typeof customReportSchema>;
+
 export const savedTemplateSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -385,6 +406,8 @@ export const workspaceSchema = z.object({
   templates: z.record(savedTemplateSchema).default({}),
   /** The workspace's own wizard questions, by kind of diagram. A kind without one uses the built-in questions. */
   wizards: z.record(wizardConfigSchema).default({}),
+  /** The workspace's own reports. Missing in workspaces saved before they existed. */
+  reports: z.record(customReportSchema).default({}),
   updatedAt: z.string(),
 });
 export type Workspace = z.infer<typeof workspaceSchema>;

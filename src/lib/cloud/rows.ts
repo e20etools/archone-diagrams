@@ -1,4 +1,4 @@
-import type { Adr, CustomRule, DiagramArchive, WizardConfig, SavedTemplate, Flow, ModelLink, ModelObject, NodePlacement, Notation, Proposal, Relationship } from "../types";
+import type { Adr, CustomReport, CustomRule, DiagramArchive, WizardConfig, SavedTemplate, Flow, ModelLink, ModelObject, NodePlacement, Notation, Proposal, Relationship } from "../types";
 import { nodeKey, splitNodeKey, type DiagramMeta, type TableName } from "./tables";
 
 /** Database rows and the app's objects, converted in both directions. Column names match the migration. */
@@ -13,6 +13,7 @@ export const SQL_TABLE: Record<TableName, string> = {
   rules: "custom_rules",
   templates: "diagram_templates",
   wizards: "wizard_configs",
+  reports: "custom_reports",
 };
 
 export type Row = Record<string, unknown>;
@@ -146,6 +147,10 @@ export function toRow(table: TableName, workspaceId: string, key: string, value:
       const w = value as WizardConfig;
       return { workspace_id: workspaceId, id: w.id, data: w, created_at: w.updatedAt, deleted: false };
     }
+    case "reports": {
+      const r = value as CustomReport;
+      return { workspace_id: workspaceId, id: r.id, data: r, created_at: r.createdAt, deleted: false };
+    }
   }
 }
 
@@ -231,6 +236,8 @@ export function fromRow(table: TableName, row: Row): { key: string; value: unkno
       return { key, value: row.data as SavedTemplate };
     case "wizards":
       return { key, value: row.data as WizardConfig };
+    case "reports":
+      return { key, value: row.data as CustomReport };
   }
 }
 
@@ -245,6 +252,7 @@ export const KEY_COLUMNS: Record<TableName, string[]> = {
   rules: ["workspace_id", "id"],
   templates: ["workspace_id", "id"],
   wizards: ["workspace_id", "id"],
+  reports: ["workspace_id", "id"],
 };
 
 /** Timestamps are normalised on the way in, so an object that went to the database and back compares equal. */
