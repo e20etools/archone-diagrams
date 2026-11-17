@@ -210,7 +210,7 @@ export const proposalSchema = z.object({
   id: z.string(),
   origin: z.enum(["ai-prompt", "ai-image", "import", "api"]),
   /** For an import: what kind of file it was. */
-  importKind: z.enum(["spreadsheet", "visio", "drawio", "mermaid", "structurizr", "apm", "iac", "discovery"]).optional(),
+  importKind: z.enum(["spreadsheet", "visio", "drawio", "mermaid", "structurizr", "apm", "iac", "discovery", "directory"]).optional(),
   /** A spreadsheet fills the model without drawing anything; a diagram file becomes a diagram laid out as it was drawn. */
   /** What a drafted proposal was drafted from, when it was not a description. */
   sourceKind: z.enum(["transcript", "voice"]).optional(),
@@ -259,6 +259,8 @@ export const adrSchema = z.object({
   versionId: z.string().optional(),
   author: z.string(),
   decidedAt: z.string().nullable(),
+  /** Issues or work items made from it in Jira or Azure DevOps, to follow it up. */
+  issues: z.array(z.object({ system: z.string(), key: z.string(), url: z.string() })).optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });

@@ -4036,7 +4036,8 @@ var proposalSchema = objectType({
 		"structurizr",
 		"apm",
 		"iac",
-		"discovery"
+		"discovery",
+		"directory"
 	]).optional(),
 	/** A spreadsheet fills the model without drawing anything; a diagram file becomes a diagram laid out as it was drawn. */
 	/** What a drafted proposal was drafted from, when it was not a description. */
@@ -4090,6 +4091,12 @@ var adrSchema = objectType({
 	versionId: stringType().optional(),
 	author: stringType(),
 	decidedAt: stringType().nullable(),
+	/** Issues or work items made from it in Jira or Azure DevOps, to follow it up. */
+	issues: arrayType(objectType({
+		system: stringType(),
+		key: stringType(),
+		url: stringType()
+	})).optional(),
 	createdAt: stringType(),
 	updatedAt: stringType()
 });
@@ -4543,6 +4550,28 @@ var requestSchema = discriminatedUnionType("mode", [
 		context: stringType().max(24e4)
 	})
 ]);
+/**
+* A workspace's own AI provider (Settings → Integrations), reached through the integrations Edge
+* Function with the person's sign-in and a ticket for a request already counted by ai_begin. The
+* function adds the key it keeps; this server never sees it.
+*/
+function workspaceProvider(integration, via) {
+	return {
+		id: "openai-compatible",
+		key: via.token,
+		model: integration.model || integration.provider,
+		visionModel: integration.visionModel || void 0,
+		baseUrl: `${via.url.replace(/\/$/, "")}/functions/v1/integrations/v1`,
+		maxTokens: 4096,
+		headers: {
+			apikey: via.anonKey,
+			"x-archone-workspace": via.workspaceId,
+			"x-archone-usage": String(via.usage),
+			"x-archone-ticket": via.ticket
+		},
+		keyHint: "Check the AI provider's key in Settings → Integrations."
+	};
+}
 var DEFAULT_ANTHROPIC_MODEL = "claude-sonnet-5-5";
 /** Groq's free plan: a capable text model, and one that reads pictures. */
 var DEFAULT_GROQ_MODEL = "llama-3.3-70b-versatile";
@@ -4693,7 +4722,8 @@ async function callOpenAiStyle(p, request, fetchImpl) {
 		method: "POST",
 		headers: {
 			"content-type": "application/json",
-			authorization: `Bearer ${p.key}`
+			authorization: `Bearer ${p.key}`,
+			...p.headers
 		},
 		body: JSON.stringify({
 			model: modelFor(p, request),
@@ -4752,10 +4782,10 @@ function usedTokens(provider, payload) {
 	const n = (v) => typeof v === "number" && Number.isFinite(v) && v > 0 ? Math.round(v) : 0;
 	return provider.id === "anthropic" ? n(usage.input_tokens) + n(usage.output_tokens) : n(usage.total_tokens) || n(usage.prompt_tokens) + n(usage.completion_tokens);
 }
-async function handleAiRequest(body, env, fetchImpl = fetch) {
+async function handleAiRequest(body, env, fetchImpl = fetch, own) {
 	const parsed = requestSchema.safeParse(body);
 	if (!parsed.success) return badRequest(body);
-	const provider = resolveProvider(env);
+	const provider = own ?? resolveProvider(env);
 	if (!provider) return {
 		status: 501,
 		body: {
@@ -4788,7 +4818,7 @@ async function handleAiRequest(body, env, fetchImpl = fetch) {
 			status: 502,
 			body: {
 				error: "provider_error",
-				message: "The AI provider refused the key. Check AI_API_KEY on the server.",
+				message: `The AI provider refused the key. ${provider.keyHint ?? "Check AI_API_KEY on the server."}`,
 				providerStatus: response.status
 			}
 		};
@@ -4925,6 +4955,82 @@ async function finishUse(service, token, ticket, tokens, ok, fetchImpl) {
 		}, fetchImpl);
 	} catch {}
 }
+// src/lib/integrations/catalog.ts
+var AI_PROVIDERS = [
+	{
+		id: "groq",
+		label: "Groq",
+		baseUrl: "https://api.groq.com/openai/v1",
+		model: "llama-3.3-70b-versatile",
+		visionModel: "qwen/qwen3.8-27b",
+		free: "Free plan with no card: about 30 requests a minute and 1,000 a day on Llama 3.3 70B. Very fast.",
+		keyUrl: "https://console.groq.com/keys"
+	},
+	{
+		id: "gemini",
+		label: "Google Gemini (AI Studio)",
+		baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
+		model: "gemini-flash-latest",
+		visionModel: "gemini-flash-latest",
+		free: "Free tier on selected Gemini models with daily limits; very long context and pictures.",
+		keyUrl: "https://aistudio.google.com/apikey"
+	},
+	{
+		id: "openrouter",
+		label: "OpenRouter",
+		baseUrl: "https://openrouter.ai/api/v1",
+		model: "meta-llama/llama-3.3-70b-instruct:free",
+		free: "One key for many models; those ending in :free cost nothing, about 20 a minute and 50 a day.",
+		keyUrl: "https://openrouter.ai/keys"
+	},
+	{
+		id: "cerebras",
+		label: "Cerebras",
+		baseUrl: "https://api.cerebras.ai/v1",
+		model: "gpt-oss-120b",
+		free: "Free plan of about a million tokens a day; shorter context on the free plan.",
+		keyUrl: "https://cloud.cerebras.ai"
+	},
+	{
+		id: "mistral",
+		label: "Mistral (free mode)",
+		baseUrl: "https://api.mistral.ai/v1",
+		model: "mistral-small-latest",
+		visionModel: "mistral-small-latest",
+		free: "Free mode with limits set per account; hosted in the EU.",
+		keyUrl: "https://console.mistral.ai/api-keys"
+	},
+	{
+		id: "github",
+		label: "GitHub Models",
+		baseUrl: "https://models.github.ai/inference",
+		model: "openai/gpt-4.1-mini",
+		visionModel: "openai/gpt-4.1-mini",
+		free: "Free for GitHub accounts with daily limits per model. The key is a GitHub token with the models permission.",
+		keyUrl: "https://github.com/settings/personal-access-tokens"
+	},
+	{
+		id: "sambanova",
+		label: "SambaNova Cloud",
+		baseUrl: "https://api.sambanova.ai/v1",
+		model: "Meta-Llama-3.3-70B-Instruct",
+		free: "Free plan with no card, rate limited per model.",
+		keyUrl: "https://cloud.sambanova.ai/apis"
+	},
+	{
+		id: "cloudflare",
+		label: "Cloudflare Workers AI",
+		baseUrl: "https://api.cloudflare.com/client/v4/accounts/{account}/ai/v1",
+		model: "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+		free: "10,000 neurons a day free. Needs the account ID and an API token with Workers AI access.",
+		keyUrl: "https://dash.cloudflare.com/profile/api-tokens"
+	}
+];
+var aiProviderOf = (id) => AI_PROVIDERS.find((p) => p.id === id);
+AI_PROVIDERS.map((p) => ({
+	value: p.id,
+	label: p.label
+}));
 // src/lib/ai/signin.ts
 /** The accounts service to check sign-ins against, or null when the app runs without accounts. */
 function accounts(env) {
@@ -5004,6 +5110,32 @@ function allowedOrigin(request, env) {
 		allow: list.includes(origin) ? origin : null
 	};
 }
+/** The AI provider the workspace connected itself, if any: its name and models, never its key. */
+async function workspaceAi(service, token, workspaceId, fetchImpl) {
+	try {
+		const response = await fetchImpl(`${service.url}/rest/v1/rpc/ai_integration`, {
+			method: "POST",
+			headers: {
+				apikey: service.key,
+				authorization: `Bearer ${token}`,
+				"content-type": "application/json"
+			},
+			body: JSON.stringify({ p_workspace: workspaceId })
+		});
+		if (!response.ok) return null;
+		const data = await response.json();
+		if (!data || typeof data.provider !== "string" || !data.provider) return null;
+		const known = aiProviderOf(data.provider);
+		const text = (v) => typeof v === "string" ? v.trim() : "";
+		return {
+			provider: data.provider,
+			model: text(data.model) || known?.model || "",
+			visionModel: text(data.visionModel) || known?.visionModel || ""
+		};
+	} catch {
+		return null;
+	}
+}
 function createAiHandler(getEnv, fetchImpl = fetch) {
 	return async function handle(request) {
 		const env = getEnv();
@@ -5067,19 +5199,33 @@ function createAiHandler(getEnv, fetchImpl = fetch) {
 		const check = checkAiRequest(body);
 		if (!check.ok) return json(check.result.status, check.result.body);
 		let ticket = null;
+		let own;
 		if (!!service && (env.AI_FAIR_USE ?? "").toLowerCase() !== "off") {
 			const workspaceId = body.workspaceId;
 			if (!isWorkspaceId(workspaceId)) return json(400, {
 				error: "workspace_required",
 				message: "Open a workspace to use AI."
 			});
-			const begun = await beginUse(service, bearer(request), workspaceId, check.kind, globalDailyLimit(env), fetchImpl);
+			const integration = await workspaceAi(service, bearer(request), workspaceId, fetchImpl);
+			if (!integration && !resolveProvider(env)) return json(501, {
+				error: "not_configured",
+				message: "No AI provider is connected. An owner connects one in Settings → Integrations."
+			});
+			const begun = await beginUse(service, bearer(request), workspaceId, check.kind, integration ? 0 : globalDailyLimit(env), fetchImpl);
 			if (!begun.ok) return json(begun.status, begun.body);
 			ticket = begun.ticket;
+			if (integration) own = workspaceProvider(integration, {
+				url: service.url,
+				anonKey: service.key,
+				token: bearer(request),
+				workspaceId,
+				usage: ticket.usage,
+				ticket: ticket.key
+			});
 		}
 		let result;
 		try {
-			result = await handleAiRequest(body, env, fetchImpl);
+			result = await handleAiRequest(body, env, fetchImpl, own);
 		} catch {
 			result = {
 				status: 500,

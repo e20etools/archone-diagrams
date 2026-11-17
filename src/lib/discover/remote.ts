@@ -34,7 +34,7 @@ export class Remote {
   constructor(
     private readonly label: string,
     private readonly settings: string,
-    private readonly fetchImpl: typeof fetch,
+    readonly fetchImpl: typeof fetch,
     budgetMs = 50_000,
   ) {
     this.deadline = Date.now() + budgetMs;
@@ -45,7 +45,13 @@ export class Remote {
     return Date.now() < this.deadline - 3_000;
   }
 
-  async json(url: string, init: RequestInit = {}, optional = false): Promise<unknown> {
+  /** For answers that need not be JSON (a webhook's "ok"): the text, or the same errors as json(). */
+  async send(url: string, init: RequestInit = {}): Promise<string> {
+    const answer = await this.json(url, { ...init, headers: { accept: "*/*", ...(init.headers as Record<string, string>) } }, false, true);
+    return typeof answer === "string" ? answer : JSON.stringify(answer ?? "");
+  }
+
+  async json(url: string, init: RequestInit = {}, optional = false, anyBody = false): Promise<unknown> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), Math.max(1_000, Math.min(REQUEST_TIMEOUT_MS, this.deadline - Date.now())));
     let response: Response;
@@ -67,6 +73,7 @@ export class Remote {
         data = undefined;
       }
       if (response.ok) {
+        if (anyBody) return data ?? body;
         if (data === undefined && !optional) throw new DiscoverError(502, "unreadable", `${this.label} answered with something other than JSON. Check the address in ${this.settings}.`);
         return data;
       }

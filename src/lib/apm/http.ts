@@ -20,7 +20,7 @@ export const APM_DATASETS = ["applications", "classifications", "lifecycle", "in
 export type ApmDataset = (typeof APM_DATASETS)[number];
 export type ApmData = Record<ApmDataset, Record<string, unknown>[]> & { host: string; fetchedAt: string };
 
-const TOKEN = /^apmf_[a-f0-9]{64}$/;
+export const APM_TOKEN = /^apmf_[a-f0-9]{64}$/;
 const MAX_BYTES = 5_000_000;
 const TIMEOUT_MS = 15_000;
 const HEADERS = { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff" };
@@ -50,7 +50,7 @@ export function createApmHandler(getEnv: () => ApmEnv, fetchImpl: typeof fetch =
   return async function handle(request: Request): Promise<Response> {
     const env = getEnv();
     const base = apmBase(env);
-    const kept = TOKEN.test((env.APM_FEED_TOKEN ?? "").trim()) ? (env.APM_FEED_TOKEN ?? "").trim() : "";
+    const kept = APM_TOKEN.test((env.APM_FEED_TOKEN ?? "").trim()) ? (env.APM_FEED_TOKEN ?? "").trim() : "";
 
     // Only this site's own pages call the endpoint: another site may not use the server's token through a visitor.
     const origin = request.headers.get("origin");
@@ -77,7 +77,7 @@ export function createApmHandler(getEnv: () => ApmEnv, fetchImpl: typeof fetch =
     } catch {
       return json(400, { error: "bad_request", message: "The request could not be read." });
     }
-    if (given && !TOKEN.test(given)) return json(400, { error: "bad_token", message: "That does not look like an APM feed token. It starts with apmf_ and is shown once, when the token is created." });
+    if (given && !APM_TOKEN.test(given)) return json(400, { error: "bad_token", message: "That does not look like an APM feed token. It starts with apmf_ and is shown once, when the token is created." });
 
     let token = given;
     if (!token) {
@@ -88,28 +88,36 @@ export function createApmHandler(getEnv: () => ApmEnv, fetchImpl: typeof fetch =
       token = kept;
     }
 
-    const data: Partial<ApmData> = { host: base.host, fetchedAt: new Date().toISOString() };
-    for (const dataset of APM_DATASETS) {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
-      try {
-        // Redirects are refused: the token must not follow APM's address to somewhere else.
-        const response = await fetchImpl(new URL(`/api/public/feeds/${dataset}.json`, base).toString(), { headers: { authorization: `Bearer ${token}`, accept: "application/json" }, redirect: "error", signal: controller.signal });
-        if (!response.ok) {
-          const [error, message] = REFUSALS[response.status] ?? ["apm_failed", `APM answered with status ${response.status} for the ${dataset} feed.`];
-          return json(response.status === 429 ? 429 : 502, { error, message, dataset });
-        }
-        const text = await response.text();
-        if (text.length > MAX_BYTES) return json(502, { error: "too_large", message: `The ${dataset} feed is larger than 5 MB.`, dataset });
-        const rows: unknown = JSON.parse(text);
-        if (!Array.isArray(rows)) return json(502, { error: "apm_failed", message: `The ${dataset} feed did not return a list.`, dataset });
-        data[dataset] = rows.filter((row): row is Record<string, unknown> => !!row && typeof row === "object" && !Array.isArray(row));
-      } catch {
-        return json(502, { error: "apm_unreachable", message: `APM could not be reached for the ${dataset} feed, or its answer could not be read.`, dataset });
-      } finally {
-        clearTimeout(timer);
-      }
-    }
-    return json(200, data);
+    const answer = await readApmFeeds(base, token, fetchImpl);
+    return json(answer.status, answer.body);
   };
+}
+
+const reply = (status: number, body: Record<string, unknown>) => ({ status, body });
+
+/** Reads the four feeds from APM with a feed token: the answer to send on, and its status. */
+export async function readApmFeeds(base: URL, token: string, fetchImpl: typeof fetch = fetch): Promise<{ status: number; body: Record<string, unknown> }> {
+  const data: Partial<ApmData> = { host: base.host, fetchedAt: new Date().toISOString() };
+  for (const dataset of APM_DATASETS) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+    try {
+      // Redirects are refused: the token must not follow APM's address to somewhere else.
+      const response = await fetchImpl(new URL(`/api/public/feeds/${dataset}.json`, base).toString(), { headers: { authorization: `Bearer ${token}`, accept: "application/json" }, redirect: "error", signal: controller.signal });
+      if (!response.ok) {
+        const [error, message] = REFUSALS[response.status] ?? ["apm_failed", `APM answered with status ${response.status} for the ${dataset} feed.`];
+        return reply(response.status === 429 ? 429 : 502, { error, message, dataset });
+      }
+      const text = await response.text();
+      if (text.length > MAX_BYTES) return reply(502, { error: "too_large", message: `The ${dataset} feed is larger than 5 MB.`, dataset });
+      const rows: unknown = JSON.parse(text);
+      if (!Array.isArray(rows)) return reply(502, { error: "apm_failed", message: `The ${dataset} feed did not return a list.`, dataset });
+      data[dataset] = rows.filter((row): row is Record<string, unknown> => !!row && typeof row === "object" && !Array.isArray(row));
+    } catch {
+      return reply(502, { error: "apm_unreachable", message: `APM could not be reached for the ${dataset} feed, or its answer could not be read.`, dataset });
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  return { status: 200, body: data as Record<string, unknown> };
 }

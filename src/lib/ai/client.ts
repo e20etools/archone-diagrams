@@ -204,21 +204,29 @@ export async function askAi(question: string, context: string): Promise<{ answer
   throw new AiError("failed", String(result.data?.message ?? "The AI model did not answer. Try again."));
 }
 
+type OwnAi = { provider: string; model: string; visionModel: string };
+let integrationLookup: (() => Promise<OwnAi | null>) | null = null;
+/** How the app learns that the open workspace has its own AI provider (Settings → Integrations). */
+export function setAiIntegrationLookup(lookup: (() => Promise<OwnAi | null>) | null): void {
+  integrationLookup = lookup;
+}
+
 export async function fetchAiStatus(): Promise<AiStatus> {
   const none: AiStatus = { configured: false, engine: null, needsCode: false };
+  let server = none;
   try {
     const response = await fetch(ENDPOINT);
-    if (!response.ok) return none;
-    const data = (await response.json()) as Partial<AiStatus>;
-    return {
-      configured: !!data.configured,
-      engine: data.engine ?? null,
-      visionEngine: typeof data.visionEngine === "string" ? data.visionEngine : null,
-      needsCode: !!data.needsCode,
-    };
+    if (response.ok) {
+      const data = (await response.json()) as Partial<AiStatus>;
+      server = { configured: !!data.configured, engine: data.engine ?? null, visionEngine: typeof data.visionEngine === "string" ? data.visionEngine : null, needsCode: !!data.needsCode };
+    }
   } catch {
-    return none;
+    server = none;
   }
+  // The workspace's own provider is used before the server's key.
+  const own = integrationLookup ? await integrationLookup().catch(() => null) : null;
+  if (own) return { configured: true, engine: `${own.provider}: ${own.model}`, visionEngine: own.visionModel ? `${own.provider}: ${own.visionModel}` : null, needsCode: server.needsCode };
+  return server;
 }
 
 function fileToBase64(file: File): Promise<string> {

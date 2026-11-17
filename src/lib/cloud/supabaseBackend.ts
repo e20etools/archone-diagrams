@@ -2,6 +2,7 @@ import type { CategoryRoles } from "../categories";
 import type { TrustPage } from "../trust";
 import { AUDIT_PAGE_SIZE, cleanSearch, dayBounds, type AuditEntry } from "./audit";
 import { createClient, type PostgrestError, type RealtimeChannel, type SupabaseClient } from "@supabase/supabase-js";
+import type { IntegrationInfo } from "../integrations/catalog";
 import { BackendError, type AiUsageReport, type ApiKeyInfo, type Backend, type FileKind, type StoredFile, type CloudUser, type LiveLink, type WebhookInfo, type Invite, type LiveHandlers, type Member, type Peer, type PendingInvite, type Role, type WorkspaceSummary } from "./backend";
 import { snapshotToTables, type Comment, type Review, type ReviewDecision, type ReviewStage, type VersionInfo } from "./collab";
 import { KEY_COLUMNS, SQL_TABLE, fromRow, toRow, type Row } from "./rows";
@@ -454,6 +455,33 @@ export function createSupabaseBackend(url: string, key: string): Backend {
     async revokeApiKey(_workspaceId, keyId) {
       const { error } = await supabase.rpc("revoke_api_key", { p_key: keyId });
       if (error) fail(error, "The API key could not be revoked.");
+    },
+    async listIntegrations(workspaceId) {
+      const { data, error } = await supabase.rpc("integration_list", { p_workspace: workspaceId });
+      // A database without the integrations migration has none.
+      if (error && (error.code === "PGRST202" || error.code === "42883")) return [];
+      if (error) fail(error, "The integrations could not be loaded.");
+      return (Array.isArray(data) ? data : []) as IntegrationInfo[];
+    },
+    async saveIntegration(workspaceId, provider, settings, secrets, enabled) {
+      const { error } = await supabase.rpc("integration_save", { p_workspace: workspaceId, p_provider: provider, p_settings: settings, p_secrets: secrets, p_enabled: enabled });
+      if (error) fail(error, "The integration could not be saved.");
+    },
+    async removeIntegration(workspaceId, provider) {
+      const { error } = await supabase.rpc("integration_remove", { p_workspace: workspaceId, p_provider: provider });
+      if (error) fail(error, "The integration could not be removed.");
+    },
+    async useIntegration(workspaceId, provider, action, args = {}) {
+      const { data, error } = await supabase.functions.invoke("integrations", { body: { ...args, action, workspaceId, ...(provider ? { provider } : {}) } });
+      if (error) {
+        // The function says why in its answer; the client's own message only gives the status.
+        const context = (error as { context?: Response }).context;
+        const said = context && typeof context.json === "function" ? ((await context.json().catch(() => null)) as { message?: string } | null) : null;
+        if (said?.message) throw new BackendError(context?.status === 403 ? "forbidden" : "invalid", said.message);
+        if (context?.status === 404) throw new BackendError("unknown", "The integrations service is not deployed on this server yet.");
+        fail({ message: error.message || "The integration could not be used." }, "The integration could not be used.");
+      }
+      return data as never;
     },
     async listWebhooks(workspaceId) {
       const { data, error } = await supabase.from("webhooks").select("id, url, created_at").eq("workspace_id", workspaceId).order("created_at");

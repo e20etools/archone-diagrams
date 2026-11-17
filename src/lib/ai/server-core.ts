@@ -53,7 +53,7 @@ const requestSchema = z.discriminatedUnion("mode", [
 ]);
 export type AiRequest = z.infer<typeof requestSchema>;
 
-interface Provider {
+export interface Provider {
   id: "anthropic" | "openai" | "groq" | "lovable" | "openai-compatible";
   key: string;
   model: string;
@@ -62,6 +62,28 @@ interface Provider {
   visionModel?: string;
   /** A ceiling on the answer's length, for plans that count it against a per-minute allowance. */
   maxTokens?: number;
+  /** Sent with each call besides the key: a workspace's own provider is reached through the integrations function. */
+  headers?: Record<string, string>;
+  /** Where the person fixes a key the provider refuses. */
+  keyHint?: string;
+}
+
+/**
+ * A workspace's own AI provider (Settings → Integrations), reached through the integrations Edge
+ * Function with the person's sign-in and a ticket for a request already counted by ai_begin. The
+ * function adds the key it keeps; this server never sees it.
+ */
+export function workspaceProvider(integration: { provider: string; model: string; visionModel: string }, via: { url: string; anonKey: string; token: string; workspaceId: string; usage: number; ticket: string }): Provider {
+  return {
+    id: "openai-compatible",
+    key: via.token,
+    model: integration.model || integration.provider,
+    visionModel: integration.visionModel || undefined,
+    baseUrl: `${via.url.replace(/\/$/, "")}/functions/v1/integrations/v1`,
+    maxTokens: 4096,
+    headers: { apikey: via.anonKey, "x-archone-workspace": via.workspaceId, "x-archone-usage": String(via.usage), "x-archone-ticket": via.ticket },
+    keyHint: "Check the AI provider's key in Settings → Integrations.",
+  };
 }
 
 const DEFAULT_ANTHROPIC_MODEL = "claude-sonnet-5-5";
@@ -167,7 +189,7 @@ async function callOpenAiStyle(p: Provider, request: AiRequest, fetchImpl: typeo
       : text;
   return fetchImpl(`${p.baseUrl.replace(/\/$/, "")}/chat/completions`, {
     method: "POST",
-    headers: { "content-type": "application/json", authorization: `Bearer ${p.key}` },
+    headers: { "content-type": "application/json", authorization: `Bearer ${p.key}`, ...p.headers },
     body: JSON.stringify({
       model: modelFor(p, request),
       messages: [
@@ -235,10 +257,10 @@ function usedTokens(provider: Provider, payload: unknown): number {
   return provider.id === "anthropic" ? n(usage.input_tokens) + n(usage.output_tokens) : n(usage.total_tokens) || n(usage.prompt_tokens) + n(usage.completion_tokens);
 }
 
-export async function handleAiRequest(body: unknown, env: AiEnv, fetchImpl: typeof fetch = fetch): Promise<AiResult> {
+export async function handleAiRequest(body: unknown, env: AiEnv, fetchImpl: typeof fetch = fetch, own?: Provider): Promise<AiResult> {
   const parsed = requestSchema.safeParse(body);
   if (!parsed.success) return badRequest(body);
-  const provider = resolveProvider(env);
+  const provider = own ?? resolveProvider(env);
   if (!provider) {
     return { status: 501, body: { error: "not_configured", message: "No AI provider is configured on the server." } };
   }
@@ -264,7 +286,7 @@ export async function handleAiRequest(body: unknown, env: AiEnv, fetchImpl: type
     if (response.status === 401 || response.status === 403) {
       return {
         status: 502,
-        body: { error: "provider_error", message: "The AI provider refused the key. Check AI_API_KEY on the server.", providerStatus: response.status },
+        body: { error: "provider_error", message: `The AI provider refused the key. ${provider.keyHint ?? "Check AI_API_KEY on the server."}`, providerStatus: response.status },
       };
     }
     return { status: 502, body: { error: "provider_error", message: `The AI provider answered with status ${response.status}.`, providerStatus: response.status } };

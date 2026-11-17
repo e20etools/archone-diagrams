@@ -1171,6 +1171,37 @@ credentials go only where the settings say. A copy without accounts refuses live
 unless `DISCOVERY_REQUIRE_SIGN_IN=false` is set, which only makes sense on a copy that only
 its owner can reach.
 
+### Integrations (Settings → Integrations)
+
+Owners connect outside services from the app itself; nothing has to be added to the hosting.
+Addresses, regions and user names are kept with the workspace. Keys, passwords, tokens and
+service-account keys are kept encrypted in Supabase Vault and are never sent back to a browser:
+the form shows them only as "Kept". The `integrations` Edge Function (supabase/functions/integrations)
+is the only code that reads them back, with the service role the platform gives it, after checking
+the caller's own sign-in and role. Every change is written to the audit log, with the names of the
+secret fields but never their values. Owners and editors can test a connection; its result is shown
+next to the service.
+
+| Group | Services | What the app does with it |
+|---|---|---|
+| AI | Groq, Google Gemini (AI Studio), OpenRouter, Cerebras, Mistral, GitHub Models, SambaNova, Cloudflare Workers AI | AI drafting and questions with the workspace's own key. Every request is still counted by the fair-use limits, and reaches the provider only with a ticket from that count. "Load models" lists what the key can use. |
+| Cloud providers | AWS, Azure, Google Cloud | Import → Discover what is running |
+| Discovery and CMDB | ServiceNow, BMC Helix Discovery, Device42 | Import → Discover what is running |
+| Application portfolio | APM & Landscape | Import → From APM & Landscape, without pasting a token |
+| Code | GitHub (and GitHub Enterprise) | Import → From a GitHub repository: the IaC files under a folder, read together |
+| Identity and directory | Microsoft Entra ID (Azure AD, including AD synced to it), Okta | Import → People and teams: a draft of people and groups to choose owners from |
+| Notifications | Microsoft Teams (Workflows webhook), Slack (incoming webhook), email through Resend, SendGrid, Mailgun or Postmark | A message when a review is asked for or decided, and Export → Share to channels. The text is written by the function from the workspace's records. |
+| Work tracking | Jira Cloud, Azure DevOps Boards | A decision record → Create a Jira issue / work item, listed on the record as its follow-up |
+| Documentation | Confluence Cloud | Export → Publish to Confluence: a page with the picture and the list of objects |
+
+On-premises Active Directory is reached through Entra ID (Entra Connect), because the function runs in
+the cloud and cannot reach a directory inside a private network. The same goes for any service on a
+private network: it has to be reachable from the internet over https.
+
+To deploy the function with the Supabase CLI: `supabase functions deploy integrations --no-verify-jwt`
+(it checks each person's sign-in itself). It needs no secrets of its own. The live discovery settings
+on the server (DISCOVERY_*, below) still work, and a source connected in the workspace is used first.
+
 ### Flows: a use case, step by step
 
 A diagram shows what exists. A flow tells what happens: one use case, in order, over the

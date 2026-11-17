@@ -142,12 +142,12 @@ describe("AI endpoint over HTTP", () => {
     expect(await without.json()).toMatchObject({ error: "workspace_required" });
     // A request that would be refused anyway is not counted.
     expect((await handle(post(signed, JSON.stringify({ mode: "prompt", text: "", workspaceId: workspace })))).status).toBe(400);
-    expect(calls).toEqual([]);
+    expect(calls.filter((c) => c.name !== "ai_integration")).toEqual([]);
 
     const ok = await handle(post(signed, withWorkspace));
     expect(ok.status).toBe(200);
     expect(await ok.json()).toMatchObject({ allowance: { hour: 4, day: 20, tokens: 9000 - 321 } });
-    expect(calls).toEqual([
+    expect(calls.filter((c) => c.name !== "ai_integration")).toEqual([
       { name: "ai_begin", auth: "Bearer good-token", args: { p_workspace: workspace, p_kind: "text", p_global_day: 0 } },
       { name: "ai_finish", auth: "Bearer good-token", args: { p_usage: 7, p_key: "k-7", p_tokens: 321, p_ok: true } },
     ]);
@@ -171,10 +171,10 @@ describe("AI endpoint over HTTP", () => {
     databaseDown = false;
     calls.length = 0;
     await createAiHandler(() => ({ ...env, AI_PROVIDER: "groq", AI_API_KEY: "gsk" }), network)(post(signed, withWorkspace));
-    expect(calls[0].args.p_global_day).toBe(900);
+    expect(calls.find((c) => c.name === "ai_begin")!.args.p_global_day).toBe(900);
     calls.length = 0;
     await createAiHandler(() => ({ ...env, AI_GLOBAL_DAILY_REQUESTS: "50" }), network)(post(signed, withWorkspace));
-    expect(calls[0].args.p_global_day).toBe(50);
+    expect(calls.find((c) => c.name === "ai_begin")!.args.p_global_day).toBe(50);
   });
 
   it("rejects unreadable bodies and unsupported methods", async () => {
@@ -210,5 +210,31 @@ describe("the bundled function that the host deploys", () => {
         else process.env[n] = saved[n];
       }
     }
+  });
+
+  it("uses the workspace's own AI provider through the integrations function, with a ticket for the counted request", async () => {
+    const seen: { url: string; headers: Headers; body: string }[] = [];
+    const network = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const headers = new Headers(init?.headers);
+      seen.push({ url, headers, body: String(init?.body ?? "") });
+      if (url.endsWith("/auth/v1/user")) return new Response(JSON.stringify({ id: "user-1" }), { status: 200 });
+      if (url.endsWith("/rpc/ai_integration")) return new Response(JSON.stringify({ provider: "gemini", model: "", visionModel: "" }), { status: 200 });
+      if (url.endsWith("/rpc/ai_begin")) return new Response(JSON.stringify({ allowed: true, usage: 9, key: "6f1d9a3c-55a0-4c3e-8a77-2f4b1c9e0d11", remaining: { hour: 4, day: 20, tokens: 9000 } }), { status: 200 });
+      if (url.endsWith("/rpc/ai_finish")) return new Response(null, { status: 204 });
+      return new Response(JSON.stringify({ ...answer, usage: { total_tokens: 50 } }), { status: 200 });
+    }) as unknown as typeof fetch;
+    // No AI key on the server at all.
+    const env = { VITE_SUPABASE_URL: "https://proj.supabase.co", VITE_SUPABASE_ANON_KEY: "anon" };
+    const handle = createAiHandler(() => env, network);
+    const res = await handle(post({ authorization: "Bearer good-token" }, JSON.stringify({ ...JSON.parse(prompt), workspaceId: "5e6b7d00-a3d6-4dce-bbbe-20e319346f51" })));
+    expect(res.status).toBe(200);
+    const begin = seen.find((c) => c.url.endsWith("/rpc/ai_begin"))!;
+    expect(JSON.parse(begin.body).p_global_day).toBe(0);
+    const call = seen.find((c) => c.url === "https://proj.supabase.co/functions/v1/integrations/v1/chat/completions")!;
+    expect(call.headers.get("authorization")).toBe("Bearer good-token");
+    expect(call.headers.get("x-archone-usage")).toBe("9");
+    expect(call.headers.get("x-archone-ticket")).toBe("6f1d9a3c-55a0-4c3e-8a77-2f4b1c9e0d11");
+    expect(JSON.parse(call.body).model).toBe("gemini-flash-latest");
   });
 });

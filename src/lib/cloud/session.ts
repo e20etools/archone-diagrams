@@ -1,7 +1,8 @@
 import type { AuditCheck, AuditPage, AuditQuery } from "./audit";
 import { create } from "zustand";
 import { createContext, useContext } from "react";
-import { setAiWorkspaceProvider, setAuthTokenProvider } from "../ai/client";
+import { setAiIntegrationLookup, setAiWorkspaceProvider, setAuthTokenProvider } from "../ai/client";
+import { aiProviderOf } from "../integrations/catalog";
 import { emptyWorkspace, nowIso } from "../model";
 import { LocalStorageRepository } from "../repository";
 import { setChangeGuard, setEditGuard, useStore } from "../store";
@@ -150,6 +151,15 @@ export function startSession(): void {
   void getBackend().then((backend) => {
     setAuthTokenProvider(() => backend.accessToken());
     setAiWorkspaceProvider(() => get().workspaceId);
+    // The workspace's own AI provider, connected in Settings → Integrations, makes AI available without a server key.
+    setAiIntegrationLookup(async () => {
+      const workspaceId = get().workspaceId;
+      if (!workspaceId) return null;
+      const ai = (await backend.listIntegrations(workspaceId)).find((i) => i.provider === "ai" && i.enabled);
+      if (!ai) return null;
+      const known = aiProviderOf(ai.settings.provider);
+      return { provider: known?.label ?? "Workspace AI", model: ai.settings.model || known?.model || "", visionModel: ai.settings.visionModel || known?.visionModel || "" };
+    });
     backend.onAuth((user, event) => {
       const previous = get().user;
       if (!user) {

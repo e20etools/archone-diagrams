@@ -227,7 +227,7 @@ export function ImportDialog({ onClose, start, only }: { onClose: () => void; st
 
   return (
     <Modal
-      title={loaded ? (loaded.kind === "inventory" && loaded.importKind === "discovery" ? `Discovered in ${loaded.fileName}` : `Import "${loaded.fileName}"`) : only === "drawio" ? "Import a draw.io file" : "Import a file"}
+      title={loaded ? (loaded.kind === "inventory" && loaded.importKind === "discovery" ? `Discovered in ${loaded.fileName}` : loaded.kind === "inventory" && !/\.[a-z0-9]+$/i.test(loaded.fileName) ? `From ${loaded.fileName}` : `Import "${loaded.fileName}"`) : only === "drawio" ? "Import a draw.io file" : "Import a file"}
       width={loaded?.kind === "sheets" ? 720 : 560}
       onClose={onClose}
       footer={
@@ -279,9 +279,10 @@ export function ImportDialog({ onClose, start, only }: { onClose: () => void; st
           {!only && (
             <DiscoverImport
               canEdit={canEdit}
-              onInventory={(inventory, label) => {
+              onDone={onClose}
+              onInventory={(inventory, label, kind) => {
                 setProblem("");
-                setLoaded({ kind: "inventory", fileName: label, inventory, source: label, importKind: "discovery" });
+                setLoaded({ kind: "inventory", fileName: label, inventory, source: label, importKind: kind });
               }}
             />
           )}

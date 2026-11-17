@@ -58,7 +58,18 @@ var Remote = class {
 	get hasTime() {
 		return Date.now() < this.deadline - 3e3;
 	}
-	async json(url, init = {}, optional = false) {
+	/** For answers that need not be JSON (a webhook's "ok"): the text, or the same errors as json(). */
+	async send(url, init = {}) {
+		const answer = await this.json(url, {
+			...init,
+			headers: {
+				accept: "*/*",
+				...init.headers
+			}
+		}, false, true);
+		return typeof answer === "string" ? answer : JSON.stringify(answer ?? "");
+	}
+	async json(url, init = {}, optional = false, anyBody = false) {
 		const controller = new AbortController();
 		const timer = setTimeout(() => controller.abort(), Math.max(1e3, Math.min(REQUEST_TIMEOUT_MS, this.deadline - Date.now())));
 		let response;
@@ -87,6 +98,7 @@ var Remote = class {
 				data = void 0;
 			}
 			if (response.ok) {
+				if (anyBody) return data ?? body;
 				if (data === void 0 && !optional) throw new DiscoverError(502, "unreadable", `${this.label} answered with something other than JSON. Check the address in ${this.settings}.`);
 				return data;
 			}
@@ -112,6 +124,477 @@ function providerMessage(data) {
 	].find((m) => typeof m === "string" && m.trim());
 	return typeof message === "string" ? message.replace(/\s+/g, " ").trim().slice(0, 240) : "";
 }
+// src/lib/discover/google.ts
+function parseServiceAccount(raw) {
+	try {
+		const data = JSON.parse(raw);
+		if (typeof data.client_email !== "string" || typeof data.private_key !== "string" || !data.private_key.includes("PRIVATE KEY")) return null;
+		return {
+			client_email: data.client_email,
+			private_key: data.private_key.replace(/\\n/g, "\n")
+		};
+	} catch {
+		return null;
+	}
+}
+var base64url = (bytes) => {
+	const raw = typeof bytes === "string" ? new TextEncoder().encode(bytes) : bytes;
+	let binary = "";
+	for (const b of raw) binary += String.fromCharCode(b);
+	return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+};
+/** A signed JWT asserting the service account, for Google's token endpoint. */
+async function serviceAccountAssertion(account, scope, now = Math.floor(Date.now() / 1e3)) {
+	const pem = account.private_key.replace(/-----(BEGIN|END) PRIVATE KEY-----/g, "").replace(/\s+/g, "");
+	const der = Uint8Array.from(atob(pem), (c) => c.charCodeAt(0));
+	const key = await crypto.subtle.importKey("pkcs8", der, {
+		name: "RSASSA-PKCS1-v1_5",
+		hash: "SHA-256"
+	}, false, ["sign"]);
+	const header = base64url(JSON.stringify({
+		alg: "RS256",
+		typ: "JWT"
+	}));
+	const claims = base64url(JSON.stringify({
+		iss: account.client_email,
+		scope,
+		aud: "https://oauth2.googleapis.com/token",
+		iat: now,
+		exp: now + 600
+	}));
+	return `${header}.${claims}.${base64url(new Uint8Array(await crypto.subtle.sign("RSASSA-PKCS1-v1_5", key, new TextEncoder().encode(`${header}.${claims}`))))}`;
+}
+async function googleAccessToken(account, scope, remote) {
+	let assertion;
+	try {
+		assertion = await serviceAccountAssertion(account, scope);
+	} catch {
+		throw new DiscoverError(400, "bad_settings", "The private key in DISCOVERY_GCP_SERVICE_ACCOUNT could not be read.");
+	}
+	const form = new URLSearchParams({
+		grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+		assertion
+	});
+	const token = await remote.json("https://oauth2.googleapis.com/token", {
+		method: "POST",
+		headers: { "content-type": "application/x-www-form-urlencoded" },
+		body: form.toString()
+	});
+	if (!token?.access_token) throw new DiscoverError(502, "credentials_refused", "Google gave no access token for the service account in DISCOVERY_GCP_SERVICE_ACCOUNT.");
+	return token.access_token;
+}
+// src/lib/discover/sigv4.ts
+/**
+* AWS Signature Version 4, with Web Crypto so it runs on any host (Vercel, Supabase Edge, Node).
+* Enough for the JSON APIs live discovery calls: a POST with a body and a few headers.
+*/
+var encoder = new TextEncoder();
+var hex = (buffer) => [...new Uint8Array(buffer)].map((b) => b.toString(16).padStart(2, "0")).join("");
+async function sha256(data) {
+	return hex(await crypto.subtle.digest("SHA-256", encoder.encode(data)));
+}
+async function hmac(key, data) {
+	const k = await crypto.subtle.importKey("raw", key instanceof Uint8Array ? key : new Uint8Array(key), {
+		name: "HMAC",
+		hash: "SHA-256"
+	}, false, ["sign"]);
+	return crypto.subtle.sign("HMAC", k, encoder.encode(data));
+}
+/** Signs a request and answers the headers to send with it. `now` is for tests. */
+async function signAws(request, service, region, credentials, now = /* @__PURE__ */ new Date()) {
+	const url = new URL(request.url);
+	const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, "");
+	const date = amzDate.slice(0, 8);
+	const headers = {
+		...request.headers,
+		host: url.host,
+		"x-amz-date": amzDate
+	};
+	if (credentials.sessionToken) headers["x-amz-security-token"] = credentials.sessionToken;
+	const lower = Object.fromEntries(Object.entries(headers).map(([k, v]) => [k.toLowerCase(), v.trim().replace(/\s+/g, " ")]));
+	const names = Object.keys(lower).sort();
+	const canonicalHeaders = names.map((n) => `${n}:${lower[n]}\n`).join("");
+	const signedHeaders = names.join(";");
+	const query = [...url.searchParams.entries()].map(([k, v]) => [encodeURIComponent(k), encodeURIComponent(v)]).sort(([a, x], [b, y]) => a === b ? x < y ? -1 : 1 : a < b ? -1 : 1).map(([k, v]) => `${k}=${v}`).join("&");
+	const path = url.pathname.split("/").map((p) => encodeURIComponent(decodeURIComponent(p))).join("/") || "/";
+	const canonical = [
+		request.method.toUpperCase(),
+		path,
+		query,
+		canonicalHeaders,
+		signedHeaders,
+		await sha256(request.body)
+	].join("\n");
+	const scope = `${date}/${region}/${service}/aws4_request`;
+	const toSign = [
+		"AWS4-HMAC-SHA256",
+		amzDate,
+		scope,
+		await sha256(canonical)
+	].join("\n");
+	let key = await hmac(encoder.encode(`AWS4${credentials.secretAccessKey}`), date);
+	key = await hmac(key, region);
+	key = await hmac(key, service);
+	key = await hmac(key, "aws4_request");
+	const signature = hex(await hmac(key, toSign));
+	return {
+		...headers,
+		authorization: `AWS4-HMAC-SHA256 Credential=${credentials.accessKeyId}/${scope}, SignedHeaders=${signedHeaders}, Signature=${signature}`
+	};
+}
+// src/lib/discover/fetchers.ts
+/**
+* Live discovery: this server asks a cloud provider or a discovery tool what is running, with
+* credentials kept in the host's settings (never in the browser), and answers an inventory the
+* app turns into a draft. Each source reads its own settings, all starting with DISCOVERY_:
+*
+*   AWS          DISCOVERY_AWS_ACCESS_KEY_ID, DISCOVERY_AWS_SECRET_ACCESS_KEY, DISCOVERY_AWS_REGIONS
+*                (comma separated, default us-east-1); optional DISCOVERY_AWS_SESSION_TOKEN and
+*                DISCOVERY_AWS_AGGREGATOR (an AWS Config aggregator, for many accounts and regions).
+*                Reads AWS Config with SelectResourceConfig, so AWS Config must be recording.
+*   Azure        DISCOVERY_AZURE_TENANT_ID, DISCOVERY_AZURE_CLIENT_ID, DISCOVERY_AZURE_CLIENT_SECRET;
+*                optional DISCOVERY_AZURE_SUBSCRIPTIONS. Reads Azure Resource Graph (Reader role).
+*   Google Cloud DISCOVERY_GCP_SERVICE_ACCOUNT (the service account's JSON key) and DISCOVERY_GCP_SCOPE
+*                (projects/ID, folders/NUMBER or organizations/NUMBER). Reads Cloud Asset Inventory
+*                (Cloud Asset Viewer role).
+*   ServiceNow   DISCOVERY_SERVICENOW_URL and DISCOVERY_SERVICENOW_TOKEN, or DISCOVERY_SERVICENOW_USER
+*                and DISCOVERY_SERVICENOW_PASSWORD; optional DISCOVERY_SERVICENOW_QUERY (an encoded
+*                query on cmdb_ci). Reads cmdb_ci and cmdb_rel_ci through the Table API.
+*   BMC Helix    DISCOVERY_BMC_URL and DISCOVERY_BMC_TOKEN; optional DISCOVERY_BMC_API_VERSION (1.0)
+*   Discovery    and DISCOVERY_BMC_QUERIES (queries, one per line, to replace the built-in ones).
+*   Device42     DISCOVERY_DEVICE42_URL, DISCOVERY_DEVICE42_USER, DISCOVERY_DEVICE42_PASSWORD;
+*                optional DISCOVERY_DEVICE42_DOQL (the query for service communications).
+*/
+/** At most this many resources are read from one source, so the answer stays small enough to send. */
+var MAX_RESOURCES = 5e3;
+var value = (env, name) => (env[name] ?? "").trim();
+var capNote = (read, unit, stopped) => stopped ? [`Stopped after ${read.toLocaleString("en")} ${unit}: narrow what is read to see the rest`] : [];
+var AWS_REGION = /^[a-z]{2}(-[a-z]+)+-\d{1,2}$/;
+var AWS_QUERY = "SELECT resourceId, resourceName, resourceType, awsRegion, availabilityZone, tags, relationships";
+var aws = {
+	id: "aws",
+	label: "AWS",
+	settings: "DISCOVERY_AWS_ACCESS_KEY_ID, DISCOVERY_AWS_SECRET_ACCESS_KEY and DISCOVERY_AWS_REGIONS",
+	configured: (env) => !!value(env, "DISCOVERY_AWS_ACCESS_KEY_ID") && !!value(env, "DISCOVERY_AWS_SECRET_ACCESS_KEY"),
+	async fetch(env, remote) {
+		const regions = (value(env, "DISCOVERY_AWS_REGIONS") || "us-east-1").split(/[\s,]+/).filter((r) => AWS_REGION.test(r));
+		if (!regions.length) throw new DiscoverError(400, "bad_settings", "DISCOVERY_AWS_REGIONS names no AWS region, such as eu-west-1.");
+		const credentials = {
+			accessKeyId: value(env, "DISCOVERY_AWS_ACCESS_KEY_ID"),
+			secretAccessKey: value(env, "DISCOVERY_AWS_SECRET_ACCESS_KEY"),
+			sessionToken: value(env, "DISCOVERY_AWS_SESSION_TOKEN") || void 0
+		};
+		const aggregator = value(env, "DISCOVERY_AWS_AGGREGATOR");
+		const results = [];
+		let stopped = false;
+		for (const region of aggregator ? regions.slice(0, 1) : regions) {
+			let next;
+			do {
+				if (results.length >= 5e3 || !remote.hasTime) {
+					stopped = true;
+					break;
+				}
+				const url = `https://config.${region}.amazonaws.com/`;
+				const body = JSON.stringify({
+					Expression: AWS_QUERY,
+					Limit: 100,
+					...aggregator ? { ConfigurationAggregatorName: aggregator } : {},
+					...next ? { NextToken: next } : {}
+				});
+				const headers = await signAws({
+					method: "POST",
+					url,
+					body,
+					headers: {
+						"content-type": "application/x-amz-json-1.1",
+						"x-amz-target": `StarlingDoveService.${aggregator ? "SelectAggregateResourceConfig" : "SelectResourceConfig"}`
+					}
+				}, "config", region, credentials);
+				const page = await remote.json(url, {
+					method: "POST",
+					headers,
+					body
+				});
+				results.push(...page?.Results ?? []);
+				next = page?.NextToken || void 0;
+			} while (next);
+		}
+		const kept = results.slice(0, MAX_RESOURCES);
+		return {
+			source: "aws",
+			label: aggregator ? `AWS Config aggregator ${aggregator}` : `AWS ${regions.join(", ")}`,
+			data: { Results: kept },
+			count: kept.length,
+			notes: capNote(results.length, "resources", stopped)
+		};
+	}
+};
+var azure = {
+	id: "azure",
+	label: "Azure",
+	settings: "DISCOVERY_AZURE_TENANT_ID, DISCOVERY_AZURE_CLIENT_ID and DISCOVERY_AZURE_CLIENT_SECRET",
+	configured: (env) => [
+		"DISCOVERY_AZURE_TENANT_ID",
+		"DISCOVERY_AZURE_CLIENT_ID",
+		"DISCOVERY_AZURE_CLIENT_SECRET"
+	].every((n) => !!value(env, n)),
+	async fetch(env, remote) {
+		const tenant = value(env, "DISCOVERY_AZURE_TENANT_ID");
+		if (!/^[A-Za-z0-9.-]{3,100}$/.test(tenant)) throw new DiscoverError(400, "bad_settings", "DISCOVERY_AZURE_TENANT_ID is not a tenant id or domain.");
+		const form = new URLSearchParams({
+			grant_type: "client_credentials",
+			client_id: value(env, "DISCOVERY_AZURE_CLIENT_ID"),
+			client_secret: value(env, "DISCOVERY_AZURE_CLIENT_SECRET"),
+			scope: "https://management.azure.com/.default"
+		});
+		const token = await remote.json(`https://login.microsoftonline.com/${encodeURIComponent(tenant)}/oauth2/v2.0/token`, {
+			method: "POST",
+			headers: { "content-type": "application/x-www-form-urlencoded" },
+			body: form.toString()
+		});
+		if (!token?.access_token) throw new DiscoverError(502, "credentials_refused", "Azure gave no access token. Check DISCOVERY_AZURE_CLIENT_ID and DISCOVERY_AZURE_CLIENT_SECRET.");
+		const subscriptions = value(env, "DISCOVERY_AZURE_SUBSCRIPTIONS").split(/[\s,]+/).filter(Boolean);
+		const data = [];
+		let skip;
+		let stopped = false;
+		do {
+			if (data.length >= 5e3 || !remote.hasTime) {
+				stopped = true;
+				break;
+			}
+			const body = JSON.stringify({
+				...subscriptions.length ? { subscriptions } : {},
+				query: "Resources | project id, name, type, kind, location, resourceGroup, subscriptionId, tags, properties",
+				options: {
+					$top: 1e3,
+					resultFormat: "objectArray",
+					...skip ? { $skipToken: skip } : {}
+				}
+			});
+			const page = await remote.json("https://management.azure.com/providers/Microsoft.ResourceGraph/resources?api-version=2022-10-01", {
+				method: "POST",
+				headers: {
+					"content-type": "application/json",
+					authorization: `Bearer ${token.access_token}`
+				},
+				body
+			});
+			data.push(...Array.isArray(page?.data) ? page.data : []);
+			skip = page?.$skipToken || void 0;
+		} while (skip);
+		const kept = data.slice(0, MAX_RESOURCES);
+		return {
+			source: "azure",
+			label: subscriptions.length ? `Azure ${subscriptions.length === 1 ? "subscription" : "subscriptions"} ${subscriptions.join(", ")}` : "Azure",
+			data: { data: kept },
+			count: kept.length,
+			notes: capNote(data.length, "resources", stopped)
+		};
+	}
+};
+var GCP_SCOPE = /^(projects\/[a-z][a-z0-9-]{4,61}[a-z0-9]|projects\/\d+|folders\/\d+|organizations\/\d+)$/;
+var gcp = {
+	id: "gcp",
+	label: "Google Cloud",
+	settings: "DISCOVERY_GCP_SERVICE_ACCOUNT and DISCOVERY_GCP_SCOPE",
+	configured: (env) => !!value(env, "DISCOVERY_GCP_SERVICE_ACCOUNT") && !!value(env, "DISCOVERY_GCP_SCOPE"),
+	async fetch(env, remote) {
+		const scope = value(env, "DISCOVERY_GCP_SCOPE");
+		if (!GCP_SCOPE.test(scope)) throw new DiscoverError(400, "bad_settings", "DISCOVERY_GCP_SCOPE should be projects/ID, folders/NUMBER or organizations/NUMBER.");
+		const account = parseServiceAccount(value(env, "DISCOVERY_GCP_SERVICE_ACCOUNT"));
+		if (!account) throw new DiscoverError(400, "bad_settings", "DISCOVERY_GCP_SERVICE_ACCOUNT is not a service account's JSON key.");
+		const token = await googleAccessToken(account, "https://www.googleapis.com/auth/cloud-platform", remote);
+		const results = [];
+		let next;
+		let stopped = false;
+		do {
+			if (results.length >= 5e3 || !remote.hasTime) {
+				stopped = true;
+				break;
+			}
+			const url = new URL(`https://cloudasset.googleapis.com/v1/${scope}:searchAllResources`);
+			url.searchParams.set("pageSize", "500");
+			if (next) url.searchParams.set("pageToken", next);
+			const page = await remote.json(url.toString(), { headers: { authorization: `Bearer ${token}` } });
+			results.push(...Array.isArray(page?.results) ? page.results : []);
+			next = page?.nextPageToken || void 0;
+		} while (next);
+		if (!results.length) throw new DiscoverError(404, "nothing_found", `Cloud Asset Inventory found no resources in ${scope}. Check that the Cloud Asset API is on and the service account may view assets there.`);
+		const kept = results.slice(0, MAX_RESOURCES);
+		return {
+			source: "gcp",
+			label: `Google Cloud ${scope}`,
+			data: kept,
+			count: kept.length,
+			notes: capNote(results.length, "resources", stopped)
+		};
+	}
+};
+var basic = (user, password) => {
+	let binary = "";
+	for (const b of new TextEncoder().encode(`${user}:${password}`)) binary += String.fromCharCode(b);
+	return `Basic ${btoa(binary)}`;
+};
+var servicenow = {
+	id: "servicenow",
+	label: "ServiceNow",
+	settings: "DISCOVERY_SERVICENOW_URL and DISCOVERY_SERVICENOW_TOKEN, or DISCOVERY_SERVICENOW_USER and DISCOVERY_SERVICENOW_PASSWORD",
+	configured: (env) => !!value(env, "DISCOVERY_SERVICENOW_URL") && (!!value(env, "DISCOVERY_SERVICENOW_TOKEN") || !!value(env, "DISCOVERY_SERVICENOW_USER") && !!value(env, "DISCOVERY_SERVICENOW_PASSWORD")),
+	async fetch(env, remote) {
+		const base = toolBase(value(env, "DISCOVERY_SERVICENOW_URL"));
+		if (!base) throw new DiscoverError(400, "bad_settings", "DISCOVERY_SERVICENOW_URL is not a plain https address, such as https://yourcompany.service-now.com.");
+		const authorization = value(env, "DISCOVERY_SERVICENOW_TOKEN") ? `Bearer ${value(env, "DISCOVERY_SERVICENOW_TOKEN")}` : basic(value(env, "DISCOVERY_SERVICENOW_USER"), value(env, "DISCOVERY_SERVICENOW_PASSWORD"));
+		const table = async (name, params, cap) => {
+			const rows = [];
+			let stopped = false;
+			for (let offset = 0;; offset += 1e3) {
+				if (rows.length >= cap || !remote.hasTime) {
+					stopped = true;
+					break;
+				}
+				const url = new URL(`api/now/table/${name}`, base);
+				for (const [k, v] of Object.entries({
+					...params,
+					sysparm_limit: "1000",
+					sysparm_offset: String(offset),
+					sysparm_exclude_reference_link: "true"
+				})) if (v) url.searchParams.set(k, v);
+				const page = await remote.json(url.toString(), { headers: { authorization } });
+				const got = Array.isArray(page?.result) ? page.result : [];
+				rows.push(...got);
+				if (got.length < 1e3) break;
+			}
+			return {
+				rows: rows.slice(0, cap),
+				stopped
+			};
+		};
+		const cis = await table("cmdb_ci", {
+			sysparm_fields: "sys_id,name,sys_class_name,ip_address,os,short_description,operational_status,environment",
+			sysparm_query: value(env, "DISCOVERY_SERVICENOW_QUERY")
+		}, MAX_RESOURCES);
+		const rels = await table("cmdb_rel_ci", {
+			sysparm_fields: "parent,child,type",
+			sysparm_display_value: "all"
+		}, MAX_RESOURCES * 4);
+		return {
+			source: "servicenow",
+			label: `ServiceNow ${base.host}`,
+			data: {
+				cmdb_ci: { result: cis.rows },
+				cmdb_rel_ci: { result: rels.rows }
+			},
+			count: cis.rows.length,
+			notes: capNote(cis.rows.length, "configuration items", cis.stopped || rels.stopped)
+		};
+	}
+};
+/** Hosts, the software running on them with what it depends on, and the applications that group it. */
+var BMC_QUERIES = [
+	"SEARCH Host SHOW key AS 'id', name, kind(#) AS 'kind', os",
+	"SEARCH SoftwareInstance SHOW key AS 'id', name, kind(#) AS 'kind', type AS 'product', #RunningSoftware:HostedSoftware:Host:Host.key AS 'host_id', #Dependant:Dependency:DependedUpon:SoftwareInstance.key AS 'depends_on'",
+	"SEARCH BusinessApplicationInstance SHOW key AS 'id', name, kind(#) AS 'kind', #Collection:Collection:Member:SoftwareInstance.key AS 'members'"
+];
+var bmc = {
+	id: "bmc",
+	label: "BMC Helix Discovery",
+	settings: "DISCOVERY_BMC_URL and DISCOVERY_BMC_TOKEN",
+	configured: (env) => !!value(env, "DISCOVERY_BMC_URL") && !!value(env, "DISCOVERY_BMC_TOKEN"),
+	async fetch(env, remote) {
+		const base = toolBase(value(env, "DISCOVERY_BMC_URL"));
+		if (!base) throw new DiscoverError(400, "bad_settings", "DISCOVERY_BMC_URL is not a plain https address of the appliance or instance.");
+		const version = /^\d+\.\d+$/.test(value(env, "DISCOVERY_BMC_API_VERSION")) ? value(env, "DISCOVERY_BMC_API_VERSION") : "1.0";
+		const queries = value(env, "DISCOVERY_BMC_QUERIES") ? value(env, "DISCOVERY_BMC_QUERIES").split(/\r?\n/).map((q) => q.trim()).filter(Boolean) : BMC_QUERIES;
+		const authorization = `Bearer ${value(env, "DISCOVERY_BMC_TOKEN")}`;
+		const tables = [];
+		let rows = 0;
+		let stopped = false;
+		let failed = 0;
+		for (const [i, query] of queries.entries()) {
+			let url = new URL(`api/v${version}/data/search?${new URLSearchParams({
+				query,
+				limit: "1000"
+			})}`, base).toString();
+			while (url) {
+				if (rows >= 5e3 || !remote.hasTime) {
+					stopped = true;
+					break;
+				}
+				const answer = await remote.json(url, { headers: { authorization } }, i > 0);
+				if (answer === void 0) {
+					failed++;
+					break;
+				}
+				const pages = Array.isArray(answer) ? answer : [answer];
+				tables.push(...pages);
+				rows += pages.reduce((n, p) => n + (Array.isArray(p.results) ? p.results.length : 0), 0);
+				const next = pages.find((p) => typeof p.next === "string")?.next;
+				url = next && new URL(next, base).host === base.host ? new URL(next, base).toString() : void 0;
+			}
+		}
+		return {
+			source: "bmc",
+			label: `BMC Helix Discovery ${base.host}`,
+			data: tables,
+			count: rows,
+			notes: [...capNote(rows, "rows", stopped), ...failed ? [`${failed} of the ${queries.length} queries did not answer and were left out`] : []]
+		};
+	}
+};
+var NO_COMMUNICATIONS = "The service communications query did not answer, so only where devices run is drawn";
+var SOURCES = [
+	aws,
+	azure,
+	gcp,
+	servicenow,
+	bmc,
+	{
+		id: "device42",
+		label: "Device42",
+		settings: "DISCOVERY_DEVICE42_URL, DISCOVERY_DEVICE42_USER and DISCOVERY_DEVICE42_PASSWORD",
+		configured: (env) => [
+			"DISCOVERY_DEVICE42_URL",
+			"DISCOVERY_DEVICE42_USER",
+			"DISCOVERY_DEVICE42_PASSWORD"
+		].every((n) => !!value(env, n)),
+		async fetch(env, remote) {
+			const base = toolBase(value(env, "DISCOVERY_DEVICE42_URL"));
+			if (!base) throw new DiscoverError(400, "bad_settings", "DISCOVERY_DEVICE42_URL is not a plain https address of the Device42 appliance.");
+			const authorization = basic(value(env, "DISCOVERY_DEVICE42_USER"), value(env, "DISCOVERY_DEVICE42_PASSWORD"));
+			const devices = [];
+			let stopped = false;
+			for (let offset = 0;; offset += 1e3) {
+				if (devices.length >= 5e3 || !remote.hasTime) {
+					stopped = true;
+					break;
+				}
+				const page = await remote.json(new URL(`api/1.0/devices/all/?limit=1000&offset=${offset}`, base).toString(), { headers: { authorization } });
+				const got = Array.isArray(page?.Devices) ? page.Devices : [];
+				devices.push(...got);
+				if (got.length < 1e3 || typeof page?.total_count === "number" && devices.length >= page.total_count) break;
+			}
+			const appComps = await remote.json(new URL("api/1.0/appcomps/", base).toString(), { headers: { authorization } }, true);
+			const doql = value(env, "DISCOVERY_DEVICE42_DOQL") || "SELECT DISTINCT c.name AS client, l.name AS listener, sc.port, sc.protocol FROM view_servicecommunication_v2 sc JOIN view_device_v2 c ON c.device_pk = sc.client_device_fk JOIN view_device_v2 l ON l.device_pk = sc.listener_device_fk WHERE sc.client_device_fk <> sc.listener_device_fk LIMIT 20000";
+			const communications = remote.hasTime ? await remote.json(new URL(`services/data/v1.0/query/?${new URLSearchParams({
+				query: doql,
+				output_type: "json"
+			})}`, base).toString(), { headers: { authorization } }, true) : void 0;
+			const kept = devices.slice(0, MAX_RESOURCES);
+			return {
+				source: "device42",
+				label: `Device42 ${base.host}`,
+				data: {
+					Devices: kept,
+					app_comps: appComps?.app_comps ?? [],
+					communications: Array.isArray(communications) ? communications : []
+				},
+				count: kept.length,
+				notes: [...capNote(devices.length, "devices", stopped), ...Array.isArray(communications) ? [] : [NO_COMMUNICATIONS]]
+			};
+		}
+	}
+];
+var sourceOf = (id) => SOURCES.find((s) => s.id === id);
 // src/lib/import/diagramFile.ts
 var TYPE_RULES = [
 	["actor", /\b(actor|user|users|person|people|customer|customers|staff|employee|operator|team|umlactor)\b/],
@@ -8783,442 +9266,16 @@ function readDiscoveryRows(value, fileName, tool) {
 	if (!raw.size) throw new InventoryError(`No nodes were found in "${fileName}".`);
 	return buildInventory(tool === "a discovery tool" ? "A discovery tool export" : `A ${tool} export`, fileName, [...raw.values()], connections.length ? [] : ["No connection rows were in the file; add the service communications or dependencies to draw the links"]);
 }
-// src/lib/discover/google.ts
-function parseServiceAccount(raw) {
-	try {
-		const data = JSON.parse(raw);
-		if (typeof data.client_email !== "string" || typeof data.private_key !== "string" || !data.private_key.includes("PRIVATE KEY")) return null;
-		return {
-			client_email: data.client_email,
-			private_key: data.private_key.replace(/\\n/g, "\n")
-		};
-	} catch {
-		return null;
-	}
-}
-var base64url = (bytes) => {
-	const raw = typeof bytes === "string" ? new TextEncoder().encode(bytes) : bytes;
-	let binary = "";
-	for (const b of raw) binary += String.fromCharCode(b);
-	return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-};
-/** A signed JWT asserting the service account, for Google's token endpoint. */
-async function serviceAccountAssertion(account, scope, now = Math.floor(Date.now() / 1e3)) {
-	const pem = account.private_key.replace(/-----(BEGIN|END) PRIVATE KEY-----/g, "").replace(/\s+/g, "");
-	const der = Uint8Array.from(atob(pem), (c) => c.charCodeAt(0));
-	const key = await crypto.subtle.importKey("pkcs8", der, {
-		name: "RSASSA-PKCS1-v1_5",
-		hash: "SHA-256"
-	}, false, ["sign"]);
-	const header = base64url(JSON.stringify({
-		alg: "RS256",
-		typ: "JWT"
-	}));
-	const claims = base64url(JSON.stringify({
-		iss: account.client_email,
-		scope,
-		aud: "https://oauth2.googleapis.com/token",
-		iat: now,
-		exp: now + 600
-	}));
-	return `${header}.${claims}.${base64url(new Uint8Array(await crypto.subtle.sign("RSASSA-PKCS1-v1_5", key, new TextEncoder().encode(`${header}.${claims}`))))}`;
-}
-async function googleAccessToken(account, scope, remote) {
-	let assertion;
-	try {
-		assertion = await serviceAccountAssertion(account, scope);
-	} catch {
-		throw new DiscoverError(400, "bad_settings", "The private key in DISCOVERY_GCP_SERVICE_ACCOUNT could not be read.");
-	}
-	const form = new URLSearchParams({
-		grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
-		assertion
-	});
-	const token = await remote.json("https://oauth2.googleapis.com/token", {
-		method: "POST",
-		headers: { "content-type": "application/x-www-form-urlencoded" },
-		body: form.toString()
-	});
-	if (!token?.access_token) throw new DiscoverError(502, "credentials_refused", "Google gave no access token for the service account in DISCOVERY_GCP_SERVICE_ACCOUNT.");
-	return token.access_token;
-}
-// src/lib/discover/sigv4.ts
-/**
-* AWS Signature Version 4, with Web Crypto so it runs on any host (Vercel, Supabase Edge, Node).
-* Enough for the JSON APIs live discovery calls: a POST with a body and a few headers.
-*/
-var encoder = new TextEncoder();
-var hex = (buffer) => [...new Uint8Array(buffer)].map((b) => b.toString(16).padStart(2, "0")).join("");
-async function sha256(data) {
-	return hex(await crypto.subtle.digest("SHA-256", encoder.encode(data)));
-}
-async function hmac(key, data) {
-	const k = await crypto.subtle.importKey("raw", key instanceof Uint8Array ? key : new Uint8Array(key), {
-		name: "HMAC",
-		hash: "SHA-256"
-	}, false, ["sign"]);
-	return crypto.subtle.sign("HMAC", k, encoder.encode(data));
-}
-/** Signs a request and answers the headers to send with it. `now` is for tests. */
-async function signAws(request, service, region, credentials, now = /* @__PURE__ */ new Date()) {
-	const url = new URL(request.url);
-	const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, "");
-	const date = amzDate.slice(0, 8);
-	const headers = {
-		...request.headers,
-		host: url.host,
-		"x-amz-date": amzDate
-	};
-	if (credentials.sessionToken) headers["x-amz-security-token"] = credentials.sessionToken;
-	const lower = Object.fromEntries(Object.entries(headers).map(([k, v]) => [k.toLowerCase(), v.trim().replace(/\s+/g, " ")]));
-	const names = Object.keys(lower).sort();
-	const canonicalHeaders = names.map((n) => `${n}:${lower[n]}\n`).join("");
-	const signedHeaders = names.join(";");
-	const query = [...url.searchParams.entries()].map(([k, v]) => [encodeURIComponent(k), encodeURIComponent(v)]).sort(([a, x], [b, y]) => a === b ? x < y ? -1 : 1 : a < b ? -1 : 1).map(([k, v]) => `${k}=${v}`).join("&");
-	const path = url.pathname.split("/").map((p) => encodeURIComponent(decodeURIComponent(p))).join("/") || "/";
-	const canonical = [
-		request.method.toUpperCase(),
-		path,
-		query,
-		canonicalHeaders,
-		signedHeaders,
-		await sha256(request.body)
-	].join("\n");
-	const scope = `${date}/${region}/${service}/aws4_request`;
-	const toSign = [
-		"AWS4-HMAC-SHA256",
-		amzDate,
-		scope,
-		await sha256(canonical)
-	].join("\n");
-	let key = await hmac(encoder.encode(`AWS4${credentials.secretAccessKey}`), date);
-	key = await hmac(key, region);
-	key = await hmac(key, service);
-	key = await hmac(key, "aws4_request");
-	const signature = hex(await hmac(key, toSign));
+// src/lib/discover/parse.ts
+/** Reads what a source answered into an inventory, with the source's notes added to what was left out. */
+function parseDiscovery(raw) {
+	const inventory = raw.source === "aws" ? readAws(raw.data, raw.label) : raw.source === "azure" ? readAzure(raw.data, raw.label) : raw.source === "gcp" ? readGcp(raw.data, raw.label) : raw.source === "servicenow" ? readServiceNow(raw.data, raw.label) : readDiscoveryRows(raw.data, raw.label, raw.source === "bmc" ? "BMC Helix Discovery" : "Device42");
+	const skipped = raw.notes.includes("The service communications query did not answer, so only where devices run is drawn") ? inventory.skipped.filter((s) => !s.startsWith("No connection rows")) : inventory.skipped;
 	return {
-		...headers,
-		authorization: `AWS4-HMAC-SHA256 Credential=${credentials.accessKeyId}/${scope}, SignedHeaders=${signedHeaders}, Signature=${signature}`
+		...inventory,
+		skipped: [...skipped, ...raw.notes]
 	};
 }
-// src/lib/discover/sources.ts
-/**
-* Live discovery: this server asks a cloud provider or a discovery tool what is running, with
-* credentials kept in the host's settings (never in the browser), and answers an inventory the
-* app turns into a draft. Each source reads its own settings, all starting with DISCOVERY_:
-*
-*   AWS          DISCOVERY_AWS_ACCESS_KEY_ID, DISCOVERY_AWS_SECRET_ACCESS_KEY, DISCOVERY_AWS_REGIONS
-*                (comma separated, default us-east-1); optional DISCOVERY_AWS_SESSION_TOKEN and
-*                DISCOVERY_AWS_AGGREGATOR (an AWS Config aggregator, for many accounts and regions).
-*                Reads AWS Config with SelectResourceConfig, so AWS Config must be recording.
-*   Azure        DISCOVERY_AZURE_TENANT_ID, DISCOVERY_AZURE_CLIENT_ID, DISCOVERY_AZURE_CLIENT_SECRET;
-*                optional DISCOVERY_AZURE_SUBSCRIPTIONS. Reads Azure Resource Graph (Reader role).
-*   Google Cloud DISCOVERY_GCP_SERVICE_ACCOUNT (the service account's JSON key) and DISCOVERY_GCP_SCOPE
-*                (projects/ID, folders/NUMBER or organizations/NUMBER). Reads Cloud Asset Inventory
-*                (Cloud Asset Viewer role).
-*   ServiceNow   DISCOVERY_SERVICENOW_URL and DISCOVERY_SERVICENOW_TOKEN, or DISCOVERY_SERVICENOW_USER
-*                and DISCOVERY_SERVICENOW_PASSWORD; optional DISCOVERY_SERVICENOW_QUERY (an encoded
-*                query on cmdb_ci). Reads cmdb_ci and cmdb_rel_ci through the Table API.
-*   BMC Helix    DISCOVERY_BMC_URL and DISCOVERY_BMC_TOKEN; optional DISCOVERY_BMC_API_VERSION (1.0)
-*   Discovery    and DISCOVERY_BMC_QUERIES (queries, one per line, to replace the built-in ones).
-*   Device42     DISCOVERY_DEVICE42_URL, DISCOVERY_DEVICE42_USER, DISCOVERY_DEVICE42_PASSWORD;
-*                optional DISCOVERY_DEVICE42_DOQL (the query for service communications).
-*/
-/** At most this many resources are read from one source, so the answer stays small enough to send. */
-var MAX_RESOURCES = 5e3;
-var value = (env, name) => (env[name] ?? "").trim();
-var noteCap = (inventory, read, unit, stopped) => stopped ? {
-	...inventory,
-	skipped: [...inventory.skipped, `Stopped after ${read.toLocaleString("en")} ${unit}: narrow what is read to see the rest`]
-} : inventory;
-var AWS_REGION = /^[a-z]{2}(-[a-z]+)+-\d{1,2}$/;
-var AWS_QUERY = "SELECT resourceId, resourceName, resourceType, awsRegion, availabilityZone, tags, relationships";
-var aws = {
-	id: "aws",
-	label: "AWS",
-	settings: "DISCOVERY_AWS_ACCESS_KEY_ID, DISCOVERY_AWS_SECRET_ACCESS_KEY and DISCOVERY_AWS_REGIONS",
-	configured: (env) => !!value(env, "DISCOVERY_AWS_ACCESS_KEY_ID") && !!value(env, "DISCOVERY_AWS_SECRET_ACCESS_KEY"),
-	async run(env, remote) {
-		const regions = (value(env, "DISCOVERY_AWS_REGIONS") || "us-east-1").split(/[\s,]+/).filter((r) => AWS_REGION.test(r));
-		if (!regions.length) throw new DiscoverError(400, "bad_settings", "DISCOVERY_AWS_REGIONS names no AWS region, such as eu-west-1.");
-		const credentials = {
-			accessKeyId: value(env, "DISCOVERY_AWS_ACCESS_KEY_ID"),
-			secretAccessKey: value(env, "DISCOVERY_AWS_SECRET_ACCESS_KEY"),
-			sessionToken: value(env, "DISCOVERY_AWS_SESSION_TOKEN") || void 0
-		};
-		const aggregator = value(env, "DISCOVERY_AWS_AGGREGATOR");
-		const results = [];
-		let stopped = false;
-		for (const region of aggregator ? regions.slice(0, 1) : regions) {
-			let next;
-			do {
-				if (results.length >= 5e3 || !remote.hasTime) {
-					stopped = true;
-					break;
-				}
-				const url = `https://config.${region}.amazonaws.com/`;
-				const body = JSON.stringify({
-					Expression: AWS_QUERY,
-					Limit: 100,
-					...aggregator ? { ConfigurationAggregatorName: aggregator } : {},
-					...next ? { NextToken: next } : {}
-				});
-				const headers = await signAws({
-					method: "POST",
-					url,
-					body,
-					headers: {
-						"content-type": "application/x-amz-json-1.1",
-						"x-amz-target": `StarlingDoveService.${aggregator ? "SelectAggregateResourceConfig" : "SelectResourceConfig"}`
-					}
-				}, "config", region, credentials);
-				const page = await remote.json(url, {
-					method: "POST",
-					headers,
-					body
-				});
-				results.push(...page?.Results ?? []);
-				next = page?.NextToken || void 0;
-			} while (next);
-		}
-		return noteCap(readAws({ Results: results.slice(0, MAX_RESOURCES) }, aggregator ? `AWS Config aggregator ${aggregator}` : `AWS ${regions.join(", ")}`), results.length, "resources", stopped);
-	}
-};
-var azure = {
-	id: "azure",
-	label: "Azure",
-	settings: "DISCOVERY_AZURE_TENANT_ID, DISCOVERY_AZURE_CLIENT_ID and DISCOVERY_AZURE_CLIENT_SECRET",
-	configured: (env) => [
-		"DISCOVERY_AZURE_TENANT_ID",
-		"DISCOVERY_AZURE_CLIENT_ID",
-		"DISCOVERY_AZURE_CLIENT_SECRET"
-	].every((n) => !!value(env, n)),
-	async run(env, remote) {
-		const tenant = value(env, "DISCOVERY_AZURE_TENANT_ID");
-		if (!/^[A-Za-z0-9.-]{3,100}$/.test(tenant)) throw new DiscoverError(400, "bad_settings", "DISCOVERY_AZURE_TENANT_ID is not a tenant id or domain.");
-		const form = new URLSearchParams({
-			grant_type: "client_credentials",
-			client_id: value(env, "DISCOVERY_AZURE_CLIENT_ID"),
-			client_secret: value(env, "DISCOVERY_AZURE_CLIENT_SECRET"),
-			scope: "https://management.azure.com/.default"
-		});
-		const token = await remote.json(`https://login.microsoftonline.com/${encodeURIComponent(tenant)}/oauth2/v2.0/token`, {
-			method: "POST",
-			headers: { "content-type": "application/x-www-form-urlencoded" },
-			body: form.toString()
-		});
-		if (!token?.access_token) throw new DiscoverError(502, "credentials_refused", "Azure gave no access token. Check DISCOVERY_AZURE_CLIENT_ID and DISCOVERY_AZURE_CLIENT_SECRET.");
-		const subscriptions = value(env, "DISCOVERY_AZURE_SUBSCRIPTIONS").split(/[\s,]+/).filter(Boolean);
-		const data = [];
-		let skip;
-		let stopped = false;
-		do {
-			if (data.length >= 5e3 || !remote.hasTime) {
-				stopped = true;
-				break;
-			}
-			const body = JSON.stringify({
-				...subscriptions.length ? { subscriptions } : {},
-				query: "Resources | project id, name, type, kind, location, resourceGroup, subscriptionId, tags, properties",
-				options: {
-					$top: 1e3,
-					resultFormat: "objectArray",
-					...skip ? { $skipToken: skip } : {}
-				}
-			});
-			const page = await remote.json("https://management.azure.com/providers/Microsoft.ResourceGraph/resources?api-version=2022-10-01", {
-				method: "POST",
-				headers: {
-					"content-type": "application/json",
-					authorization: `Bearer ${token.access_token}`
-				},
-				body
-			});
-			data.push(...Array.isArray(page?.data) ? page.data : []);
-			skip = page?.$skipToken || void 0;
-		} while (skip);
-		return noteCap(readAzure({ data: data.slice(0, MAX_RESOURCES) }, subscriptions.length ? `Azure ${subscriptions.length === 1 ? "subscription" : "subscriptions"} ${subscriptions.join(", ")}` : "Azure"), data.length, "resources", stopped);
-	}
-};
-var GCP_SCOPE = /^(projects\/[a-z][a-z0-9-]{4,61}[a-z0-9]|projects\/\d+|folders\/\d+|organizations\/\d+)$/;
-var gcp = {
-	id: "gcp",
-	label: "Google Cloud",
-	settings: "DISCOVERY_GCP_SERVICE_ACCOUNT and DISCOVERY_GCP_SCOPE",
-	configured: (env) => !!value(env, "DISCOVERY_GCP_SERVICE_ACCOUNT") && !!value(env, "DISCOVERY_GCP_SCOPE"),
-	async run(env, remote) {
-		const scope = value(env, "DISCOVERY_GCP_SCOPE");
-		if (!GCP_SCOPE.test(scope)) throw new DiscoverError(400, "bad_settings", "DISCOVERY_GCP_SCOPE should be projects/ID, folders/NUMBER or organizations/NUMBER.");
-		const account = parseServiceAccount(value(env, "DISCOVERY_GCP_SERVICE_ACCOUNT"));
-		if (!account) throw new DiscoverError(400, "bad_settings", "DISCOVERY_GCP_SERVICE_ACCOUNT is not a service account's JSON key.");
-		const token = await googleAccessToken(account, "https://www.googleapis.com/auth/cloud-platform", remote);
-		const results = [];
-		let next;
-		let stopped = false;
-		do {
-			if (results.length >= 5e3 || !remote.hasTime) {
-				stopped = true;
-				break;
-			}
-			const url = new URL(`https://cloudasset.googleapis.com/v1/${scope}:searchAllResources`);
-			url.searchParams.set("pageSize", "500");
-			if (next) url.searchParams.set("pageToken", next);
-			const page = await remote.json(url.toString(), { headers: { authorization: `Bearer ${token}` } });
-			results.push(...Array.isArray(page?.results) ? page.results : []);
-			next = page?.nextPageToken || void 0;
-		} while (next);
-		if (!results.length) throw new DiscoverError(404, "nothing_found", `Cloud Asset Inventory found no resources in ${scope}. Check that the Cloud Asset API is on and the service account may view assets there.`);
-		return noteCap(readGcp(results.slice(0, MAX_RESOURCES), `Google Cloud ${scope}`), results.length, "resources", stopped);
-	}
-};
-var basic = (user, password) => `Basic ${btoa(unescape(encodeURIComponent(`${user}:${password}`)))}`;
-var servicenow = {
-	id: "servicenow",
-	label: "ServiceNow",
-	settings: "DISCOVERY_SERVICENOW_URL and DISCOVERY_SERVICENOW_TOKEN, or DISCOVERY_SERVICENOW_USER and DISCOVERY_SERVICENOW_PASSWORD",
-	configured: (env) => !!value(env, "DISCOVERY_SERVICENOW_URL") && (!!value(env, "DISCOVERY_SERVICENOW_TOKEN") || !!value(env, "DISCOVERY_SERVICENOW_USER") && !!value(env, "DISCOVERY_SERVICENOW_PASSWORD")),
-	async run(env, remote) {
-		const base = toolBase(value(env, "DISCOVERY_SERVICENOW_URL"));
-		if (!base) throw new DiscoverError(400, "bad_settings", "DISCOVERY_SERVICENOW_URL is not a plain https address, such as https://yourcompany.service-now.com.");
-		const authorization = value(env, "DISCOVERY_SERVICENOW_TOKEN") ? `Bearer ${value(env, "DISCOVERY_SERVICENOW_TOKEN")}` : basic(value(env, "DISCOVERY_SERVICENOW_USER"), value(env, "DISCOVERY_SERVICENOW_PASSWORD"));
-		const table = async (name, params, cap) => {
-			const rows = [];
-			let stopped = false;
-			for (let offset = 0;; offset += 1e3) {
-				if (rows.length >= cap || !remote.hasTime) {
-					stopped = true;
-					break;
-				}
-				const url = new URL(`api/now/table/${name}`, base);
-				for (const [k, v] of Object.entries({
-					...params,
-					sysparm_limit: "1000",
-					sysparm_offset: String(offset),
-					sysparm_exclude_reference_link: "true"
-				})) if (v) url.searchParams.set(k, v);
-				const page = await remote.json(url.toString(), { headers: { authorization } });
-				const got = Array.isArray(page?.result) ? page.result : [];
-				rows.push(...got);
-				if (got.length < 1e3) break;
-			}
-			return {
-				rows: rows.slice(0, cap),
-				stopped
-			};
-		};
-		const cis = await table("cmdb_ci", {
-			sysparm_fields: "sys_id,name,sys_class_name,ip_address,os,short_description,operational_status,environment",
-			sysparm_query: value(env, "DISCOVERY_SERVICENOW_QUERY")
-		}, MAX_RESOURCES);
-		const rels = await table("cmdb_rel_ci", {
-			sysparm_fields: "parent,child,type",
-			sysparm_display_value: "all"
-		}, MAX_RESOURCES * 4);
-		return noteCap(readServiceNow({
-			cmdb_ci: { result: cis.rows },
-			cmdb_rel_ci: { result: rels.rows }
-		}, `ServiceNow ${base.host}`), cis.rows.length, "configuration items", cis.stopped || rels.stopped);
-	}
-};
-/** Hosts, the software running on them with what it depends on, and the applications that group it. */
-var BMC_QUERIES = [
-	"SEARCH Host SHOW key AS 'id', name, kind(#) AS 'kind', os",
-	"SEARCH SoftwareInstance SHOW key AS 'id', name, kind(#) AS 'kind', type AS 'product', #RunningSoftware:HostedSoftware:Host:Host.key AS 'host_id', #Dependant:Dependency:DependedUpon:SoftwareInstance.key AS 'depends_on'",
-	"SEARCH BusinessApplicationInstance SHOW key AS 'id', name, kind(#) AS 'kind', #Collection:Collection:Member:SoftwareInstance.key AS 'members'"
-];
-var SOURCES = [
-	aws,
-	azure,
-	gcp,
-	servicenow,
-	{
-		id: "bmc",
-		label: "BMC Helix Discovery",
-		settings: "DISCOVERY_BMC_URL and DISCOVERY_BMC_TOKEN",
-		configured: (env) => !!value(env, "DISCOVERY_BMC_URL") && !!value(env, "DISCOVERY_BMC_TOKEN"),
-		async run(env, remote) {
-			const base = toolBase(value(env, "DISCOVERY_BMC_URL"));
-			if (!base) throw new DiscoverError(400, "bad_settings", "DISCOVERY_BMC_URL is not a plain https address of the appliance or instance.");
-			const version = /^\d+\.\d+$/.test(value(env, "DISCOVERY_BMC_API_VERSION")) ? value(env, "DISCOVERY_BMC_API_VERSION") : "1.0";
-			const queries = value(env, "DISCOVERY_BMC_QUERIES") ? value(env, "DISCOVERY_BMC_QUERIES").split(/\r?\n/).map((q) => q.trim()).filter(Boolean) : BMC_QUERIES;
-			const authorization = `Bearer ${value(env, "DISCOVERY_BMC_TOKEN")}`;
-			const tables = [];
-			let rows = 0;
-			let stopped = false;
-			let failed = 0;
-			for (const [i, query] of queries.entries()) {
-				let url = new URL(`api/v${version}/data/search?${new URLSearchParams({
-					query,
-					limit: "1000"
-				})}`, base).toString();
-				while (url) {
-					if (rows >= 5e3 || !remote.hasTime) {
-						stopped = true;
-						break;
-					}
-					const answer = await remote.json(url, { headers: { authorization } }, i > 0);
-					if (answer === void 0) {
-						failed++;
-						break;
-					}
-					const pages = Array.isArray(answer) ? answer : [answer];
-					tables.push(...pages);
-					rows += pages.reduce((n, p) => n + (Array.isArray(p.results) ? p.results.length : 0), 0);
-					const next = pages.find((p) => typeof p.next === "string")?.next;
-					url = next && new URL(next, base).host === base.host ? new URL(next, base).toString() : void 0;
-				}
-			}
-			const inventory = noteCap(readDiscoveryRows(tables, `BMC Helix Discovery ${base.host}`, "BMC Helix Discovery"), rows, "rows", stopped);
-			return failed ? {
-				...inventory,
-				skipped: [...inventory.skipped, `${failed} of the ${queries.length} queries did not answer and were left out`]
-			} : inventory;
-		}
-	},
-	{
-		id: "device42",
-		label: "Device42",
-		settings: "DISCOVERY_DEVICE42_URL, DISCOVERY_DEVICE42_USER and DISCOVERY_DEVICE42_PASSWORD",
-		configured: (env) => [
-			"DISCOVERY_DEVICE42_URL",
-			"DISCOVERY_DEVICE42_USER",
-			"DISCOVERY_DEVICE42_PASSWORD"
-		].every((n) => !!value(env, n)),
-		async run(env, remote) {
-			const base = toolBase(value(env, "DISCOVERY_DEVICE42_URL"));
-			if (!base) throw new DiscoverError(400, "bad_settings", "DISCOVERY_DEVICE42_URL is not a plain https address of the Device42 appliance.");
-			const authorization = basic(value(env, "DISCOVERY_DEVICE42_USER"), value(env, "DISCOVERY_DEVICE42_PASSWORD"));
-			const devices = [];
-			let stopped = false;
-			for (let offset = 0;; offset += 1e3) {
-				if (devices.length >= 5e3 || !remote.hasTime) {
-					stopped = true;
-					break;
-				}
-				const page = await remote.json(new URL(`api/1.0/devices/all/?limit=1000&offset=${offset}`, base).toString(), { headers: { authorization } });
-				const got = Array.isArray(page?.Devices) ? page.Devices : [];
-				devices.push(...got);
-				if (got.length < 1e3 || typeof page?.total_count === "number" && devices.length >= page.total_count) break;
-			}
-			const appComps = await remote.json(new URL("api/1.0/appcomps/", base).toString(), { headers: { authorization } }, true);
-			const doql = value(env, "DISCOVERY_DEVICE42_DOQL") || "SELECT DISTINCT c.name AS client, l.name AS listener, sc.port, sc.protocol FROM view_servicecommunication_v2 sc JOIN view_device_v2 c ON c.device_pk = sc.client_device_fk JOIN view_device_v2 l ON l.device_pk = sc.listener_device_fk WHERE sc.client_device_fk <> sc.listener_device_fk LIMIT 20000";
-			const communications = remote.hasTime ? await remote.json(new URL(`services/data/v1.0/query/?${new URLSearchParams({
-				query: doql,
-				output_type: "json"
-			})}`, base).toString(), { headers: { authorization } }, true) : void 0;
-			const inventory = noteCap(readDiscoveryRows({
-				Devices: devices.slice(0, MAX_RESOURCES),
-				app_comps: appComps?.app_comps ?? [],
-				communications: Array.isArray(communications) ? communications : []
-			}, `Device42 ${base.host}`, "Device42"), devices.length, "devices", stopped);
-			return Array.isArray(communications) ? inventory : {
-				...inventory,
-				skipped: [...inventory.skipped.filter((s) => !s.startsWith("No connection rows")), "The service communications query did not answer, so only where devices run is drawn"]
-			};
-		}
-	}
-];
-var sourceOf = (id) => SOURCES.find((s) => s.id === id);
 // src/lib/discover/http.ts
 var HEADERS = {
 	"content-type": "application/json; charset=utf-8",
@@ -9326,7 +9383,7 @@ function createDiscoverHandler(getEnv, fetchImpl = fetch, budgetMs = 5e4) {
 			});
 		}
 		try {
-			const inventory = await source.run(env, new Remote(source.label, source.settings, fetchImpl, budgetMs));
+			const inventory = parseDiscovery(await source.fetch(env, new Remote(source.label, source.settings, fetchImpl, budgetMs)));
 			return json(200, {
 				source: source.id,
 				label: source.label,

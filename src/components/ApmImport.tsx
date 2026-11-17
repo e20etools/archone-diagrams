@@ -5,6 +5,8 @@ import { Button, Field, Input } from "@/components/ui";
 import { saveProposal } from "@/lib/ai/proposals";
 import { apmStatus, fetchApm, type ApmStatus } from "@/lib/apm/client";
 import { apmToProposal } from "@/lib/apm/map";
+import type { ApmData } from "@/lib/apm/http";
+import { callIntegration, useConnected } from "@/lib/integrations/client";
 import { apply, useWorkspace } from "@/lib/store";
 
 /** Bringing the application portfolio from APM & Landscape, as a draft to review. Shown only when the server knows where APM is. */
@@ -15,6 +17,8 @@ export function ApmImport({ canEdit, onDone }: { canEdit: boolean; onDone: () =>
   const [token, setToken] = useState("");
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState("");
+  // Connected in Settings → Integrations: the workspace keeps the address and the token.
+  const connected = useConnected("apm")[0];
 
   useEffect(() => {
     let live = true;
@@ -23,13 +27,14 @@ export function ApmImport({ canEdit, onDone }: { canEdit: boolean; onDone: () =>
       live = false;
     };
   }, []);
-  if (!status?.configured) return null;
+  if (!status?.configured && !connected) return null;
 
   const run = async () => {
     setBusy(true);
     setProblem("");
     try {
-      const { proposal } = apmToProposal(ws, await fetchApm(token));
+      const data = connected ? await callIntegration<ApmData>("apm", "apm") : await fetchApm(token);
+      const { proposal } = apmToProposal(ws, data);
       if (!proposal.objects.length) throw new Error("APM sent no applications. Check that the feed token covers the applications dataset.");
       apply((w) => saveProposal(w, proposal));
       onDone();
@@ -48,9 +53,9 @@ export function ApmImport({ canEdit, onDone }: { canEdit: boolean; onDone: () =>
         <div className="min-w-0 flex-1">
           <p className="font-medium">From APM & Landscape</p>
           <p className="text-[13px] text-ink-soft">
-            Reads the applications and integrations {status.host} publishes and makes a draft of them. Applications already in the model are updated in their description, lifecycle and APM fields; nothing is deleted.
+            Reads the applications and integrations {connected ? (connected.settings.url ?? "APM").replace(/^https?:\/\//, "") : status?.host} publishes and makes a draft of them. Applications already in the model are updated in their description, lifecycle and APM fields; nothing is deleted.
           </p>
-          {!status.hasToken && (
+          {!connected && !status?.hasToken && (
             <div className="mt-2">
               <Field label="Feed token" hint="Create it in APM under Connections, as a Power BI or Excel feed. It is sent to this app's server for this import and is not kept.">
                 <Input type="password" autoComplete="off" value={token} onChange={(e) => setToken(e.target.value)} placeholder="apmf_..." data-apm-token />
@@ -63,7 +68,7 @@ export function ApmImport({ canEdit, onDone }: { canEdit: boolean; onDone: () =>
             </p>
           )}
           <div className="mt-2.5">
-            <Button disabled={busy || !canEdit || (!status.hasToken && !token.trim())} onClick={() => void run()} data-apm-run>
+            <Button disabled={busy || !canEdit || (!connected && !status?.hasToken && !token.trim())} onClick={() => void run()} data-apm-run>
               {busy ? "Reading APM" : "Read from APM"}
             </Button>
           </div>

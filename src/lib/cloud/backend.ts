@@ -1,3 +1,4 @@
+import type { IntegrationId, IntegrationInfo } from "../integrations/catalog";
 import type { CategoryRoles } from "../categories";
 import type { AuditCheck, AuditPage, AuditQuery } from "./audit";
 import type { Comment, CommentDraft, CommentPatch, Review, ReviewSettings, ReviewStage, VersionInfo } from "./collab";
@@ -237,6 +238,13 @@ export interface Backend {
   listApiKeys(workspaceId: string): Promise<ApiKeyInfo[]>;
   createApiKey(workspaceId: string, name: string, access: KeyAccess, domains?: string[] | null): Promise<{ id: string; key: string }>;
   revokeApiKey(workspaceId: string, keyId: string): Promise<void>;
+  /** The services the workspace connects to (Settings → Integrations): settings, never secrets. */
+  listIntegrations(workspaceId: string): Promise<IntegrationInfo[]>;
+  /** Owners only. A secret left empty is kept; null removes it. */
+  saveIntegration(workspaceId: string, provider: IntegrationId, settings: Record<string, string>, secrets: Record<string, string | null>, enabled: boolean): Promise<void>;
+  removeIntegration(workspaceId: string, provider: IntegrationId): Promise<void>;
+  /** Asks the integrations function to use a connected service: test it, discover, notify, create an issue... */
+  useIntegration<T = Record<string, unknown>>(workspaceId: string, provider: IntegrationId | null, action: string, args?: Record<string, unknown>): Promise<T>;
   listWebhooks(workspaceId: string): Promise<WebhookInfo[]>;
   createWebhook(workspaceId: string, url: string): Promise<{ id: string; secret: string }>;
   deleteWebhook(workspaceId: string, webhookId: string): Promise<void>;

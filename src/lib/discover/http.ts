@@ -2,7 +2,8 @@ import { isWorkspaceId } from "../ai/fairUse";
 import { accounts, bearer, type AccountsEnv } from "../ai/signin";
 import type { Inventory } from "../inventory/model";
 import { DiscoverError, Remote, type DiscoverEnv } from "./remote";
-import { SOURCES, sourceOf, type SourceId } from "./sources";
+import { SOURCES, sourceOf, type SourceId } from "./fetchers";
+import { parseDiscovery } from "./parse";
 
 /**
  * /api/discover: live discovery from the sources this server has credentials for.
@@ -90,7 +91,7 @@ export function createDiscoverHandler(getEnv: () => DiscoverServerEnv, fetchImpl
     }
 
     try {
-      const inventory: Inventory = await source.run(env, new Remote(source.label, source.settings, fetchImpl, budgetMs));
+      const inventory: Inventory = parseDiscovery(await source.fetch(env, new Remote(source.label, source.settings, fetchImpl, budgetMs)));
       return json(200, { source: source.id, label: source.label, fetchedAt: new Date().toISOString(), inventory });
     } catch (error) {
       if (error instanceof DiscoverError) return json(error.status, { error: error.code, message: error.message });

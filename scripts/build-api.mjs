@@ -5,6 +5,7 @@
 //   supabase/functions/ai/handler.js    used by the Supabase / Lovable Cloud Edge Function
 //   supabase/functions/api/handler.js   the public REST API, served by a Supabase Edge Function
 //   supabase/functions/mcp/handler.js   the MCP server for assistants, served the same way
+//   supabase/functions/integrations/handler.js   Settings → Integrations, with credentials from the vault
 //   gate/archone-gate.mjs               the pull-request gate, run with Node in a repository's CI
 // `--check` verifies that the committed files match the source, without writing anything.
 import { mkdtemp, readFile, rm, mkdir, copyFile } from "node:fs/promises";
@@ -21,6 +22,8 @@ const targets = [
   { entry: "server/edge-entry.ts", out: "supabase/functions/ai/handler.js" },
   { entry: "server/api-entry.ts", out: "supabase/functions/api/handler.js" },
   { entry: "server/mcp-entry.ts", out: "supabase/functions/mcp/handler.js" },
+  // Minified: it is deployed by pasting its text, so smaller is easier.
+  { entry: "server/integrations-entry.ts", out: "supabase/functions/integrations/handler.js", minify: true },
   // The pull-request gate runs under Node in a repository's CI, not on a host of ours.
   { entry: "server/gate-entry.ts", out: "gate/archone-gate.mjs", node: true },
 ];
@@ -45,7 +48,8 @@ try {
         emptyOutDir: true,
         minify: false,
         target: "es2022",
-        rollupOptions: { output: { format: "es", entryFileNames: "out.js", banner } },
+        // Minified but kept on short lines, so the file can be read and pasted when it is deployed.
+        rollupOptions: { output: { format: "es", entryFileNames: "out.js", banner, ...(target.minify ? { minify: { compress: true, mangle: true, codegen: { removeWhitespace: false } } } : {}) } },
       },
     });
     const built = join(outDir, "out.js");

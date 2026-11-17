@@ -6,7 +6,9 @@ import { Badge, Button, CommitInput, EmptyState, Field, IconButton, Input, Selec
 import { ADR_STATUS_LABEL, adrLabel, adrLocked, adrLogMarkdown, adrMarkdown, createAdr, decideAdr, deleteAdr, setAdrObjects, sortedAdrs, supersedeAdr, updateAdr } from "@/lib/adr";
 import { objectType } from "@/lib/catalog";
 import { cloudEnabled } from "@/lib/cloud/config";
-import { useCanEdit, useSession } from "@/lib/cloud/session";
+import { errorText, useCanEdit, useSession } from "@/lib/cloud/session";
+import { integrationOf, type IntegrationId } from "@/lib/integrations/catalog";
+import { callIntegration, useConnected } from "@/lib/integrations/client";
 import { downloadText } from "@/lib/exporters";
 import { sortedObjects } from "@/lib/model";
 import { apply, useStore, useWorkspace } from "@/lib/store";
@@ -182,6 +184,7 @@ function Record({ ws, adr, canEdit }: { ws: Workspace; adr: Adr; canEdit: boolea
       <Section name="decision" label="Decision" hint="What will be done, in a sentence that starts with 'We will'." value={adr.decision} locked={locked} onCommit={(decision) => patch({ decision })} />
       <Section name="consequences" label="Consequences" hint="What becomes easier, what becomes harder, what has to follow." value={adr.consequences} locked={locked} onCommit={(consequences) => patch({ consequences })} />
       <ObjectLinks ws={ws} adr={adr} canEdit={canEdit} />
+      <WorkItems adr={adr} canEdit={canEdit} />
 
       <footer className="pt-4 border-t border-line-soft flex flex-wrap items-center gap-2">
         {canEdit && adr.status === "proposed" && (
@@ -325,5 +328,60 @@ export function DecisionsPage() {
         </div>
       )}
     </div>
+  );
+}
+
+/** Issues made from the record in Jira or Azure DevOps, and a way to make one: the follow-up it calls for. */
+function WorkItems({ adr, canEdit }: { adr: Adr; canEdit: boolean }) {
+  const trackers = useConnected("issues");
+  const [busy, setBusy] = useState("");
+  const [problem, setProblem] = useState("");
+  if (!adr.issues?.length && (!trackers.length || !canEdit)) return null;
+  const create = async (provider: IntegrationId) => {
+    setBusy(provider);
+    setProblem("");
+    try {
+      const description = [`${adrLabel(adr)}: ${adr.title}`, adr.context && `Context\n${adr.context}`, adr.decision && `Decision\n${adr.decision}`, adr.consequences && `Consequences\n${adr.consequences}`].filter(Boolean).join("\n\n");
+      const issue = await callIntegration<{ key: string; url: string }>(provider, "issue", { title: `${adrLabel(adr)}: ${adr.title}`, description, link: `${window.location.origin}/decisions/${adr.id}` });
+      const system = integrationOf(provider)?.label ?? provider;
+      apply((w) => (w.adrs[adr.id] ? { ...w, adrs: { ...w.adrs, [adr.id]: { ...w.adrs[adr.id], issues: [...(w.adrs[adr.id].issues ?? []), { system, ...issue }], updatedAt: new Date().toISOString() } } } : w));
+    } catch (error) {
+      setProblem(errorText(error));
+    } finally {
+      setBusy("");
+    }
+  };
+  return (
+    <section data-adr-issues>
+      <h3 className="text-sm font-semibold">Follow-up</h3>
+      {adr.issues?.length ? (
+        <ul className="mt-1 space-y-0.5 text-[13px]">
+          {adr.issues.map((i) => (
+            <li key={`${i.system}:${i.key}`}>
+              <a href={i.url} target="_blank" rel="noreferrer" className="font-medium text-blueprint hover:underline">
+                {i.key}
+              </a>{" "}
+              <span className="text-ink-soft">in {i.system}</span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-1 text-[13px] text-ink-soft">No issue has been made from this decision yet.</p>
+      )}
+      {canEdit && trackers.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-2">
+          {trackers.map((t) => (
+            <Button key={t.provider} size="sm" disabled={!!busy} onClick={() => void create(t.provider)} data-adr-issue={t.provider}>
+              {busy === t.provider ? "Creating" : t.provider === "jira" ? "Create a Jira issue" : "Create a work item"}
+            </Button>
+          ))}
+        </div>
+      )}
+      {problem && (
+        <p className="mt-1.5 text-[13px] text-danger" role="alert">
+          {problem}
+        </p>
+      )}
+    </section>
   );
 }

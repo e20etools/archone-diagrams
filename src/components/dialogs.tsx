@@ -29,7 +29,10 @@ import { diagramWorkspace, drawioXml, gifBlob, interactiveHtml, powerPointBlob, 
 import { writeXlsx } from "@/lib/import/xlsx";
 import { modelSheets } from "@/lib/import/draft";
 import { writeArchimate } from "@/lib/import/archimate";
-import { exportPdf, exportPng, exportSvg, stampFor } from "@/lib/exportImage";
+import { capturePng, exportPdf, exportPng, exportSvg, stampFor } from "@/lib/exportImage";
+import { objectType } from "@/lib/catalog";
+import { integrationOf } from "@/lib/integrations/catalog";
+import { callIntegration, useConnected } from "@/lib/integrations/client";
 import { buildSharePayload, encodeShare, shareUrl } from "@/lib/share";
 import { apply } from "@/lib/store";
 import { type Diagram, type Workspace } from "@/lib/types";
@@ -335,7 +338,9 @@ type ExportId =
   | "structurizr"
   | "archimate"
   | "calm"
-  | "bpmn";
+  | "bpmn"
+  | "confluence"
+  | "channels";
 
 /** Every way a diagram can leave the app, in one window, grouped by what the file is for. */
 function ExportDialog({ ws, diagram, canvas, onNotice, onClose }: { ws: Workspace; diagram: Diagram; canvas: React.RefObject<CanvasHandle | null>; onNotice: (text: string) => void; onClose: () => void }) {
@@ -409,6 +414,30 @@ function ExportDialog({ ws, diagram, canvas, onNotice, onClose }: { ws: Workspac
     archimate: () => (downloadText(`${file}-archimate.xml`, writeArchimate(diagramWorkspace(ws, diagram)), "application/xml"), `${file}-archimate.xml`),
     calm: () => (downloadText(`${file}.calm.json`, calmJson(ws, diagram), "application/json"), `${file}.calm.json`),
     bpmn: () => (downloadText(`${file}.bpmn`, writeBpmn(ws, diagram).xml, "application/xml"), `${file}.bpmn`),
+    confluence: async () => {
+      const handle = canvas.current;
+      const element = handle?.element();
+      let png: string | undefined;
+      if (handle && element) {
+        try {
+          await handle.whole(true);
+          png = (await capturePng(element, handle.nodes())).dataUrl.split(",")[1];
+        } finally {
+          void handle.whole(false);
+        }
+      }
+      const rows = [["Name", "Type", "Owner", "Description"], ...diagramObjects(ws, diagram).map((o) => [o.name, objectType(o.typeId).label, o.owner, o.description])];
+      const page = await callIntegration<{ url: string }>("confluence", "publish", { title: diagram.name, summary: diagram.description || `${diagramObjects(ws, diagram).length} objects, from ${ws.name}.`, rows, png, link: `${window.location.origin}/diagram/${diagram.id}` });
+      window.open(page.url, "_blank", "noopener");
+      return "a Confluence page";
+    },
+    channels: async () => {
+      const answer = await callIntegration<{ sent: { provider: string; ok: boolean; message: string }[] }>(null, "notify", { event: "diagram.shared", diagramId: diagram.id, appUrl: window.location.origin });
+      const failed = answer.sent.filter((s) => !s.ok);
+      if (!answer.sent.length) throw new Error("No channel is connected.");
+      if (failed.length) throw new Error(failed.map((f) => `${integrationOf(f.provider)?.label ?? f.provider}: ${f.message}`).join(" "));
+      return answer.sent.map((s) => integrationOf(s.provider)?.label ?? s.provider).join(", ");
+    },
   };
   const go = async (id: ExportId) => {
     if (busy) return;
@@ -416,8 +445,9 @@ function ExportDialog({ ws, diagram, canvas, onNotice, onClose }: { ws: Workspac
     setDone("");
     try {
       const name = await run[id]();
-      setDone(`Downloaded ${name}`);
-      onNotice(`Exported ${name}`);
+      const sentTo = id === "confluence" ? `Published ${name}` : id === "channels" ? `Shared to ${name}` : "";
+      setDone(sentTo || `Downloaded ${name}`);
+      onNotice(sentTo || `Exported ${name}`);
     } catch (e) {
       setDone(e instanceof Error ? e.message : "The export failed. Try again.");
     } finally {
@@ -425,6 +455,8 @@ function ExportDialog({ ws, diagram, canvas, onNotice, onClose }: { ws: Workspac
     }
   };
   const hasFlows = (diagram.flows ?? []).some((f) => f.steps.length);
+  const confluence = useConnected("publish").length > 0;
+  const channels = useConnected("notify").length > 0;
   const groups: { title: string; note?: string; items: { id: ExportId; label: string; hint: string }[] }[] = [
     {
       title: "Pictures and slides",
@@ -466,6 +498,18 @@ function ExportDialog({ ws, diagram, canvas, onNotice, onClose }: { ws: Workspac
         ...(diagram.notation === "bpmn" ? [{ id: "bpmn" as const, label: "BPMN 2.0", hint: "For Camunda, Signavio and other BPMN tools" }] : []),
       ],
     },
+    // Offered once the service is connected in Settings → Integrations.
+    ...(confluence || channels
+      ? [
+          {
+            title: "Connected services",
+            items: [
+              ...(confluence ? [{ id: "confluence" as const, label: "Publish to Confluence", hint: "A page with the picture and the list of objects" }] : []),
+              ...(channels ? [{ id: "channels" as const, label: "Share to channels", hint: "A link in Teams, Slack or by email" }] : []),
+            ],
+          },
+        ]
+      : []),
   ];
   return (
     <Modal title="Export" width={640} onClose={onClose} footer={<Button onClick={onClose}>Done</Button>}>

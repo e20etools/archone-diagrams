@@ -6,6 +6,7 @@ import { MembersCard } from "@/components/cloud/MembersCard";
 import { TrustPageCard } from "@/components/cloud/TrustPageCard";
 import { ReviewSettingsCard } from "@/components/cloud/ReviewSettingsCard";
 import { AiFairUseCard } from "@/components/cloud/AiFairUseCard";
+import { ConnectedServicesCard } from "@/components/cloud/ConnectedServicesCard";
 import { WizardSettingsCard } from "@/components/WizardSettings";
 import { AppearanceSection, BrandingSection, MonitoringSection, PermissionsMatrix } from "@/components/SettingsSections";
 import { Badge, Button, CommitInput, Field, Input, Modal, countOf, cx, useNotice } from "@/components/ui";
@@ -219,7 +220,8 @@ export function SettingsPage() {
           </Group>
         )}
         {cloudEnabled && (
-          <Group id="integrations" title="Integrations" text="Connect other tools through the API, webhooks and MCP, and publish the trust page.">
+          <Group id="integrations" title="Integrations" text="Connect AI providers, clouds, discovery tools, your directory, chat, email, Jira and Confluence; and other tools through the API, webhooks and MCP.">
+            <ConnectedServicesCard />
             <IntegrationsCard />
             <TrustPageCard />
           </Group>

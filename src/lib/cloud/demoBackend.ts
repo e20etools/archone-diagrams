@@ -6,6 +6,7 @@ import { scopeRefusal } from "./scope";
 import type { TrustPage } from "../trust";
 import type { Workspace } from "../types";
 import { AUDIT_PAGE_SIZE, matchesQuery, type AuditEntry } from "./audit";
+import type { IntegrationInfo } from "../integrations/catalog";
 import { BackendError, LIVE_LINK_MIN_PASSWORD, canCommentRole, canEditRole, type ApiKeyInfo, type Backend, type StoredFile, type LiveLink, type WebhookInfo, type CloudUser, type LiveHandlers, type Peer, type Role } from "./backend";
 import type { Comment, Review, ReviewSettings, VersionInfo } from "./collab";
 import { DEMO_DB_KEY } from "./config";
@@ -32,6 +33,8 @@ interface Db {
   settings?: Record<string, ReviewSettings>;
   apiKeys?: Record<string, ApiKeyInfo[]>;
   webhooks?: Record<string, WebhookInfo[]>;
+  /** Integrations: settings and which secrets were given. The demo never keeps a secret's value. */
+  integrations?: Record<string, IntegrationInfo[]>;
   /** The demo keeps a link's password as written; the real database stores a salted hash. */
   liveLinks?: (LiveLink & { workspaceId: string; password?: string; failed?: number; lockedUntil?: string })[];
   trustPages?: Record<string, TrustPage>;
@@ -701,6 +704,42 @@ export function createDemoBackend(): Backend {
       const key = db.apiKeys?.[workspaceId]?.find((k) => k.id === keyId);
       if (key) key.revokedAt = new Date().toISOString();
       write(db);
+    },
+    async listIntegrations(workspaceId) {
+      const db = read();
+      const role = roleOf(db, workspaceId, me().id);
+      if (!role) throw new BackendError("forbidden", "Not a member of this workspace.");
+      const list = db.integrations?.[workspaceId] ?? [];
+      return canEditRole(role) ? list : list.map((i) => ({ ...i, settings: {}, secretFields: [] }));
+    },
+    async saveIntegration(workspaceId, provider, settings, secrets, enabled) {
+      const db = read();
+      if (roleOf(db, workspaceId, me().id) !== "owner") throw new BackendError("forbidden", "Only an owner can change integrations.");
+      const list = ((db.integrations ??= {})[workspaceId] ??= []);
+      const old = list.find((i) => i.provider === provider);
+      const kept = new Set(old?.secretFields ?? []);
+      for (const [k, v] of Object.entries(secrets)) v === null ? kept.delete(k) : v.trim() && kept.add(k);
+      const next: IntegrationInfo = { provider, enabled, settings, secretFields: [...kept].sort(), status: "untested", statusMessage: "", checkedAt: null, changedAt: new Date().toISOString() };
+      db.integrations[workspaceId] = [...list.filter((i) => i.provider !== provider), next].sort((a, b) => a.provider.localeCompare(b.provider));
+      write(db);
+    },
+    async removeIntegration(workspaceId, provider) {
+      const db = read();
+      if (roleOf(db, workspaceId, me().id) !== "owner") throw new BackendError("forbidden", "Only an owner can remove integrations.");
+      if (db.integrations?.[workspaceId]) db.integrations[workspaceId] = db.integrations[workspaceId].filter((i) => i.provider !== provider);
+      write(db);
+    },
+    async useIntegration(workspaceId, provider, action) {
+      await pause();
+      const db = read();
+      if (!roleOf(db, workspaceId, me().id)) throw new BackendError("forbidden", "Not a member of this workspace.");
+      if (action === "notify") return { sent: [] } as never;
+      // The demo has no server to reach outside services from; it says so, and records it as the status.
+      const message = "The demo cannot reach outside services. Connect this workspace on the hosted app to use it.";
+      const item = db.integrations?.[workspaceId]?.find((i) => i.provider === provider);
+      if (item) Object.assign(item, { status: "failed", statusMessage: message, checkedAt: new Date().toISOString() });
+      write(db);
+      throw new BackendError("invalid", message);
     },
     async listWebhooks(workspaceId) {
       const db = read();

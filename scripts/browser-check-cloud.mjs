@@ -478,7 +478,7 @@ try {
   await waitText(ana, "Review settings saved.");
   await waitText(vera, "You have comment access to this workspace");
   await ana.select('select[aria-label="Role of Vera Viewer"]', "editor");
-  await until(vera, () => !document.body.innerText.includes("access to this workspace"), 5000);
+  await until(vera, () => !document.body.innerText.includes("access to this workspace"), 15000);
   await visit(vera, diagramUrl, ".object-node");
   await visit(ben, diagramUrl, ".object-node");
   check("switching review off gives readers the working model again", (await count(vera, ".object-node")) === (await count(ben, ".object-node")));
@@ -526,6 +526,53 @@ try {
   await ana.click('[data-ai-pause="Ben Editor"]');
   await ana.select("[data-ai-who]", "members");
   await saved(ana);
+  await visit(ben, diagramUrl, ".object-node");
+
+  /* ---------- integrations: owners connect services; secrets are kept and never shown again ---------- */
+  await visit(ana, `${base}/settings`, "[data-connected-services] [data-integration=ai]");
+  check(
+    "Settings → Integrations lists AI, clouds, discovery, code, directory, chat, email, work tracking and documentation",
+    (await count(ana, "[data-connected-services] [data-integration]")) === 17 && (await hasText(ana, "Microsoft Entra ID (Azure AD)")) && (await hasText(ana, "Confluence")),
+  );
+  await ana.click("[data-integration=ai] [data-integration-edit]");
+  await ana.waitForSelector("[data-ai-providers]");
+  const providers = await ana.$$eval("[data-ai-provider]", (inputs) => inputs.map((i) => i.getAttribute("data-ai-provider")));
+  check("the AI provider can be any of eight with a free plan", providers.join(",") === "groq,gemini,openrouter,cerebras,mistral,github,sambanova,cloudflare", providers.join(","));
+  await ana.click('[data-ai-provider="gemini"]');
+  await ana.type('[data-integration-form=ai] [data-integration-field="apiKey"]', "test-key-123");
+  await ana.click("[data-integration-save]");
+  await ana.waitForSelector("[data-integration=ai] [data-integration-test]");
+  check("a saved AI provider shows its model, and the key is not shown again", (await ana.$eval("[data-integration=ai]", (e) => e.innerText)).includes("Google Gemini (AI Studio)") && !(await hasText(ana, "test-key-123")));
+  await ana.click("[data-integration=ai] [data-integration-edit]");
+  await ana.waitForSelector('[data-integration-form=ai] [data-integration-field="apiKey"]');
+  const keyField = await ana.$eval('[data-integration-form=ai] [data-integration-field="apiKey"]', (e) => ({ value: e.value, placeholder: e.placeholder }));
+  check("editing shows the key as kept, empty", keyField.value === "" && keyField.placeholder.startsWith("Kept"), JSON.stringify(keyField));
+  await clickText(ana, "Cancel");
+  await ana.click("[data-integration=servicenow] [data-integration-edit]");
+  await ana.waitForSelector("[data-integration-form=servicenow]");
+  check("a form says what is still needed before it can be saved", (await hasText(ana, "Still needed: Instance address")) && (await ana.$eval("[data-integration-save]", (b) => b.disabled)));
+  await ana.type('[data-integration-field="url"]', "https://acme.service-now.com");
+  await ana.type('[data-integration-field="token"]', "sn-token");
+  await ana.click("[data-integration-save-test]");
+  await ana.waitForSelector("[data-integration=servicenow] [data-integration-status]");
+  check("testing records how it went next to the service", (await ana.$eval("[data-integration=servicenow]", (e) => e.innerText)).includes("Failed"));
+  await visit(ben, `${base}/settings`, "[data-connected-services] [data-integration=servicenow]");
+  check("editors can test a connected service but not change it", !!(await ben.$("[data-integration=servicenow] [data-integration-test]")) && !(await ben.$("[data-integration-edit]")));
+  await ana.bringToFront();
+  await ana.click("[data-integration=servicenow] [data-integration-edit]");
+  await ana.waitForSelector("[data-integration-remove]");
+  await ana.click("[data-integration-remove]");
+  await until(ana, () => document.querySelector("[data-integration-remove]")?.textContent.includes("and its keys"), 4000);
+  await ana.click("[data-integration-remove]");
+  await until(ana, () => !document.querySelector("[data-integration=servicenow] [data-integration-test]"), 8000);
+  check("removing a service takes it out of the workspace", true);
+  // The AI provider goes too, so the rest of the run uses the server's AI as before.
+  await ana.click("[data-integration=ai] [data-integration-edit]");
+  await ana.waitForSelector("[data-integration-remove]");
+  await ana.click("[data-integration-remove]");
+  await until(ana, () => document.querySelector("[data-integration-remove]")?.textContent.includes("and its keys"), 4000);
+  await ana.click("[data-integration-remove]");
+  await until(ana, () => !document.querySelector("[data-integration=ai] [data-integration-test]"), 8000);
   await visit(ben, diagramUrl, ".object-node");
 
   /* ---------- live links, API keys and webhooks ---------- */

@@ -1,4 +1,4 @@
-import { aiStatus, checkAiRequest, globalDailyLimit, handleAiRequest, type AiEnv } from "./server-core";
+import { aiStatus, checkAiRequest, globalDailyLimit, handleAiRequest, resolveProvider, workspaceProvider, type AiEnv, type Provider } from "./server-core";
 import { beginUse, finishUse, isWorkspaceId, type Ticket } from "./fairUse";
 
 /**
@@ -15,6 +15,7 @@ import { beginUse, finishUse, isWorkspaceId, type Ticket } from "./fairUse";
  *   AI_GLOBAL_DAILY_REQUESTS  requests a day for everyone together (900 for Groq's free plan unless set)
  */
 
+import { aiProviderOf } from "../integrations/catalog";
 import { accounts, bearer, signedIn } from "./signin";
 
 export type ServerEnv = AiEnv & {
@@ -57,6 +58,25 @@ function allowedOrigin(request: Request, env: ServerEnv): { cross: boolean; allo
     .filter(Boolean);
   if (list.includes("*")) return { cross: true, allow: "*" };
   return { cross: true, allow: list.includes(origin) ? origin : null };
+}
+
+/** The AI provider the workspace connected itself, if any: its name and models, never its key. */
+async function workspaceAi(service: { url: string; key: string }, token: string, workspaceId: string, fetchImpl: typeof fetch): Promise<{ provider: string; model: string; visionModel: string } | null> {
+  try {
+    const response = await fetchImpl(`${service.url}/rest/v1/rpc/ai_integration`, {
+      method: "POST",
+      headers: { apikey: service.key, authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ p_workspace: workspaceId }),
+    });
+    if (!response.ok) return null;
+    const data = (await response.json()) as { provider?: unknown; model?: unknown; visionModel?: unknown } | null;
+    if (!data || typeof data.provider !== "string" || !data.provider) return null;
+    const known = aiProviderOf(data.provider);
+    const text = (v: unknown) => (typeof v === "string" ? v.trim() : "");
+    return { provider: data.provider, model: text(data.model) || known?.model || "", visionModel: text(data.visionModel) || known?.visionModel || "" };
+  } catch {
+    return null;
+  }
 }
 
 export function createAiHandler(getEnv: () => ServerEnv, fetchImpl: typeof fetch = fetch) {
@@ -104,17 +124,22 @@ export function createAiHandler(getEnv: () => ServerEnv, fetchImpl: typeof fetch
 
     // Fair use: the workspace's limits decide, and the request is counted, before the model is asked.
     let ticket: Ticket | null = null;
+    let own: Provider | undefined;
     const governed = !!service && (env.AI_FAIR_USE ?? "").toLowerCase() !== "off";
     if (governed) {
       const workspaceId = (body as { workspaceId?: unknown }).workspaceId;
       if (!isWorkspaceId(workspaceId)) return json(400, { error: "workspace_required", message: "Open a workspace to use AI." });
-      const begun = await beginUse(service!, bearer(request), workspaceId, check.kind, globalDailyLimit(env), fetchImpl);
+      // A workspace with its own AI provider uses its own key and allowance, not the server's.
+      const integration = await workspaceAi(service!, bearer(request), workspaceId, fetchImpl);
+      if (!integration && !resolveProvider(env)) return json(501, { error: "not_configured", message: "No AI provider is connected. An owner connects one in Settings → Integrations." });
+      const begun = await beginUse(service!, bearer(request), workspaceId, check.kind, integration ? 0 : globalDailyLimit(env), fetchImpl);
       if (!begun.ok) return json(begun.status, begun.body);
       ticket = begun.ticket;
+      if (integration) own = workspaceProvider(integration, { url: service!.url, anonKey: service!.key, token: bearer(request), workspaceId, usage: ticket.usage, ticket: ticket.key });
     }
     let result;
     try {
-      result = await handleAiRequest(body, env, fetchImpl);
+      result = await handleAiRequest(body, env, fetchImpl, own);
     } catch {
       result = { status: 500, body: { error: "server_error", message: "The draft failed on the server. Try again." } as Record<string, unknown>, tokens: 0 };
     }

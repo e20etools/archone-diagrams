@@ -1,4 +1,5 @@
 import { evidenceHtml } from "@/lib/cloud/evidence";
+import { notifyChannels } from "@/lib/integrations/client";
 import { downloadText, slugify } from "@/lib/exporters";
 import { FileDown } from "lucide-react";
 import { ArrowLeft, Check, CircleDashed, ClipboardCheck, Forward, X } from "lucide-react";
@@ -44,7 +45,10 @@ function SubmitDialog({ onClose, onSubmitted }: { onClose: () => void; onSubmitt
     if (!title.trim() || busy) return;
     setBusy(true);
     setProblem("");
-    submitForReview(title, note).then(onSubmitted, (e) => {
+    submitForReview(title, note).then((id) => {
+      notifyChannels("review.submitted", { reviewId: id });
+      return onSubmitted(id);
+    }, (e) => {
       setProblem(errorText(e));
       setBusy(false);
     });
@@ -266,10 +270,10 @@ function DecisionCard({ review }: { review: Review }) {
         </p>
       )}
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <Button variant="primary" icon={<Check size={15} />} disabled={busy || !allTicked} onClick={() => run(decideReview(review.id, true, reason, ticks), "Approved.")}>
+        <Button variant="primary" icon={<Check size={15} />} disabled={busy || !allTicked} onClick={() => run(decideReview(review.id, true, reason, ticks).then(() => notifyChannels("review.decided", { reviewId: review.id })), "Approved.")}>
           Approve
         </Button>
-        <Button variant="danger" icon={<X size={15} />} disabled={busy || !reason.trim()} onClick={() => run(decideReview(review.id, false, reason, []), "Rejected.")}>
+        <Button variant="danger" icon={<X size={15} />} disabled={busy || !reason.trim()} onClick={() => run(decideReview(review.id, false, reason, []).then(() => notifyChannels("review.decided", { reviewId: review.id })), "Rejected.")}>
           Reject
         </Button>
         {others.length > 0 && (

@@ -122,3 +122,50 @@ export function inventoryToProposal(ws: Workspace, inventory: Inventory, kind: "
     relationships,
   };
 }
+
+/**
+ * Infrastructure files from a repository as one inventory. Terraform files of one folder are one
+ * configuration, so they are read together; Kubernetes manifests likewise; every other file on
+ * its own. Files that are none of the kinds read are listed as left out.
+ */
+export function readRepositoryFiles(files: { path: string; text: string }[], title: string): Inventory {
+  const folderOf = (path: string) => (path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "");
+  const groups = new Map<string, { name: string; text: string[] }>();
+  const singles: { path: string; text: string }[] = [];
+  for (const file of files) {
+    const lower = file.path.toLowerCase();
+    if (lower.endsWith(".tf") || lower.endsWith(".hcl")) {
+      const key = `tf:${folderOf(file.path)}`;
+      const g = groups.get(key) ?? { name: `${folderOf(file.path) || "root"}/main.tf`, text: [] };
+      g.text.push(file.text);
+      groups.set(key, g);
+    } else singles.push(file);
+  }
+  const parts: Inventory[] = [];
+  const skipped: string[] = [];
+  const read = (name: string, text: string) => {
+    try {
+      const inventory = readInventory(name, text);
+      if (inventory?.items.length) parts.push(inventory);
+      else skipped.push(name);
+    } catch {
+      skipped.push(name);
+    }
+  };
+  for (const g of groups.values()) read(g.name, g.text.join("\n\n"));
+  // Manifests are read together so a Service finds the Deployment it selects in another file.
+  const yamls = singles.filter((f) => /\.ya?ml$/i.test(f.path));
+  const k8s = yamls.filter((f) => /^\s*(apiVersion|kind)\s*:/m.test(f.text) && /^\s*kind\s*:/m.test(f.text) && !/^\s*AWSTemplateFormatVersion|^\s*Resources\s*:/m.test(f.text));
+  if (k8s.length) read("manifests.yaml", k8s.map((f) => f.text).join("\n---\n"));
+  for (const f of singles.filter((x) => !k8s.includes(x))) read(f.path, f.text);
+  if (!parts.length) throw new InventoryError(`No infrastructure as code was found in ${title}.`);
+  const items = new Map<string, Inventory["items"][number]>();
+  for (const [i, part] of parts.entries()) for (const item of part.items) items.set(items.has(item.id) ? `${i}:${item.id}` : item.id, items.has(item.id) ? { ...item, id: `${i}:${item.id}`, parentId: item.parentId } : item);
+  return {
+    format: `Infrastructure as code from ${title}`,
+    title: parts.map((p) => p.format.replace(/^An? /, "")).filter((v, i, all) => all.indexOf(v) === i).join(", "),
+    items: [...items.values()],
+    links: parts.flatMap((p) => p.links),
+    skipped: [...parts.flatMap((p) => p.skipped), ...(skipped.length ? [`${skipped.length} files that are not infrastructure as code were left out`] : [])],
+  };
+}
