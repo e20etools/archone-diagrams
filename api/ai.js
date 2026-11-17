@@ -4356,6 +4356,175 @@ var aiPolicySchema = objectType({
 	})).default({}),
 	updatedAt: stringType()
 });
+/** What the app keeps about one BPMN element of a process, beside the BPMN file itself. */
+var processElementInfoSchema = objectType({
+	/** Model objects the step uses or stands for: the systems it runs on, the data it touches, who does it. */
+	objectIds: arrayType(stringType()).default([]),
+	/** Who is Responsible, Accountable, Consulted or Informed, by role name. */
+	raci: recordType(enumType([
+		"R",
+		"A",
+		"C",
+		"I"
+	])).default({}),
+	/** How long a step takes, in minutes: least, most likely, most. */
+	duration: objectType({
+		min: numberType().min(0),
+		mode: numberType().min(0),
+		max: numberType().min(0)
+	}).optional(),
+	/** A cost each time the step is done, besides the people's time. */
+	cost: numberType().min(0).optional(),
+	/** For a flow out of a decision: how often it is taken, in percent. */
+	probability: numberType().min(0).max(100).optional(),
+	/** Who does the work, for simulation: a role; the lane's name when empty. */
+	resource: stringType().optional(),
+	automation: enumType([
+		"manual",
+		"partly",
+		"automated",
+		"candidate"
+	]).optional(),
+	/** The decision table a business rule step applies. */
+	decisionId: stringType().optional(),
+	/** The process a call activity runs. */
+	calledProcessId: stringType().optional(),
+	notes: stringType().optional()
+});
+var decisionTableSchema = objectType({
+	id: stringType(),
+	name: stringType(),
+	hitPolicy: enumType([
+		"UNIQUE",
+		"FIRST",
+		"PRIORITY",
+		"ANY",
+		"COLLECT",
+		"RULE ORDER",
+		"OUTPUT ORDER"
+	]).default("UNIQUE"),
+	inputs: arrayType(objectType({
+		id: stringType(),
+		label: stringType(),
+		type: enumType([
+			"string",
+			"number",
+			"boolean",
+			"date"
+		]).default("string")
+	})).default([]),
+	outputs: arrayType(objectType({
+		id: stringType(),
+		label: stringType(),
+		type: enumType([
+			"string",
+			"number",
+			"boolean",
+			"date"
+		]).default("string")
+	})).default([]),
+	/** One cell per input (a FEEL unary test such as >= 18, "gold", [1..5], -) and per output (a value). */
+	rules: arrayType(objectType({
+		id: stringType(),
+		inputs: arrayType(stringType()),
+		outputs: arrayType(stringType()),
+		note: stringType().default("")
+	})).default([])
+});
+var simScenarioSchema = objectType({
+	id: stringType(),
+	name: stringType(),
+	cases: numberType().int().min(1).max(2e4).default(500),
+	/** Average minutes between two new cases. */
+	arrivalMinutes: numberType().min(.01).default(30),
+	/** People or machines per role, and what an hour of their time costs. */
+	resources: recordType(objectType({
+		count: numberType().int().min(0).max(1e4),
+		costPerHour: numberType().min(0)
+	})).default({}),
+	/** Per step: its time multiplied by this; per flow: another probability. */
+	changes: recordType(objectType({
+		durationFactor: numberType().min(0).optional(),
+		probability: numberType().min(0).max(100).optional()
+	})).default({})
+});
+var processModelSchema = objectType({
+	id: stringType(),
+	name: stringType(),
+	description: stringType().default(""),
+	/** 0 a process area, 1 a group, 2 a process, 3 a sub-process, 4 an activity. */
+	level: numberType().int().min(0).max(4).default(2),
+	parentId: stringType().nullable().default(null),
+	category: enumType([
+		"management",
+		"core",
+		"support"
+	]).default("core"),
+	owner: stringType().default(""),
+	status: enumType([
+		"draft",
+		"review",
+		"published",
+		"retired"
+	]).default("draft"),
+	/** The number of the last published version; 0 before the first. */
+	version: numberType().int().min(0).default(0),
+	/** The model object that stands for the process, so it can be linked to applications and capabilities. */
+	objectId: stringType().nullable().default(null),
+	tags: arrayType(stringType()).default([]),
+	/** How often it runs, in words: "about 200 a day". */
+	frequency: stringType().default(""),
+	/** The BPMN 2.0 file with its diagram. Empty for a process that is only a box in the landscape. */
+	xml: stringType().default(""),
+	elements: recordType(processElementInfoSchema).default({}),
+	kpis: arrayType(objectType({
+		id: stringType(),
+		name: stringType(),
+		unit: stringType().default(""),
+		target: stringType().default(""),
+		actual: stringType().default(""),
+		better: enumType(["higher", "lower"]).default("higher")
+	})).default([]),
+	risks: arrayType(objectType({
+		id: stringType(),
+		name: stringType(),
+		severity: enumType([
+			"low",
+			"medium",
+			"high"
+		]).default("medium"),
+		control: stringType().default("")
+	})).default([]),
+	decisions: recordType(decisionTableSchema).default({}),
+	scenarios: arrayType(simScenarioSchema).default([]),
+	/** What the last event log said, kept small: the log itself stays on the computer it came from. */
+	mining: objectType({
+		source: stringType(),
+		importedAt: stringType(),
+		cases: numberType(),
+		events: numberType(),
+		variants: numberType(),
+		fitness: numberType().nullable(),
+		medianHours: numberType().nullable(),
+		activities: recordType(objectType({
+			count: numberType(),
+			medianMinutes: numberType().nullable()
+		}))
+	}).optional(),
+	/** Published versions, newest first, at most ten. */
+	versions: arrayType(objectType({
+		version: numberType(),
+		publishedAt: stringType(),
+		publishedBy: stringType(),
+		note: stringType().default(""),
+		xml: stringType()
+	})).default([]),
+	/** Who was asked to review it, and what they said. */
+	reviewer: stringType().default(""),
+	reviewNote: stringType().default(""),
+	createdAt: stringType(),
+	updatedAt: stringType()
+});
 objectType({
 	version: literalType(1),
 	name: stringType(),
@@ -4380,6 +4549,8 @@ objectType({
 	library: recordType(libraryItemSchema).default({}),
 	/** The workspace's limits on AI use, one record keyed "workspace". Missing means the built-in limits. */
 	aiPolicy: recordType(aiPolicySchema).default({}),
+	/** Business processes: the landscape, each one's BPMN model and what is known about it. */
+	processes: recordType(processModelSchema).default({}),
 	updatedAt: stringType()
 });
 // src/lib/ai/prompt.ts
@@ -4436,7 +4607,7 @@ function buildAskText(question, context) {
 }
 // src/lib/ai/schema.ts
 var key = unionType([stringType(), numberType()]).transform((v) => String(v));
-var text = unionType([
+var text$1 = unionType([
 	stringType(),
 	nullType(),
 	undefinedType()
@@ -4445,10 +4616,10 @@ var rawDraftSchema = objectType({
 	objects: arrayType(objectType({
 		key,
 		name: stringType(),
-		typeId: text,
-		type: text,
-		description: text,
-		technology: text,
+		typeId: text$1,
+		type: text$1,
+		description: text$1,
+		technology: text$1,
 		parentKey: unionType([
 			key,
 			nullType(),
@@ -4458,10 +4629,10 @@ var rawDraftSchema = objectType({
 	relationships: arrayType(objectType({
 		sourceKey: key,
 		targetKey: key,
-		kind: text,
-		label: text
+		kind: text$1,
+		label: text$1
 	})).max(500).optional(),
-	notes: text
+	notes: text$1
 });
 var norm = (s) => s.trim().toLowerCase().replace(/\s+/g, " ");
 var clip = (s, max) => s.trim().replace(/\s+/g, " ").slice(0, max);
@@ -4526,10 +4697,206 @@ function normalizeDraft(raw) {
 		notes: clip(parsed.data.notes, 500)
 	};
 }
+// src/lib/bpm/draft.ts
+/**
+* A process drafted from a description: by an AI model when the server has one, and by plain
+* rules otherwise (numbered steps, "Role: step" or "step (Role)" for who does it, and "If ...,
+* ...; otherwise ..." for a decision). Either way it becomes a BPMN model to check and change.
+*/
+var STEP_TYPES = [
+	"startEvent",
+	"endEvent",
+	"intermediateThrowEvent",
+	"intermediateCatchEvent",
+	"task",
+	"userTask",
+	"serviceTask",
+	"manualTask",
+	"scriptTask",
+	"businessRuleTask",
+	"sendTask",
+	"receiveTask",
+	"subProcess",
+	"callActivity",
+	"exclusiveGateway",
+	"parallelGateway",
+	"inclusiveGateway",
+	"eventBasedGateway"
+];
+var PROCESS_SYSTEM_PROMPT = `You turn a description of a business process into a BPMN 2.0 process model.
+Answer with one JSON object and nothing else, in this shape:
+{"name": "Order to cash", "lanes": ["Sales", "Finance"],
+ "steps": [{"id": "s1", "name": "Order received", "type": "startEvent", "lane": "Sales", "trigger": "message"},
+           {"id": "s2", "name": "Check the order", "type": "userTask", "lane": "Sales", "minutes": 15},
+           {"id": "g1", "name": "Order complete?", "type": "exclusiveGateway", "lane": "Sales"}],
+ "flows": [{"from": "s1", "to": "s2"}, {"from": "g1", "to": "s3", "name": "Yes", "probability": 80}],
+ "notes": "What you assumed."}
+Rules:
+- type is one of: ${STEP_TYPES.join(", ")}.
+- trigger, for events only, is one of: message, timer, error, signal, conditional, escalation, terminate.
+- One start event (or one per way the process can start) and at least one end event, each named with a state: "Invoice paid".
+- Name tasks with a verb and an object: "Approve the request". Name decisions as a question; name each flow out of a decision with its answer.
+- A step done by a person is a userTask, one done by software a serviceTask, sending a message a sendTask, waiting for one a receiveTask or an intermediateCatchEvent with a message trigger, applying rules a businessRuleTask, physical work a manualTask.
+- Use a lane for each role or department that does steps. Use a parallelGateway to split work done at the same time and another to join it.
+- Every step except the end events has a flow out of it, and every step except the start events a flow into it.
+- minutes is a typical time for the step, when the description says or it is obvious; probability is the percent of cases taking each flow out of a decision, adding up to 100.
+- At most 60 steps. Ids are short and unique. Keep the language of the description.`;
+var processUserText = (text) => `Model this process:\n\n${text.trim()}`;
+var text = unionType([
+	stringType(),
+	numberType(),
+	nullType(),
+	undefinedType()
+]).transform((v) => v === null || v === void 0 ? "" : String(v));
+var num = unionType([
+	numberType(),
+	stringType(),
+	nullType(),
+	undefinedType()
+]).transform((v) => v === null || v === void 0 || v === "" ? void 0 : Number(v));
+var rawSchema = objectType({
+	name: text,
+	lanes: arrayType(text).max(20).default([]),
+	steps: arrayType(objectType({
+		id: text,
+		name: text,
+		type: text,
+		lane: text,
+		trigger: text,
+		minutes: num
+	})).max(200),
+	flows: arrayType(objectType({
+		from: text,
+		to: text,
+		name: text,
+		probability: num
+	})).max(400).default([]),
+	notes: text
+});
+var TYPE_ALIAS = {
+	start: "startEvent",
+	end: "endEvent",
+	gateway: "exclusiveGateway",
+	decision: "exclusiveGateway",
+	xor: "exclusiveGateway",
+	and: "parallelGateway",
+	parallel: "parallelGateway",
+	or: "inclusiveGateway",
+	activity: "task",
+	user: "userTask",
+	service: "serviceTask",
+	manual: "manualTask",
+	script: "scriptTask",
+	rule: "businessRuleTask",
+	send: "sendTask",
+	receive: "receiveTask"
+};
+var TRIGGERS = /* @__PURE__ */ new Set([
+	"message",
+	"timer",
+	"error",
+	"signal",
+	"conditional",
+	"escalation",
+	"terminate",
+	"compensate",
+	"link"
+]);
+/** Makes whatever a model answered into a process that holds together, or null. */
+function normalizeProcessDraft(raw) {
+	const parsed = rawSchema.safeParse(raw);
+	if (!parsed.success) return null;
+	const d = parsed.data;
+	const ids = /* @__PURE__ */ new Map();
+	const steps = [];
+	const minutes = {};
+	d.steps.forEach((s, i) => {
+		const t = s.type.trim();
+		const type = STEP_TYPES.includes(t) ? t : TYPE_ALIAS[t.toLowerCase().replace(/(event|task|gateway)$/i, "")] ?? "task";
+		let id = (s.id.trim() || `step${i + 1}`).replace(/[^A-Za-z0-9_-]/g, "_");
+		if (!/^[A-Za-z_]/.test(id)) id = `s_${id}`;
+		while (steps.some((x) => x.id === id)) id = `${id}_${i}`;
+		ids.set(s.id.trim() || id, id);
+		const trigger = s.trigger.trim().toLowerCase();
+		steps.push({
+			id,
+			name: s.name.trim().slice(0, 200),
+			type,
+			lane: s.lane.trim() || void 0,
+			trigger: TRIGGERS.has(trigger) && /Event$/.test(type) ? trigger : void 0
+		});
+		if (s.minutes !== void 0 && Number.isFinite(s.minutes) && s.minutes > 0) minutes[id] = Math.min(s.minutes, 525600);
+	});
+	if (!steps.some((s) => s.type !== "startEvent" && s.type !== "endEvent")) return null;
+	const flows = [];
+	const chances = {};
+	for (const f of d.flows) {
+		const from = ids.get(f.from.trim());
+		const to = ids.get(f.to.trim());
+		if (!from || !to || from === to || flows.some((x) => x.from === from && x.to === to)) continue;
+		flows.push({
+			from,
+			to,
+			name: f.name.trim() || void 0
+		});
+		if (f.probability !== void 0 && Number.isFinite(f.probability) && f.probability >= 0 && f.probability <= 100) chances[flows.length - 1] = f.probability;
+	}
+	const into = new Set(flows.map((f) => f.to));
+	const outOf = new Set(flows.map((f) => f.from));
+	if (!steps.some((s) => s.type === "startEvent")) {
+		const first = steps.find((s) => !into.has(s.id)) ?? steps[0];
+		steps.unshift({
+			id: "Start",
+			name: "Start",
+			type: "startEvent",
+			lane: first.lane
+		});
+		flows.unshift({
+			from: "Start",
+			to: first.id
+		});
+		shiftChances(chances);
+	}
+	if (!steps.some((s) => s.type === "endEvent")) {
+		const ends = steps.filter((s) => !outOf.has(s.id) && s.type !== "startEvent");
+		steps.push({
+			id: "End",
+			name: "Done",
+			type: "endEvent",
+			lane: ends[0]?.lane
+		});
+		for (const e of ends.length ? ends : [steps[steps.length - 2]]) flows.push({
+			from: e.id,
+			to: "End"
+		});
+	}
+	const lanes = [.../* @__PURE__ */ new Set([...d.lanes.map((l) => l.trim()).filter(Boolean), ...steps.map((s) => s.lane ?? "").filter(Boolean)])];
+	return {
+		spec: {
+			name: d.name.trim().slice(0, 200) || "New process",
+			lanes: lanes.length >= 2 ? lanes : void 0,
+			steps: lanes.length >= 2 ? steps : steps.map((s) => ({
+				...s,
+				lane: void 0
+			})),
+			flows
+		},
+		minutes,
+		chances,
+		notes: d.notes.trim().slice(0, 2e3)
+	};
+}
+function shiftChances(chances) {
+	const copy = { ...chances };
+	for (const k of Object.keys(chances)) delete chances[Number(k)];
+	for (const [k, v] of Object.entries(copy)) chances[Number(k) + 1] = v;
+}
+// src/lib/ai/server-core.ts
+var MAX_TEXT = 12e3;
 var requestSchema = discriminatedUnionType("mode", [
 	objectType({
 		mode: literalType("prompt"),
-		text: stringType().trim().min(3).max(12e3)
+		text: stringType().trim().min(3).max(MAX_TEXT)
 	}),
 	objectType({
 		mode: literalType("image"),
@@ -4548,6 +4915,10 @@ var requestSchema = discriminatedUnionType("mode", [
 		mode: literalType("ask"),
 		question: stringType().trim().min(3).max(1e3),
 		context: stringType().max(24e4)
+	}),
+	objectType({
+		mode: literalType("process"),
+		text: stringType().trim().min(3).max(MAX_TEXT)
 	})
 ]);
 /**
@@ -4670,6 +5041,11 @@ function messageFor(request) {
 		text: buildAskText(request.question, request.context),
 		maxTokens: 1500
 	};
+	if (request.mode === "process") return {
+		system: PROCESS_SYSTEM_PROMPT,
+		text: processUserText(request.text),
+		maxTokens: 8e3
+	};
 	return {
 		system: buildSystemPrompt(),
 		text: buildUserText(request.mode, request.text ?? ""),
@@ -4764,7 +5140,7 @@ function checkAiRequest(body) {
 	};
 	return {
 		ok: true,
-		kind: parsed.data.mode === "prompt" ? "text" : parsed.data.mode
+		kind: parsed.data.mode === "prompt" || parsed.data.mode === "process" ? "text" : parsed.data.mode
 	};
 }
 /**
@@ -4858,6 +5234,25 @@ async function handleAiRequest(body, env, fetchImpl = fetch, own) {
 			status: 200,
 			body: {
 				answer,
+				engine: `${provider.id}:${modelFor(provider, parsed.data)}`
+			},
+			tokens
+		};
+	}
+	if (parsed.data.mode === "process") {
+		const process = normalizeProcessDraft(extractJson(answerText(provider, payload)));
+		if (!process) return {
+			status: 502,
+			body: {
+				error: "bad_response",
+				message: "The AI answer was not a valid process. Try again, or describe the steps one per line."
+			},
+			tokens
+		};
+		return {
+			status: 200,
+			body: {
+				process,
 				engine: `${provider.id}:${modelFor(provider, parsed.data)}`
 			},
 			tokens

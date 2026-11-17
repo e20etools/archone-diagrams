@@ -215,6 +215,26 @@ try {
   await waitText(vera, "Only an owner can invite people or change roles.");
   check("a viewer can see the member list but not manage it", (await count(vera, 'select[aria-label^="Role of"]')) === 0 && !(await hasText(vera, "Invite by email")));
 
+  /* ---------- processes: shared with everyone, changed by owners and editors ---------- */
+  {
+    await visit(ana, `${base}/processes`, "[data-process-sample]");
+    await ana.click("[data-process-sample]");
+    await ana.waitForSelector('[data-house-band="core"] [data-process-link]');
+    await visit(vera, `${base}/processes`, '[data-house-band="core"] [data-process-link]', 15000);
+    const shared = await vera.$$eval("[data-process-link]", (as) => as.map((a) => a.textContent));
+    check("a process landscape added by the owner reaches the others", shared.includes("Order to cash") && shared.length === 11 && !(await vera.$("[data-process-new]")), String(shared.length));
+    await vera.evaluate(() => [...document.querySelectorAll("[data-process-link]")].find((a) => a.textContent === "Order to cash").click());
+    await vera.waitForSelector('[data-bpmn-canvas="view"] g[data-element-id="pick"]', { timeout: 20000 });
+    check("a viewer reads the model without the modeler's tools or the buttons that change it", !(await vera.$(".djs-palette")) && !(await vera.$("[data-process-publish]")));
+    await visit(ben, `${base}/processes`, '[data-house-band="core"] [data-process-link]', 15000);
+    await ben.evaluate(() => [...document.querySelectorAll("[data-process-link]")].find((a) => a.textContent === "Order to cash").click());
+    await ben.waitForSelector("[data-process-publish]", { timeout: 20000 });
+    await ben.click("[data-process-publish]");
+    await ben.click("[data-process-publish-confirm]");
+    await waitText(vera, "Published v1", 15000);
+    check("an editor publishes a process, and the viewer sees it published at once", await hasText(vera, "Published v1"));
+  }
+
   /* ---------- the file library: your own files, and those of diagrams you can see ---------- */
   {
     const uploads = await mkdtemp(join(tmpdir(), "archone-cloud-up-"));

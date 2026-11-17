@@ -136,7 +136,7 @@ export function createSupabaseBackend(url: string, key: string): Backend {
       for (const column of KEY_COLUMNS[table].slice(1)) query = query.order(column);
       const { data, error } = await query.range(from, from + PAGE - 1);
       // A database from before decisions or the workspace's own rules existed has no table for them; the rest of the workspace still opens.
-      if (error && (table === "adrs" || table === "rules" || table === "templates" || table === "wizards" || table === "reports" || table === "branding" || table === "library" || table === "aiPolicy") && (error.code === "42P01" || error.code === "PGRST205")) return rows;
+      if (error && (table === "adrs" || table === "rules" || table === "templates" || table === "wizards" || table === "reports" || table === "branding" || table === "library" || table === "aiPolicy" || table === "processes") && (error.code === "42P01" || error.code === "PGRST205")) return rows;
       if (error) fail(error, "The workspace could not be loaded.");
       rows.push(...((data ?? []) as Row[]));
       if (!data || data.length < PAGE) return rows;

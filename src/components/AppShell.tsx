@@ -1,4 +1,4 @@
-import { FileBarChart, FolderOpen, Network, Zap, Boxes, ClipboardCheck, FileText, GitBranch, HeartPulse, History, GalleryThumbnails, LayoutGrid, MessageCircleQuestion, Redo2, Scale, ScrollText, Search, Settings, Shapes, ShieldCheck, Sparkles, Undo2, Waypoints } from "lucide-react";
+import { FileBarChart, FolderOpen, Network, Zap, Boxes, Workflow, Pickaxe, ClipboardCheck, FileText, GitBranch, HeartPulse, History, GalleryThumbnails, LayoutGrid, MessageCircleQuestion, Redo2, Scale, ScrollText, Search, Settings, Shapes, ShieldCheck, Sparkles, Undo2, Waypoints } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { CloudHeader, ReadOnlyBanner } from "@/components/cloud/CloudHeader";
@@ -29,6 +29,13 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
       { to: "/library", label: "Library", icon: Shapes },
       { to: "/files", label: "Files", icon: FolderOpen },
       { to: "/ai", label: "Drafts", icon: Sparkles },
+    ],
+  },
+  {
+    label: "Processes",
+    items: [
+      { to: "/processes", label: "Process landscape", icon: Workflow },
+      { to: "/process-mining", label: "Process mining", icon: Pickaxe },
     ],
   },
   {
@@ -220,7 +227,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
-      if (target.closest("input, textarea, select, [contenteditable]")) return;
+      // The process modeler keeps its own undo.
+      if (target.closest("input, textarea, select, [contenteditable], [data-own-undo]")) return;
       if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== "z") return;
       e.preventDefault();
       if (e.shiftKey) redo();

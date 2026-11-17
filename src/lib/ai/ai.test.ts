@@ -6,7 +6,7 @@ import { visibleEdges } from "../views";
 import { draftFromText } from "./heuristic";
 import { applyProposal, draftToProposal, proposalCounts, saveProposal, setAllDecisions, updateProposal } from "./proposals";
 import { normalizeDraft } from "./schema";
-import { aiStatus, extractJson, handleAiRequest, resolveProvider } from "./server-core";
+import { aiStatus, checkAiRequest, extractJson, handleAiRequest, resolveProvider } from "./server-core";
 
 const names = (d: ReturnType<typeof draftFromText>) => d.objects.map((o) => o.name);
 const edges = (d: ReturnType<typeof draftFromText>) => {
@@ -163,6 +163,24 @@ describe("AI endpoint (AI-01, AI-02)", () => {
 
     const garbage = (async () => new Response(JSON.stringify({ choices: [{ message: { content: "I cannot help" } }] }), { status: 200 })) as unknown as typeof fetch;
     expect((await handleAiRequest({ mode: "prompt", text: "mobile app calls core api" }, env, garbage)).body.error).toBe("bad_response");
+  });
+
+  it("drafts a business process with its own instructions, counted as a text request", async () => {
+    let sent: any = null;
+    const answer = { name: "Refund", steps: [{ id: "a", name: "Check the refund", type: "userTask", minutes: 5 }, { id: "b", name: "Pay it", type: "serviceTask" }], flows: [{ from: "a", to: "b" }] };
+    const fake = (async (_url: string, init: RequestInit) => {
+      sent = JSON.parse(String(init.body));
+      return new Response(JSON.stringify({ choices: [{ message: { content: "```json\n" + JSON.stringify(answer) + "\n```" } }] }), { status: 200 });
+    }) as unknown as typeof fetch;
+    expect(checkAiRequest({ mode: "process", text: "Refunds are checked, then paid." })).toEqual({ ok: true, kind: "text" });
+    const r = await handleAiRequest({ mode: "process", text: "Refunds are checked, then paid." }, { AI_PROVIDER: "groq", AI_API_KEY: "gsk_test" }, fake);
+    expect(r.status).toBe(200);
+    expect(String(sent.messages[0].content)).toMatch(/^You turn a description of a business process/);
+    const process = r.body.process as any;
+    expect(process.spec.steps.map((x: any) => x.type)).toEqual(["startEvent", "userTask", "serviceTask", "endEvent"]);
+    expect(process.minutes).toEqual({ a: 5 });
+    const garbage = (async () => new Response(JSON.stringify({ choices: [{ message: { content: "{}" } }] }), { status: 200 })) as unknown as typeof fetch;
+    expect((await handleAiRequest({ mode: "process", text: "Refunds" }, { AI_PROVIDER: "groq", AI_API_KEY: "gsk_test" }, garbage)).body.error).toBe("bad_response");
   });
 
   it("uses Groq's free models with only a key, and a picture model for images", async () => {

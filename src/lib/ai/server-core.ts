@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { buildAskSystemPrompt, buildAskText, buildSystemPrompt, buildUserText } from "./prompt";
 import { normalizeDraft } from "./schema";
+import { normalizeProcessDraft, PROCESS_SYSTEM_PROMPT, processUserText } from "../bpm/draft";
 
 /**
  * Server-side AI drafting, independent of the host. api/ai.ts wraps it for Vercel and
@@ -50,6 +51,8 @@ const requestSchema = z.discriminatedUnion("mode", [
   }),
   // A question about the model. The model travels with the question, as text; the server keeps none of it.
   z.object({ mode: z.literal("ask"), question: z.string().trim().min(3).max(MAX_QUESTION), context: z.string().max(MAX_CONTEXT) }),
+  // A business process described in words, drafted as BPMN steps and flows.
+  z.object({ mode: z.literal("process"), text: z.string().trim().min(3).max(MAX_TEXT) }),
 ]);
 export type AiRequest = z.infer<typeof requestSchema>;
 
@@ -160,6 +163,7 @@ export function extractJson(text: string): unknown {
 /** What is sent to the model: the instruction, and the person's text (with a picture, when drafting from one). */
 function messageFor(request: AiRequest): { system: string; text: string; maxTokens: number } {
   if (request.mode === "ask") return { system: buildAskSystemPrompt(), text: buildAskText(request.question, request.context), maxTokens: 1500 };
+  if (request.mode === "process") return { system: PROCESS_SYSTEM_PROMPT, text: processUserText(request.text), maxTokens: 8000 };
   return { system: buildSystemPrompt(), text: buildUserText(request.mode, request.text ?? ""), maxTokens: 8000 };
 }
 
@@ -237,7 +241,7 @@ const badRequest = (body: unknown): AiResult => {
 export function checkAiRequest(body: unknown): { ok: true; kind: AiKind } | { ok: false; result: AiResult } {
   const parsed = requestSchema.safeParse(body);
   if (!parsed.success) return { ok: false, result: badRequest(body) };
-  return { ok: true, kind: parsed.data.mode === "prompt" ? "text" : parsed.data.mode };
+  return { ok: true, kind: parsed.data.mode === "prompt" || parsed.data.mode === "process" ? "text" : parsed.data.mode };
 }
 
 /**
@@ -303,6 +307,11 @@ export async function handleAiRequest(body: unknown, env: AiEnv, fetchImpl: type
     const answer = answerText(provider, payload).trim().slice(0, 8000);
     if (!answer) return { status: 502, body: { error: "bad_response", message: "The AI model sent an empty answer. Try again." }, tokens };
     return { status: 200, body: { answer, engine: `${provider.id}:${modelFor(provider, parsed.data)}` }, tokens };
+  }
+  if (parsed.data.mode === "process") {
+    const process = normalizeProcessDraft(extractJson(answerText(provider, payload)));
+    if (!process) return { status: 502, body: { error: "bad_response", message: "The AI answer was not a valid process. Try again, or describe the steps one per line." }, tokens };
+    return { status: 200, body: { process, engine: `${provider.id}:${modelFor(provider, parsed.data)}` }, tokens };
   }
   const draft = normalizeDraft(extractJson(answerText(provider, payload)));
   if (!draft) {

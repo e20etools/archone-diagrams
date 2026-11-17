@@ -1,3 +1,4 @@
+import { draftProcessFromText, reviveProcessDraft, type ProcessDraft } from "../bpm/draft";
 import { draftFromText, RULES_ENGINE } from "./heuristic";
 import type { Draft } from "./schema";
 import { normalizeDraft } from "./schema";
@@ -159,6 +160,23 @@ export async function draftFromPrompt(text: string): Promise<DraftResult> {
   if (refused) throw refused;
   const ok = result.status === 200 ? fromServer(result.data) : null;
   if (ok) return ok;
+  throw new AiError("failed", String(result.data?.message ?? "The AI draft failed. Try again."));
+}
+
+/** A business process from a description: the AI model when there is one, the built-in rules otherwise. */
+export async function draftProcess(text: string): Promise<{ draft: ProcessDraft; engine: string; usedRules: boolean }> {
+  const rules = () => ({ draft: draftProcessFromText(text), engine: RULES_ENGINE, usedRules: true });
+  let result: Awaited<ReturnType<typeof post>>;
+  try {
+    result = await post({ mode: "process", text });
+  } catch {
+    return rules();
+  }
+  if (result.status === 501 || result.status === 404 || result.status === 405 || (result.status === 200 && !result.data?.process) || hostFailure(result)) return rules();
+  const refused = denied(result) ?? limited(result);
+  if (refused) throw refused;
+  const draft = result.status === 200 ? reviveProcessDraft(result.data?.process) : null;
+  if (draft) return { draft, engine: typeof result.data?.engine === "string" ? result.data.engine : "AI model", usedRules: false };
   throw new AiError("failed", String(result.data?.message ?? "The AI draft failed. Try again."));
 }
 

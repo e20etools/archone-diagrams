@@ -75,6 +75,23 @@ function fakeProvider(port) {
         res.end(JSON.stringify({ choices: [{ message: { content: `Nothing in the model says so.\n- [[${id}]] holds the bookings.\n- [[obj_invented]] is made up.` } }] }));
         return;
       }
+      // A business process described in words: answer with steps, lanes and flows.
+      if (String(sent.messages?.[0]?.content ?? "").startsWith("You turn a description of a business process")) {
+        const process = {
+          name: "Clinic visit",
+          lanes: ["Reception", "Doctor"],
+          steps: [
+            { id: "s", name: "Patient arrives", type: "startEvent", lane: "Reception" },
+            { id: "a", name: "Check the patient in", type: "userTask", lane: "Reception", minutes: 5 },
+            { id: "b", name: "Examine the patient", type: "userTask", lane: "Doctor", minutes: 20 },
+            { id: "e", name: "Visit done", type: "endEvent", lane: "Doctor" },
+          ],
+          flows: [{ from: "s", to: "a" }, { from: "a", to: "b" }, { from: "b", to: "e" }],
+          notes: "Assumed one doctor.",
+        };
+        res.end(JSON.stringify({ choices: [{ message: { content: "```json\n" + JSON.stringify(process) + "\n```" } }] }));
+        return;
+      }
       res.end(JSON.stringify({ choices: [{ message: { content: "```json\n" + JSON.stringify(draft) + "\n```" } }] }));
     });
   });
@@ -2107,6 +2124,116 @@ try {
   await shot(page, "10b-bank-sample-map");
   await page.goto(`${base}/settings`, { waitUntil: "networkidle0" });
   check("the bank sample is added only once", await page.$eval("[data-enterprise-sample]", (b) => b.disabled));
+
+  // Business processes: a landscape, BPMN models edited in place, simulation, decision tables and mining.
+  const processes = async () => {
+    await sleep(400); // the browser copy is written a moment after a change
+    return Object.values((await stored()).processes ?? {});
+  };
+  // A shape is clicked near its corner: a flow may run across its middle.
+  const clickShape = async (id) => {
+    const box = await (await page.$(`g.djs-shape[data-element-id="${id}"]`)).boundingBox();
+    await page.mouse.click(box.x + 8, box.y + 8);
+  };
+  const processNamed = async (name) => (await processes()).find((p) => p.name === name);
+  await page.goto(`${base}/processes`, { waitUntil: "networkidle0" });
+  await waitText(page, "No processes yet");
+  await page.click("[data-process-sample]");
+  await page.waitForSelector('[data-house-band="core"] [data-process-link]');
+  const house = await page.$$eval("[data-process-link]", (as) => as.map((a) => a.textContent));
+  check("the sample landscape fills the process house: areas by kind, with modelled processes inside", house.includes("Order to cash") && house.includes("Incident management") && (await count(page, '[data-house-band="support"] [data-process-link]')) === 5 && (await processes()).length === 11, house.join(", "));
+  await shot(page, "40-process-house");
+
+  await clickText(page, "Loan origination", "[data-process-link]");
+  await page.waitForSelector('[data-bpmn-canvas="edit"] g[data-element-id="review"]', { timeout: 20000 });
+  const loanTabs = await page.$$eval('[role="tab"]', (t) => t.map((x) => x.textContent));
+  check("a process opens in the BPMN modeler, in its lanes, with only a tip to act on", (await count(page, 'g.djs-shape[data-element-id^="Lane_"]')) === 3 && loanTabs.includes("Checks1") && !(await page.$("[data-model-canvas] ~ * .bg-danger-soft")), loanTabs.join());
+  await clickShape("review");
+  await page.waitForSelector('[data-step="review"]');
+  await page.$eval("[data-step-name]", (e) => e.select());
+  await page.type("[data-step-name]", "Underwriter reviews the case");
+  await page.keyboard.press("Enter");
+  await page.$eval('[data-step-field="mode"]', (e) => e.select());
+  await page.type('[data-step-field="mode"]', "120");
+  await page.keyboard.press("Enter");
+  await sleep(1300);
+  const loan = await processNamed("Loan origination");
+  check("renaming a step changes the BPMN file, and its time is kept beside it", loan.xml.includes('name="Underwriter reviews the case"') && loan.elements.review.duration.mode === 120 && loan.elements.review.duration.max >= 120, JSON.stringify(loan.elements.review?.duration));
+  await shot(page, "41-process-model");
+  // A business rule step gets its decision table, which is tried here and saved as DMN.
+  await clickShape("score");
+  await page.waitForSelector('[data-step="score"] [data-step-decision]');
+  await clickText(page, "New", '[data-step="score"] button');
+  await page.waitForSelector("[data-dmn-table]");
+  await page.type('[data-dmn-try="Amount"]', "25000");
+  await page.waitForSelector("[data-dmn-answer]");
+  const answer = await page.$eval("[data-dmn-answer]", (e) => e.innerText);
+  check("a business rule step gets a decision table, and trying it shows the rule that applies", answer.includes("Manager") && answer.includes("Rule 1 applies") && !!(await processNamed("Loan origination")).elements.score.decisionId, answer);
+  await page.click("[data-dmn-export]");
+  await sleep(500);
+  const dmnFile = (await readdir(downloads)).find((f) => f.endsWith(".dmn"));
+  check("a decision table downloads as DMN 1.3", !!dmnFile && (await readFile(join(downloads, dmnFile), "utf8")).includes("https://www.omg.org/spec/DMN/20191111/MODEL/"));
+  await shot(page, "42-process-decision");
+
+  // What-if: more people in the warehouse shortens the time an order takes.
+  await page.goto(`${base}/processes`, { waitUntil: "networkidle0" });
+  await clickText(page, "Order to cash", "[data-process-link]");
+  await page.waitForSelector('[data-bpmn-canvas="edit"] g[data-element-id="pick"]', { timeout: 20000 });
+  await clickText(page, "Simulation", '[role="tab"]');
+  await page.click("[data-sim-run]");
+  await page.waitForSelector("[data-sim-results] tbody tr");
+  await page.click("[data-sim-copy]");
+  await page.$eval('[data-sim-people="Warehouse"]', (e) => e.select());
+  await page.type('[data-sim-people="Warehouse"]', "3");
+  await page.keyboard.press("Enter");
+  await sleep(200);
+  await page.click("[data-sim-run]");
+  await page.waitForFunction(() => document.querySelectorAll("[data-sim-results] tbody tr").length === 2);
+  const simRows = await page.$$eval("[data-sim-results] tbody tr", (rows) => rows.map((r) => r.innerText));
+  check("a copied scenario with more people runs beside the first, and the waiting time drops", /-\d+%/.test(simRows[1]) && (await processNamed("Order to cash")).scenarios.length === 2, simRows.join(" | "));
+  await page.click("[data-sim-show]");
+  await page.waitForSelector(".bpm-overlay");
+  check("the waits show on the model, the busiest in colour", (await count(page, ".bpm-overlay")) >= 5 && (await count(page, '[class*="bpm-heat-"]')) >= 3);
+  await shot(page, "43-process-simulation");
+
+  // Publish, with a note, as version 1.
+  await page.click("[data-process-publish]");
+  await page.type("[data-process-note]", "First agreed version");
+  await page.click("[data-process-publish-confirm]");
+  await sleep(300);
+  const o2c = await processNamed("Order to cash");
+  check("publishing keeps the model as version 1", o2c.status === "published" && o2c.version === 1 && o2c.versions[0].note === "First agreed version");
+
+  // Mining: the sample log against Procure to pay, then a process drawn from it.
+  await page.goto(`${base}/process-mining`, { waitUntil: "networkidle0" });
+  await page.click("[data-log-sample]");
+  await page.waitForSelector('[data-mining-map] g[data-element-id^="Activity_"]', { timeout: 20000 });
+  check("a log draws the process as it runs, with how often each step was done", (await page.$eval("[data-log-summary]", (e) => e.innerText)).includes("400") && (await count(page, "[data-mining-map] .bpm-overlay")) >= 8 && (await hasText(page, "Reject purchase request")));
+  await shot(page, "44-process-mining");
+  const processesBefore = (await processes()).length;
+  await page.click("[data-mining-create]");
+  await page.waitForSelector('[data-bpmn-canvas="edit"] .djs-container', { timeout: 20000 });
+  await sleep(400);
+  const mined = (await processes()).find((p) => p.mining);
+  check("the discovered process becomes a model to work on, with the chances and times from the log", (await processes()).length === processesBefore + 1 && !!mined && Object.values(mined.elements).some((e) => e.probability) && Object.values(mined.elements).some((e) => e.duration));
+  await clickText(page, "Mining", '[role="tab"]');
+  await page.click("[data-log-sample]");
+  await page.waitForSelector("[data-fitness]");
+  const fitness = parseInt(await page.$eval("[data-fitness]", (e) => e.textContent), 10);
+  // The map leaves out the rarest paths, so a few cases take a way it does not show.
+  check("the log mostly fits the model drawn from its busiest paths", fitness >= 85 && fitness < 100, `${fitness}%`);
+
+  // Describing a process in words, with no AI model: the built-in rules draft it.
+  await page.goto(`${base}/processes`, { waitUntil: "networkidle0" });
+  await page.click("[data-process-new]");
+  await clickText(page, "Describe it", '[role="tab"]');
+  await page.type("[data-process-description]", "Customer service: register the complaint\nIf it can be answered at once, answer the customer; otherwise investigate it (Specialist team)\nClose the complaint");
+  await page.type("[data-process-name]", "Handle a complaint");
+  await page.click("[data-process-create]");
+  await page.waitForSelector("[data-process-drafted]");
+  const described = await processNamed("Handle a complaint");
+  check("a described process is drafted by the built-in rules into lanes, steps and a decision", described.xml.includes('name="Investigate it"') && described.xml.includes('name="It can be answered at once?"') && described.xml.includes('name="Specialist team"') && (await hasText(page, "Drafted with the built-in rules")));
+  await shot(page, "45-process-drafted");
   await page.close();
 
   /* ---------- pass 2: an AI provider is configured ---------- */
@@ -2214,6 +2341,21 @@ try {
       cyber ? Object.keys(cyber.fields).join(", ") : "not saved",
     );
   }
+
+  // A process described in words goes to the AI model, which answers with BPMN steps.
+  await page2.goto(`${base2}/processes`, { waitUntil: "networkidle0" });
+  await page2.click("[data-process-new]");
+  await clickText(page2, "Describe it", '[role="tab"]');
+  await page2.type("[data-process-description]", "A patient checks in at reception and then sees the doctor.");
+  await page2.click("[data-process-create]");
+  await page2.waitForSelector("[data-process-drafted]");
+  await sleep(500);
+  const aiProcess = Object.values(JSON.parse(await page2.evaluate(() => localStorage.getItem("archone.workspace.v1"))).processes).find((p) => p.name === "Clinic visit");
+  check(
+    "with an AI model, a described process is drafted by it, with its times",
+    !!aiProcess && aiProcess.xml.includes('name="Examine the patient"') && aiProcess.elements.b?.duration?.mode === 20 && (await hasText(page2, "Drafted by openai-compatible:stand-in-model")) && String(seen.at(-1).body.messages[0].content).startsWith("You turn a description of a business process"),
+    JSON.stringify({ found: !!aiProcess, xml: aiProcess?.xml.includes("Examine the patient"), b: aiProcess?.elements, said: await page2.$eval("[data-process-drafted]", (e) => e.innerText), sys: String(seen.at(-1)?.body.messages?.[0]?.content).slice(0, 40) }),
+  );
 
   // Ask the architecture with an AI model: only with the person's say-so, and only for what the rules cannot answer.
   await page2.goto(`${base2}/ask`, { waitUntil: "networkidle0" });

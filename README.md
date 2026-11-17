@@ -1205,6 +1205,60 @@ through jsDelivr (`https://cdn.jsdelivr.net/gh/e20etools/archone-diagrams@<commi
 after a change under src/lib/integrations, deploy it again with the new commit. The live discovery settings
 on the server (DISCOVERY_*, below) still work, and a source connected in the workspace is used first.
 
+### Business processes (BPM)
+
+Menu → Processes. A process repository, a BPMN 2.0 modeler, simulation, decision tables and
+process mining, all in the browser: the BPMN modeler is loaded only on the process pages, and an
+event log is read on the person's computer and never uploaded.
+
+- **Process landscape** (`/processes`). Levels L0 to L4 (process area, group, process,
+  sub-process, activity) in three kinds: management, core and support. Shown as a process house,
+  a hierarchy, a list, or a matrix of processes and the systems their steps use. "Start with a sample
+  landscape" adds five areas and six modelled processes (order to cash, procure to pay, incident
+  management, onboarding, loan origination, complaint handling), each with times and chances so
+  they can be simulated at once.
+- **New process**: blank, from a template, described in words, or imported from any tool that saves
+  BPMN 2.0 (Camunda, Signavio, ARIS, Bizagi, Visio). A description goes to the AI model (the server's,
+  or the workspace's own from Settings → Integrations) in a mode of its own (`mode: "process"`); without
+  one, built-in rules draft it from lines such as "Sales: check the order" and "If ..., ...; otherwise ...".
+- **Model**: bpmn.io's modeler (bpmn-js) with its toolbox, context pad and type changes. Selecting
+  a step shows what BPMN does not hold: how long it takes (least, usually, most), who does it, cost,
+  automation, the systems and data it uses (objects of the architecture model), RACI, the decision
+  table of a business rule step and the process a call activity runs; on a flow out of a decision,
+  the share of cases taking it. The model can show its checks, the waits from a simulation, or how
+  often each step appears in a log. Export as BPMN, SVG or PNG. The bpmn.io mark stays on the canvas,
+  as bpmn-js's licence asks.
+- **Details and governance**: purpose, owner, how often it runs, KPIs with target and actual,
+  risks and controls. Draft → in review (with a reviewer) → published as a numbered version →
+  retired. The ten latest published versions are kept, compared with the model (steps added,
+  removed, renamed) and can be started from again.
+- **RACI** matrix per step (the lane counts as Responsible until set), with a check for steps no one
+  does or with more than one Accountable, and a CSV download.
+- **Systems**: link each step to objects of the model; "Update the architecture model" adds the process
+  as a Process object, with "depends on" links to the applications and "reads/writes" to the data stores
+  its steps use. The landscape's matrix shows every process against every system.
+- **Simulation** (in the manner of BPSim): discrete events with a fixed seed, triangular times,
+  arrivals, people per role with a cost an hour, queues, parallel joins, chances at decisions and
+  timers. Scenarios are copied and changed (more people, a faster step, other chances) and run side
+  by side: average time, 9 in 10 within, average wait, cost a case, bottleneck and how busy each role is.
+- **Decisions**: DMN decision tables with FEEL unary tests (`-`, `>= 18`, `[1..5]`, `"gold","silver"`,
+  `not("closed")`), seven hit policies, a "try it" panel that shows which rule applies, warnings for
+  duplicate and unreachable rules, and DMN 1.3 import and export.
+- **Process mining** (`/process-mining`, and the Mining tab of a process): CSV (columns guessed or
+  chosen), XES and OCEL 2.0 JSON. It shows the process as it runs (drawn as BPMN, with how often each step
+  was done and the share of cases going each way, at the level of detail chosen), the variants, the
+  slowest handovers, rework and throughput times; compares the log with a model (the share of cases that
+  follow it, the steps it does not allow, activities missing on either side); takes step times from the
+  log for the simulation; or makes the discovered process a model to work on. A process keeps only a
+  summary of the last log, never the events. "Try a sample log" uses a made-up purchase-to-pay log.
+
+In hosted mode processes are kept in `process_models` (migration 20261117150000): members read,
+owners and editors change, the audit log records added, changed (and whether the model changed),
+sent for review, published version N, back to draft, retired and deleted, without the BPMN file; a
+scenario starts with the processes of its workspace, and emptying the bin removes deleted processes
+(20261117160000). There is no execution engine: processes are modelled, governed and analysed here,
+and their BPMN and DMN files run in an engine of your choice.
+
 ### Flows: a use case, step by step
 
 A diagram shows what exists. A flow tells what happens: one use case, in order, over the
@@ -1502,12 +1556,15 @@ src/lib/            the model and all logic, free of React (tested in *.test.ts)
   mcp/              the MCP server for assistants
   ask/              ask the architecture: answers read from the model, the model as text for the AI model
   ai/               prompt, draft validation, built-in rules, provider calls, review
+  bpm/              business processes: BPMN reading and writing, checks, simulation, DMN,
+                    process mining, the repository and its templates, drafting from words
   import/           readers for Excel, CSV, Visio, draw.io, Mermaid and Structurizr files, and turning them into drafts
   cloud/            hosted mode: sync engine, row mapping, Supabase adapter, session,
                     comments, versions and review (collab.ts)
 src/components/     canvas, panels, dialogs; cloud/ holds sign-in, members, comments,
                     version comparison, review settings
-src/pages/          one file per screen
+src/pages/          one file per screen; processes/ holds the process pages (loaded on demand)
+src/components/bpm/ the BPMN canvas (bpmn-js)
 server/             sources of the hosted AI function
 api/ai.js           generated Vercel Function
 api/apm.js          generated Vercel Function that reads the APM feeds
@@ -1530,5 +1587,7 @@ scripts/            build-api.mjs, browser-check.mjs
 - **Phase 3, done so far:** audit log, checks with rule packs, data fields and data map,
   scenarios, editors limited to domains, MCP server, ArchiMate exchange, ArchiMate and
   BPMN notation with BPMN export, the evidence pack.
+- **Phase 4, done so far** also includes business process management: a process landscape,
+  BPMN 2.0 modelling, simulation, DMN decision tables and process mining.
 - **Phase 3, still to come:** SSO and SCIM (needs a paid Supabase plan and an identity
   provider), cloud and CMDB discovery (needs a cloud account).

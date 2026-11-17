@@ -111,6 +111,7 @@ export function payloadToWorkspace(payload: SharePayload): Workspace {
     reports: {},
     branding: {},
     library: {},
+    processes: {},
     aiPolicy: {},
     updatedAt: payload.sharedAt,
   };

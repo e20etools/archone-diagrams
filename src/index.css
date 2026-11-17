@@ -1067,3 +1067,73 @@ html[data-motion="off"] .insight { animation: none; }
   flex: none;
   border-radius: 2px;
 }
+
+/* The process modeler (bpmn.io): its canvas follows the theme, and the app's labels and colours sit on top. */
+[data-bpmn-canvas] {
+  background: var(--color-surface);
+  --palette-background-color: var(--color-surface);
+  --palette-border-color: var(--color-line);
+  --palette-separator-color: var(--color-line);
+  --palette-entry-color: var(--color-ink);
+  --palette-entry-hover-color: var(--color-blueprint);
+  --context-pad-entry-background-color: var(--color-surface);
+  --context-pad-entry-hover-background-color: var(--color-blueprint-soft);
+  --popup-background-color: var(--color-surface);
+  --popup-font-color: var(--color-ink);
+  --popup-header-entry-selected-color: var(--color-blueprint);
+  --popup-entry-hover-color: var(--color-blueprint-soft);
+  --popup-search-border-color: var(--color-line);
+  --popup-description-color: var(--color-ink-soft);
+  --popup-border-color: var(--color-line);
+  --search-container-background-color: var(--color-surface);
+  --search-input-border-color: var(--color-line);
+  --search-result-highlight-color: var(--color-blueprint);
+}
+[data-bpmn-canvas] svg:focus {
+  outline: none;
+}
+[data-bpmn-canvas]:has(svg:focus-visible) {
+  box-shadow: inset 0 0 0 2px var(--color-blueprint);
+}
+/* bpmn.io's licence asks for its mark to stay fully visible, on dark themes too. */
+[data-bpmn-canvas] .bjs-powered-by {
+  background: #ffffff;
+  border-radius: 4px;
+  padding: 2px 3px;
+  z-index: 110;
+}
+[data-bpmn-canvas] .djs-palette {
+  border-radius: 8px;
+  box-shadow: 0 4px 14px rgba(22, 35, 58, 0.1);
+}
+.bpm-overlay {
+  display: inline-block;
+  padding: 0 6px;
+  height: 18px;
+  line-height: 18px;
+  border-radius: 9px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  border: 1px solid transparent;
+  pointer-events: auto;
+}
+.bpm-overlay-blue { background: var(--color-blueprint); color: var(--color-on-accent); }
+.bpm-overlay-amber { background: var(--color-signal-soft); color: var(--color-signal); border-color: var(--color-signal); }
+.bpm-overlay-red { background: var(--color-danger); color: #fff; }
+.bpm-overlay-green { background: var(--color-ok-soft); color: var(--color-ok); border-color: var(--color-ok); }
+.bpm-overlay-grey { background: var(--color-paper); color: var(--color-ink-soft); border-color: var(--color-line); }
+.bpm-mark-error:not(.djs-connection) .djs-visual > :nth-child(1) { stroke: var(--color-danger) !important; stroke-width: 2.5px !important; }
+.bpm-mark-warning:not(.djs-connection) .djs-visual > :nth-child(1) { stroke: var(--color-signal) !important; stroke-width: 2.5px !important; }
+.bpm-mark-info:not(.djs-connection) .djs-visual > :nth-child(1) { stroke: var(--color-blueprint) !important; stroke-dasharray: 4 3; }
+.djs-connection.bpm-mark-error .djs-visual > path { stroke: var(--color-danger) !important; }
+.djs-connection.bpm-mark-warning .djs-visual > path { stroke: var(--color-signal) !important; }
+.bpm-heat-1:not(.djs-connection) .djs-visual > :nth-child(1) { fill: color-mix(in srgb, #f2b93b 18%, var(--color-surface)) !important; }
+.bpm-heat-2:not(.djs-connection) .djs-visual > :nth-child(1) { fill: color-mix(in srgb, #f2b93b 42%, var(--color-surface)) !important; }
+.bpm-heat-3:not(.djs-connection) .djs-visual > :nth-child(1) { fill: color-mix(in srgb, #e07a2e 50%, var(--color-surface)) !important; }
+.bpm-heat-4:not(.djs-connection) .djs-visual > :nth-child(1) { fill: color-mix(in srgb, #c8412b 62%, var(--color-surface)) !important; }
+.djs-connection.bpm-heat-1 .djs-visual > path { stroke-width: 2px !important; }
+.djs-connection.bpm-heat-2 .djs-visual > path { stroke-width: 3px !important; }
+.djs-connection.bpm-heat-3 .djs-visual > path { stroke-width: 4.5px !important; stroke: #e07a2e !important; }
+.djs-connection.bpm-heat-4 .djs-visual > path { stroke-width: 6px !important; stroke: #c8412b !important; }

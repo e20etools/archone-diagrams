@@ -1,3 +1,4 @@
+import { lazy, Suspense, type ReactNode } from "react";
 import { Link, Route, Routes } from "react-router-dom";
 import { AppShell } from "@/components/AppShell";
 import { CloudGate } from "@/components/cloud/CloudGate";
@@ -31,6 +32,12 @@ import { SharedViewPage } from "@/pages/SharedViewPage";
 import { TrustPage } from "@/pages/TrustPage";
 import { VersionPage, VersionsPage } from "@/pages/VersionsPages";
 
+// The process pages carry the BPMN modeler, so they load only when opened.
+const ProcessesPage = lazy(() => import("@/pages/processes/ProcessesPage"));
+const ProcessPage = lazy(() => import("@/pages/processes/ProcessPage"));
+const MiningPage = lazy(() => import("@/pages/processes/MiningPage"));
+const later = (page: ReactNode) => <Suspense fallback={<p className="px-6 py-7 text-ink-soft">Loading…</p>}>{page}</Suspense>;
+
 function NotFound() {
   return (
     <EmptyState title="This page does not exist" text="The address may be mistyped, or the diagram may have been deleted.">
@@ -63,6 +70,9 @@ export default function App() {
         <Route path="/document" element={<DocumentPage />} />
         <Route path="/decisions" element={<DecisionsPage />} />
         <Route path="/decisions/:id" element={<DecisionsPage />} />
+        <Route path="/processes" element={later(<ProcessesPage />)} />
+        <Route path="/processes/:id" element={later(<ProcessPage />)} />
+        <Route path="/process-mining" element={later(<MiningPage />)} />
         <Route path="/ai" element={<AiInboxPage />} />
         <Route path="/ai/:id" element={<ProposalReviewPage />} />
         {cloudEnabled && (

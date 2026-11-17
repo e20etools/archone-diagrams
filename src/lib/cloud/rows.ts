@@ -1,4 +1,4 @@
-import type { Adr, AiPolicy, Branding, CustomReport, CustomRule, DiagramArchive, LibraryItem, WizardConfig, SavedTemplate, Flow, ModelLink, ModelObject, NodePlacement, Notation, Proposal, Relationship } from "../types";
+import type { Adr, AiPolicy, Branding, CustomReport, CustomRule, DiagramArchive, LibraryItem, WizardConfig, SavedTemplate, Flow, ModelLink, ModelObject, NodePlacement, Notation, Proposal, Relationship, ProcessModel } from "../types";
 import { nodeKey, splitNodeKey, type DiagramMeta, type TableName } from "./tables";
 
 /** Database rows and the app's objects, converted in both directions. Column names match the migration. */
@@ -16,6 +16,7 @@ export const SQL_TABLE: Record<TableName, string> = {
   reports: "custom_reports",
   branding: "workspace_branding",
   library: "library_items",
+  processes: "process_models",
   aiPolicy: "ai_policies",
 };
 
@@ -166,6 +167,10 @@ export function toRow(table: TableName, workspaceId: string, key: string, value:
       const a = value as AiPolicy;
       return { workspace_id: workspaceId, id: a.id, data: a, deleted: false };
     }
+    case "processes": {
+      const p = value as ProcessModel;
+      return { workspace_id: workspaceId, id: p.id, data: p, created_at: p.createdAt, deleted: false };
+    }
   }
 }
 
@@ -259,6 +264,8 @@ export function fromRow(table: TableName, row: Row): { key: string; value: unkno
       return { key, value: row.data as LibraryItem };
     case "aiPolicy":
       return { key, value: row.data as AiPolicy };
+    case "processes":
+      return { key, value: row.data as ProcessModel };
   }
 }
 
@@ -277,6 +284,7 @@ export const KEY_COLUMNS: Record<TableName, string[]> = {
   branding: ["workspace_id", "id"],
   library: ["workspace_id", "id"],
   aiPolicy: ["workspace_id", "id"],
+  processes: ["workspace_id", "id"],
 };
 
 /** Timestamps are normalised on the way in, so an object that went to the database and back compares equal. */

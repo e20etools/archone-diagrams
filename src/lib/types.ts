@@ -463,6 +463,102 @@ export const aiPolicySchema = z.object({
 });
 export type AiPolicy = z.infer<typeof aiPolicySchema>;
 
+/* ---------- Business process management ---------- */
+
+/** What the app keeps about one BPMN element of a process, beside the BPMN file itself. */
+export const processElementInfoSchema = z.object({
+  /** Model objects the step uses or stands for: the systems it runs on, the data it touches, who does it. */
+  objectIds: z.array(z.string()).default([]),
+  /** Who is Responsible, Accountable, Consulted or Informed, by role name. */
+  raci: z.record(z.enum(["R", "A", "C", "I"])).default({}),
+  /** How long a step takes, in minutes: least, most likely, most. */
+  duration: z.object({ min: z.number().min(0), mode: z.number().min(0), max: z.number().min(0) }).optional(),
+  /** A cost each time the step is done, besides the people's time. */
+  cost: z.number().min(0).optional(),
+  /** For a flow out of a decision: how often it is taken, in percent. */
+  probability: z.number().min(0).max(100).optional(),
+  /** Who does the work, for simulation: a role; the lane's name when empty. */
+  resource: z.string().optional(),
+  automation: z.enum(["manual", "partly", "automated", "candidate"]).optional(),
+  /** The decision table a business rule step applies. */
+  decisionId: z.string().optional(),
+  /** The process a call activity runs. */
+  calledProcessId: z.string().optional(),
+  notes: z.string().optional(),
+});
+export type ProcessElementInfo = z.infer<typeof processElementInfoSchema>;
+
+export const decisionTableSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  hitPolicy: z.enum(["UNIQUE", "FIRST", "PRIORITY", "ANY", "COLLECT", "RULE ORDER", "OUTPUT ORDER"]).default("UNIQUE"),
+  inputs: z.array(z.object({ id: z.string(), label: z.string(), type: z.enum(["string", "number", "boolean", "date"]).default("string") })).default([]),
+  outputs: z.array(z.object({ id: z.string(), label: z.string(), type: z.enum(["string", "number", "boolean", "date"]).default("string") })).default([]),
+  /** One cell per input (a FEEL unary test such as >= 18, "gold", [1..5], -) and per output (a value). */
+  rules: z.array(z.object({ id: z.string(), inputs: z.array(z.string()), outputs: z.array(z.string()), note: z.string().default("") })).default([]),
+});
+export type DecisionTable = z.infer<typeof decisionTableSchema>;
+
+export const simScenarioSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  cases: z.number().int().min(1).max(20000).default(500),
+  /** Average minutes between two new cases. */
+  arrivalMinutes: z.number().min(0.01).default(30),
+  /** People or machines per role, and what an hour of their time costs. */
+  resources: z.record(z.object({ count: z.number().int().min(0).max(10000), costPerHour: z.number().min(0) })).default({}),
+  /** Per step: its time multiplied by this; per flow: another probability. */
+  changes: z.record(z.object({ durationFactor: z.number().min(0).optional(), probability: z.number().min(0).max(100).optional() })).default({}),
+});
+export type SimScenario = z.infer<typeof simScenarioSchema>;
+
+export const processModelSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  description: z.string().default(""),
+  /** 0 a process area, 1 a group, 2 a process, 3 a sub-process, 4 an activity. */
+  level: z.number().int().min(0).max(4).default(2),
+  parentId: z.string().nullable().default(null),
+  category: z.enum(["management", "core", "support"]).default("core"),
+  owner: z.string().default(""),
+  status: z.enum(["draft", "review", "published", "retired"]).default("draft"),
+  /** The number of the last published version; 0 before the first. */
+  version: z.number().int().min(0).default(0),
+  /** The model object that stands for the process, so it can be linked to applications and capabilities. */
+  objectId: z.string().nullable().default(null),
+  tags: z.array(z.string()).default([]),
+  /** How often it runs, in words: "about 200 a day". */
+  frequency: z.string().default(""),
+  /** The BPMN 2.0 file with its diagram. Empty for a process that is only a box in the landscape. */
+  xml: z.string().default(""),
+  elements: z.record(processElementInfoSchema).default({}),
+  kpis: z.array(z.object({ id: z.string(), name: z.string(), unit: z.string().default(""), target: z.string().default(""), actual: z.string().default(""), better: z.enum(["higher", "lower"]).default("higher") })).default([]),
+  risks: z.array(z.object({ id: z.string(), name: z.string(), severity: z.enum(["low", "medium", "high"]).default("medium"), control: z.string().default("") })).default([]),
+  decisions: z.record(decisionTableSchema).default({}),
+  scenarios: z.array(simScenarioSchema).default([]),
+  /** What the last event log said, kept small: the log itself stays on the computer it came from. */
+  mining: z
+    .object({
+      source: z.string(),
+      importedAt: z.string(),
+      cases: z.number(),
+      events: z.number(),
+      variants: z.number(),
+      fitness: z.number().nullable(),
+      medianHours: z.number().nullable(),
+      activities: z.record(z.object({ count: z.number(), medianMinutes: z.number().nullable() })),
+    })
+    .optional(),
+  /** Published versions, newest first, at most ten. */
+  versions: z.array(z.object({ version: z.number(), publishedAt: z.string(), publishedBy: z.string(), note: z.string().default(""), xml: z.string() })).default([]),
+  /** Who was asked to review it, and what they said. */
+  reviewer: z.string().default(""),
+  reviewNote: z.string().default(""),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+export type ProcessModel = z.infer<typeof processModelSchema>;
+
 export const workspaceSchema = z.object({
   version: z.literal(1),
   name: z.string(),
@@ -487,6 +583,8 @@ export const workspaceSchema = z.object({
   library: z.record(libraryItemSchema).default({}),
   /** The workspace's limits on AI use, one record keyed "workspace". Missing means the built-in limits. */
   aiPolicy: z.record(aiPolicySchema).default({}),
+  /** Business processes: the landscape, each one's BPMN model and what is known about it. */
+  processes: z.record(processModelSchema).default({}),
   updatedAt: z.string(),
 });
 export type Workspace = z.infer<typeof workspaceSchema>;
