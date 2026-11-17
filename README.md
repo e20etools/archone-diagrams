@@ -1216,6 +1216,29 @@ Not done: choosing a component in the spreadsheet import and showing it in the e
 component in the REST API and the MCP server, and icons of your own uploaded for a
 component.
 
+### Your own components and protocols
+
+Owners and editors change the library for their workspace; the built-in one stays as it is.
+
+- **New component:** a name, its section (general or a cloud provider's), what it is in the
+  model, the basic information it asks for, other names to find it by, and an icon picked
+  from the library's 642. It joins its section, marked "Your own", and is found by name and
+  search like any other.
+- **Edit** any component, built-in ones included. A changed built-in one is marked "Changed
+  here" and every object made from it shows the change; **Back to built-in** undoes it.
+- **Duplicate** makes a copy of any component as the workspace's own, to change from there.
+- **Remove** hides a built-in component from this workspace (objects made from it stay, drawn
+  as their type), listed under "Removed" to **put back**. **Delete** takes away one of the
+  workspace's own.
+- **Protocols and ports** work the same way: New protocol (name, port, transport, group,
+  whether it encrypts, what it is for), Edit, Duplicate, Remove or Delete, Back to built-in,
+  and Put back. Renaming a protocol offers to rename it on the connections that carry it;
+  removing one leaves connections as they are written. The checks use the "encrypts" answer.
+- "Your own and changed" lists them all. They are kept with the workspace (in the browser, or
+  in `library_items` when signed in, recorded in the audit log), travel into scenarios and
+  backups, and apply everywhere the library is used: the diagram panel, the wizard, the
+  object panel and the protocol suggestions.
+
 ### Large models
 
 Measured on the build machine with a generated model (domains of systems of services and

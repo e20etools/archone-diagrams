@@ -40,6 +40,7 @@ export function emptyWorkspace(name = "My workspace"): Workspace {
     wizards: {},
     reports: {},
     branding: {},
+    library: {},
     updatedAt: nowIso(),
   };
 }

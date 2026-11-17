@@ -139,6 +139,25 @@ describe("the file library", () => {
     expect(log.map((e) => e.action)).toEqual(["created"]);
   });
 
+  it("keeps the workspace's own components and protocols: editors change them, every member reads them, a scenario starts with them", async () => {
+    const at = "2026-11-17T10:00:00.000Z";
+    const own = { id: "own.core-ledger-ab12c", type: "component", component: { name: "Core ledger", sectionId: "applications", kind: "application", icon: "Landmark", profile: "application", aliases: "" }, createdAt: at, updatedAt: at };
+    const hidden = { id: "proto.telnet.23", type: "protocol", removed: true, createdAt: at, updatedAt: at };
+    expect(await attempt("ivan", "insert into public.library_items (workspace_id, id, data) values ($1, $2, $3) returning id", [ws, own.id, own])).toBe("allowed");
+    expect(await attempt("olivia", "insert into public.library_items (workspace_id, id, data) values ($1, $2, $3) returning id", [ws, hidden.id, hidden])).toBe("allowed");
+    expect(await attempt("vera", "insert into public.library_items (workspace_id, id, data) values ($1, 'x', $2) returning id", [ws, { ...own, id: "x" }])).toBe("denied");
+    expect((await as("vera", (q) => q("select id from public.library_items order by id"))).map((r) => r.id)).toEqual([own.id, hidden.id]);
+    expect(await attempt("stranger", "select id from public.library_items")).toBe("nothing");
+    // A component needs a name, the id inside must match the row's, and only components and protocols are kept.
+    await expect(as("ivan", (q) => q("insert into public.library_items (workspace_id, id, data) values ($1, 'own.x', $2)", [ws, { ...own, id: "own.x", component: { ...own.component, name: "" } }]))).rejects.toThrow(/check constraint/);
+    await expect(as("ivan", (q) => q("insert into public.library_items (workspace_id, id, data) values ($1, 'own.y', $2)", [ws, own]))).rejects.toThrow(/check constraint/);
+    await expect(as("ivan", (q) => q("insert into public.library_items (workspace_id, id, data) values ($1, 'own.z', $2)", [ws, { ...own, id: "own.z", type: "template" }]))).rejects.toThrow(/check constraint/);
+    const log = (await db.query<{ entity: string; action: string }>("select entity, action from public.audit_log where workspace_id = $1 and entity in ('library component', 'protocol') order by id", [ws])).rows;
+    expect(log.map((e) => `${e.entity}: ${e.action}`)).toEqual(["library component: added or changed", "protocol: removed from the library"]);
+    const scenario = (await as("olivia", (q) => q("select public.create_scenario($1, 'Target', '') as id", [ws])))[0].id;
+    expect((await as("olivia", (q) => q("select id from public.library_items where workspace_id = $1 order by id", [scenario]))).map((r) => r.id)).toEqual([own.id, hidden.id]);
+  });
+
   it("keeps the workspace's branding: owners set it, every member reads it", async () => {
     const brand = { id: "workspace", appName: "Bank EA", logo: "", accent: "#0f766e", theme: "oasis", font: "", updatedAt: "2026-11-17" };
     expect(await attempt("ivan", "insert into public.workspace_branding (workspace_id, id, data) values ($1, 'workspace', $2) returning id", [ws, brand])).toBe("denied");

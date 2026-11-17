@@ -406,6 +406,43 @@ export const savedTemplateSchema = z.object({
 });
 export type SavedTemplate = z.infer<typeof savedTemplateSchema>;
 
+/**
+ * A change the workspace made to the component library or the protocols: one of its own (new or
+ * a copy), a built-in one changed (same id as the built-in), or a built-in one removed.
+ */
+export const libraryItemSchema = z.object({
+  id: z.string().min(1).max(120),
+  type: z.enum(["component", "protocol"]),
+  /** Hides a built-in component or protocol. */
+  removed: z.boolean().optional(),
+  component: z
+    .object({
+      name: z.string().min(1).max(120),
+      sectionId: z.string().min(1).max(120),
+      kind: z.string().min(1).max(60),
+      icon: z.string().min(1).max(60),
+      profile: z.string().min(1).max(60),
+      aliases: z.string().max(400).default(""),
+      provider: z.string().max(40).optional(),
+    })
+    .optional(),
+  protocol: z
+    .object({
+      name: z.string().min(1).max(60),
+      port: z.string().max(40).default(""),
+      transport: z.enum(["TCP", "UDP", "TCP/UDP", "IP", "Other"]),
+      group: z.string().min(1).max(60),
+      secure: z.boolean(),
+      use: z.string().max(300).default(""),
+    })
+    .optional(),
+  /** The built-in or own item it was copied from. */
+  copiedFrom: z.string().max(120).optional(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+export type LibraryItem = z.infer<typeof libraryItemSchema>;
+
 export const workspaceSchema = z.object({
   version: z.literal(1),
   name: z.string(),
@@ -426,6 +463,8 @@ export const workspaceSchema = z.object({
   reports: z.record(customReportSchema).default({}),
   /** The workspace's branding, one record keyed "workspace". Missing in workspaces saved before it existed. */
   branding: z.record(brandingSchema).default({}),
+  /** The workspace's own changes to the component library and the protocols. */
+  library: z.record(libraryItemSchema).default({}),
   updatedAt: z.string(),
 });
 export type Workspace = z.infer<typeof workspaceSchema>;

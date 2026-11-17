@@ -19,6 +19,7 @@ function linkFor(entry: AuditEntry, exists: { object: (id: string) => boolean; d
   if (entry.entity === "diagram" && exists.diagram(entry.entityId)) return `/diagram/${entry.entityId}`;
   if (entry.entity === "version") return `/versions/${entry.entityId}`;
   if (entry.entity === "review") return `/reviews/${entry.entityId}`;
+  if (entry.entity === "library component") return `/library?component=${encodeURIComponent(entry.entityId)}`;
   return null;
 }
 

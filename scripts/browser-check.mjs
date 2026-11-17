@@ -1681,6 +1681,105 @@ try {
   await sleep(300);
   check("a component can be added to the model from the library page", Object.values((await stored()).objects).some((o) => o.componentId === "oci.autonomous-database" && o.typeId === "database"));
 
+  // The workspace's own components: new, changed, copied, removed and put back, deleted.
+  {
+    await page.goto(`${base}/library`, { waitUntil: "networkidle0" });
+    await page.click("[data-component-new]");
+    await page.waitForSelector("[data-component-dialog]");
+    await page.type('input[aria-label="Component name"]', "Core ledger");
+    await page.select('select[aria-label="Section"]', "applications");
+    await page.select('select[aria-label="Object type"]', "application");
+    await page.type('input[aria-label="Other names"]', "general ledger, GL");
+    await page.type('input[aria-label="Search icons"]', "landmark");
+    await page.click('[data-icon="Landmark"]');
+    await page.click("[data-component-save]");
+    await page.waitForFunction(() => document.querySelector("[data-library-detail] h2")?.textContent === "Core ledger");
+    const ownId = await page.$eval("[data-library-detail]", (e) => e.getAttribute("data-library-detail"));
+    const ownTile = await page.$eval(`[data-library-grid] [data-component="${ownId}"]`, (e) => e.innerText);
+    await sleep(400);
+    const savedOwn = (await stored()).library?.[ownId];
+    check(
+      "a new component joins its section, marked as the workspace's own, and is kept with the workspace",
+      ownTile.includes("Your own") && savedOwn?.component?.icon === "Landmark" && savedOwn.component.aliases === "general ledger, GL",
+      `${ownId}: ${ownTile.replace(/\n/g, " ")}`,
+    );
+    await page.click('[data-library-section="__own"]');
+    await sleep(150);
+    const ownList = await page.$$eval("[data-library-grid] [data-component]", (els) => els.map((e) => e.getAttribute("data-component")));
+
+    // A built-in one changed for this workspace only, then put back.
+    await page.goto(`${base}/library?component=security.next-generation-firewall`, { waitUntil: "networkidle0" });
+    await page.waitForSelector("[data-component-edit]");
+    await page.click("[data-component-edit]");
+    await page.waitForSelector("[data-component-dialog]");
+    await page.$eval('input[aria-label="Component name"]', (e) => e.select());
+    await page.keyboard.type("Perimeter firewall");
+    await page.click("[data-component-save]");
+    await page.waitForFunction(() => document.querySelector("[data-library-detail] h2")?.textContent === "Perimeter firewall");
+    const changedTile = await page.$eval('[data-component="security.next-generation-firewall"]', (e) => e.innerText);
+    await page.click("[data-component-reset]");
+    await page.waitForFunction(() => document.querySelector("[data-library-detail] h2")?.textContent === "Next-generation firewall");
+    await sleep(400);
+    check("a built-in component can be changed for this workspace and put back", ownList.includes(ownId) && changedTile.includes("Perimeter firewall") && changedTile.includes("Changed here") && !(await stored()).library?.["security.next-generation-firewall"], changedTile.replace(/\n/g, " "));
+
+    // Copied, then the copy deleted; a built-in removed and put back.
+    await page.click("[data-component-duplicate]");
+    await page.waitForFunction(() => document.querySelector("[data-library-detail] h2")?.textContent === "Next-generation firewall (copy)");
+    const copyId = await page.$eval("[data-library-detail]", (e) => e.getAttribute("data-library-detail"));
+    await page.click("[data-component-remove]");
+    await page.click("[data-library-remove-confirm]");
+    await sleep(400);
+    const copyGone = !(await stored()).library?.[copyId] && !(await page.$(`[data-component="${copyId}"]`));
+    await page.goto(`${base}/library?component=security.next-generation-firewall`, { waitUntil: "networkidle0" });
+    await page.click("[data-component-remove]");
+    await waitText(page, "You can put it back");
+    await page.click("[data-library-remove-confirm]");
+    await page.waitForSelector('[data-library-section="__removed"]');
+    const hidden = !(await page.$('[data-library-grid] [data-component="security.next-generation-firewall"]'));
+    await page.click('[data-library-section="__removed"]');
+    await page.waitForSelector('[data-removed-component="security.next-generation-firewall"]');
+    await shot(page, "26b-library-removed");
+    await page.click('[data-component-restore="security.next-generation-firewall"]');
+    await page.waitForFunction(() => !document.querySelector('[data-library-section="__removed"]'));
+    await sleep(400);
+    check("a copy is the workspace's own and can be deleted; a built-in one is removed and put back", copyId.startsWith("own.") && copyGone && hidden && !(await stored()).library?.["security.next-generation-firewall"], copyId);
+
+    // Protocols: a new one, a copy, a built-in one removed and put back, and the new one deleted.
+    await page.goto(`${base}/library`, { waitUntil: "networkidle0" });
+    await page.click('[data-library-section="__protocols"]');
+    await page.waitForSelector("[data-protocol-new]");
+    await page.click("[data-protocol-new]");
+    await page.waitForSelector("[data-protocol-dialog]");
+    await page.type('input[aria-label="Protocol name"]', "Card switch link");
+    await page.type('input[aria-label="Protocol port"]', "7001");
+    await page.$eval('input[aria-label="Protocol group"]', (e) => e.select());
+    await page.keyboard.type("Payments");
+    await page.click("[data-protocol-secure]");
+    await page.click("[data-protocol-save]");
+    await page.waitForSelector('[data-protocol="Card switch link"]');
+    const newRow = await page.$eval('[data-protocol="Card switch link"]', (e) => e.innerText.replace(/\s+/g, " "));
+    await page.$eval('[data-protocol-duplicate="HTTPS"]', (b) => b.click());
+    await page.waitForSelector('[data-protocol="HTTPS (copy)"]');
+    await page.$eval('[data-protocol-remove="Telnet"]', (b) => b.click());
+    await page.click("[data-library-remove-confirm]");
+    await page.waitForSelector("[data-protocols-removed-open]");
+    const telnetHidden = !(await page.$('[data-protocol="Telnet"]'));
+    await page.click("[data-protocols-removed-open]");
+    await page.click('[data-protocol-restore="Telnet"]');
+    await sleep(200);
+    await page.waitForSelector('[data-protocol-remove="Card switch link"]');
+    await page.$eval('[data-protocol-remove="Card switch link"]', (b) => b.click());
+    await page.click("[data-library-remove-confirm]");
+    await sleep(400);
+    const protocolsLeft = Object.values((await stored()).library ?? {}).filter((i) => i.type === "protocol").map((i) => i.protocol?.name ?? `removed ${i.id}`);
+    check(
+      "protocols can be added, copied, removed and put back, and deleted",
+      newRow.includes("Card switch link Your own 7001 TCP Payments") && telnetHidden && !!(await page.$('[data-protocol="Telnet"]')) && !(await page.$('[data-protocol="Card switch link"]')) && protocolsLeft.join() === "HTTPS (copy)",
+      `${newRow} :: ${protocolsLeft.join(", ")}`,
+    );
+    await shot(page, "26c-library-protocols");
+  }
+
   // Settings and backup.
   await page.goto(`${base}/settings`, { waitUntil: "networkidle0" });
   await waitText(page, "No AI model connected");

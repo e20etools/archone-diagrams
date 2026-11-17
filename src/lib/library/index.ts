@@ -1,5 +1,5 @@
 import { isKnownType, objectType } from "../catalog";
-import type { ModelObject } from "../types";
+import type { LibraryItem, ModelObject } from "../types";
 import { CLOUD_NAMES, PROVIDERS, cloudLook, type Provider } from "./cloud";
 import { GENERIC_SECTIONS } from "./generic";
 import { profileById, type Profile } from "./profiles";
@@ -34,6 +34,10 @@ export interface LibraryComponent {
   provider?: string;
   /** Other names to find it by. */
   aliases: string;
+  /** The workspace's own: made or copied in this workspace. */
+  custom?: boolean;
+  /** A built-in component this workspace changed. */
+  changed?: boolean;
 }
 
 /** A name as it is compared: case, spaces and punctuation do not make two components different. */
@@ -64,11 +68,17 @@ function build() {
 
 const built = build();
 export const LIBRARY_SECTIONS: LibrarySection[] = built.sections;
-export const LIBRARY: LibraryComponent[] = built.components;
+/** The library as the app ships it. */
+export const BUILT_IN_LIBRARY: readonly LibraryComponent[] = built.components;
+/** The library with the workspace's own changes on top; applyLibraryItems sets it. */
+export let LIBRARY: LibraryComponent[] = built.components;
 export { PROVIDERS, type Provider };
 
-const BY_ID = new Map(LIBRARY.map((c) => [c.id, c]));
+const BUILT_IN_BY_ID = new Map(BUILT_IN_LIBRARY.map((c) => [c.id, c]));
+let BY_ID = new Map(LIBRARY.map((c) => [c.id, c]));
 const SECTION_BY_ID = new Map(LIBRARY_SECTIONS.map((s) => [s.id, s]));
+/** The built-in component with this id, as shipped, whatever the workspace changed. */
+export const builtInComponent = (id: string) => BUILT_IN_BY_ID.get(id);
 export const componentById = (id: string | undefined | null) => (id ? BY_ID.get(id) : undefined);
 export const sectionById = (id: string) => SECTION_BY_ID.get(id);
 export const providerById = (id: string | undefined) => (id ? PROVIDERS.find((p) => p.id === id) : undefined);
@@ -150,7 +160,7 @@ export function searchLibrary(query: string, options: { sectionId?: string; prov
 }
 
 /** Names first: a component's own name or short form wins over another component's other name. */
-const [EXACT, EXACT_ALIAS] = (() => {
+const indexNames = (library: LibraryComponent[]) => {
   const names = new Map<string, LibraryComponent[]>();
   const aliases = new Map<string, LibraryComponent[]>();
   const put = (map: Map<string, LibraryComponent[]>, key: string, c: LibraryComponent) => {
@@ -160,7 +170,7 @@ const [EXACT, EXACT_ALIAS] = (() => {
     map.set(key, list);
   };
   const add = (key: string, c: LibraryComponent) => put(names, key, c);
-  for (const c of LIBRARY) {
+  for (const c of library) {
     add(normalizeComponentName(c.name), c);
     const short = /\(([^)]+)\)\s*$/.exec(c.name)?.[1];
     if (short) add(normalizeComponentName(short), c);
@@ -176,7 +186,35 @@ const [EXACT, EXACT_ALIAS] = (() => {
     }
   }
   return [names, aliases] as const;
-})();
+};
+let [EXACT, EXACT_ALIAS] = indexNames(LIBRARY);
+
+let applied = "";
+/**
+ * Puts a workspace's own components on top of the built-in library: its changes replace the
+ * built-in ones with the same id, removed ones go, and its own are added to their sections. Every
+ * lookup (by id, by name, search, sections) then answers with the workspace's library. Answers
+ * whether anything changed.
+ */
+export function applyLibraryItems(items: Record<string, LibraryItem> | undefined): boolean {
+  const own = Object.values(items ?? {}).filter((i) => i.type === "component");
+  const key = own.map((i) => `${i.id}:${i.updatedAt}:${i.removed ? 1 : 0}`).sort().join("|");
+  if (key === applied) return false;
+  applied = key;
+  const removed = new Set(own.filter((i) => i.removed).map((i) => i.id));
+  const changed = new Map<string, LibraryComponent>();
+  for (const i of own) {
+    if (i.removed || !i.component || !SECTION_BY_ID.has(i.component.sectionId)) continue;
+    const builtIn = BUILT_IN_BY_ID.has(i.id);
+    changed.set(i.id, { id: i.id, ...i.component, aliases: i.component.aliases ?? "", ...(builtIn ? { changed: true } : { custom: true }) });
+  }
+  const next = BUILT_IN_LIBRARY.filter((c) => !removed.has(c.id)).map((c) => changed.get(c.id) ?? c);
+  for (const c of changed.values()) if (c.custom) next.push(c);
+  LIBRARY = next;
+  BY_ID = new Map(LIBRARY.map((c) => [c.id, c]));
+  [EXACT, EXACT_ALIAS] = indexNames(LIBRARY);
+  return true;
+}
 
 /**
  * The one library component a name stands for exactly: its name, its short form or one of its
@@ -198,9 +236,12 @@ export function objectFromComponent(c: LibraryComponent): { typeId: string; name
   return { typeId: isKnownType(c.kind) ? c.kind : "application", name: c.name, componentId: c.id, technology: c.provider ? componentLabel(c) : "" };
 }
 
-export const LIBRARY_COUNTS = {
+/** How many components there are, with the workspace's own changes. */
+export const libraryCounts = () => ({
   components: LIBRARY.length,
   sections: LIBRARY_SECTIONS.length,
   general: LIBRARY.filter((c) => !c.provider).length,
   cloud: LIBRARY.filter((c) => !!c.provider).length,
-};
+  own: LIBRARY.filter((c) => c.custom).length,
+});
+export const LIBRARY_COUNTS = libraryCounts();

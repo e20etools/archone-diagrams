@@ -637,7 +637,7 @@ try {
   await saved(ben);
   await ben.reload({ waitUntil: "networkidle0" });
   await waitText(ben, "Old local diagram");
-  check("a browser-only workspace from phase 1 can be moved into an account", (await hasText(ben, "Moved from my browser")) && (await count(ben, "tbody tr")) === 1);
+  check("a browser-only workspace from phase 1 can be moved into an account", (await hasText(ben, "Moved from my browser")) && (await count(ben, "[data-home-recent]")) === 1);
   await shot(ben, "25-after-import");
 
   /* ---------- deleting a workspace ---------- */

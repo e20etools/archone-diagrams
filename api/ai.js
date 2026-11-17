@@ -4274,6 +4274,43 @@ var savedTemplateSchema = objectType({
 	createdAt: stringType(),
 	updatedAt: stringType()
 });
+/**
+* A change the workspace made to the component library or the protocols: one of its own (new or
+* a copy), a built-in one changed (same id as the built-in), or a built-in one removed.
+*/
+var libraryItemSchema = objectType({
+	id: stringType().min(1).max(120),
+	type: enumType(["component", "protocol"]),
+	/** Hides a built-in component or protocol. */
+	removed: booleanType().optional(),
+	component: objectType({
+		name: stringType().min(1).max(120),
+		sectionId: stringType().min(1).max(120),
+		kind: stringType().min(1).max(60),
+		icon: stringType().min(1).max(60),
+		profile: stringType().min(1).max(60),
+		aliases: stringType().max(400).default(""),
+		provider: stringType().max(40).optional()
+	}).optional(),
+	protocol: objectType({
+		name: stringType().min(1).max(60),
+		port: stringType().max(40).default(""),
+		transport: enumType([
+			"TCP",
+			"UDP",
+			"TCP/UDP",
+			"IP",
+			"Other"
+		]),
+		group: stringType().min(1).max(60),
+		secure: booleanType(),
+		use: stringType().max(300).default("")
+	}).optional(),
+	/** The built-in or own item it was copied from. */
+	copiedFrom: stringType().max(120).optional(),
+	createdAt: stringType(),
+	updatedAt: stringType()
+});
 objectType({
 	version: literalType(1),
 	name: stringType(),
@@ -4294,6 +4331,8 @@ objectType({
 	reports: recordType(customReportSchema).default({}),
 	/** The workspace's branding, one record keyed "workspace". Missing in workspaces saved before it existed. */
 	branding: recordType(brandingSchema).default({}),
+	/** The workspace's own changes to the component library and the protocols. */
+	library: recordType(libraryItemSchema).default({}),
 	updatedAt: stringType()
 });
 // src/lib/ai/prompt.ts

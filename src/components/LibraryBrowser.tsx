@@ -42,6 +42,11 @@ export function ComponentTile({ component, onPick, selected, draggable = true, s
       </span>
       <span className="min-w-0">
         <span className="block leading-tight line-clamp-2">{component.name}</span>
+        {(component.custom || component.changed) && (
+          <span className="block text-[10px] font-medium leading-tight text-blueprint" data-library-own={component.custom ? "own" : "changed"}>
+            {component.custom ? "Your own" : "Changed here"}
+          </span>
+        )}
         {showSection && <span className="block text-[11px] leading-tight text-ink-faint truncate">{provider ? `${provider.short}, ${section?.group}` : section?.label}</span>}
       </span>
     </button>

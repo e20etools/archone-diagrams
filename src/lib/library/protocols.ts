@@ -4,9 +4,13 @@
  * the protocol itself encrypts what it carries, which the checks use to point out clear text.
  */
 
+import type { LibraryItem } from "../types";
+
 export type Transport = "TCP" | "UDP" | "TCP/UDP" | "IP" | "Other";
 
 export interface ProtocolInfo {
+  /** Stable for a built-in one ("proto.https.443"); the workspace's own have their own. */
+  id: string;
   name: string;
   port: string;
   transport: Transport;
@@ -14,11 +18,17 @@ export interface ProtocolInfo {
   secure: boolean;
   /** What it is for, in a few words. */
   use: string;
+  /** The workspace's own. */
+  custom?: boolean;
+  /** A built-in protocol this workspace changed. */
+  changed?: boolean;
 }
 
-const p = (group: string, name: string, port: string, transport: Transport, secure: boolean, use: string): ProtocolInfo => ({ name, port, transport, group, secure, use });
+const slug = (text: string) => text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "any";
+const p = (group: string, name: string, port: string, transport: Transport, secure: boolean, use: string): ProtocolInfo => ({ id: `proto.${slug(name)}.${slug(port)}`, name, port, transport, group, secure, use });
 
-export const PROTOCOLS: ProtocolInfo[] = [
+/** The protocols as the app ships them. */
+export const BUILT_IN_PROTOCOLS: readonly ProtocolInfo[] = [
   // Web and APIs
   p("Web and APIs", "HTTP", "80", "TCP", false, "Web pages and APIs in clear text"),
   p("Web and APIs", "HTTPS", "443", "TCP", true, "Web pages and APIs over TLS"),
@@ -181,7 +191,32 @@ export const PROTOCOLS: ProtocolInfo[] = [
   p("Printing and other", "NetBIOS name service", "137", "UDP", false, "Legacy Windows names"),
 ];
 
-export const PROTOCOL_GROUPS = [...new Set(PROTOCOLS.map((x) => x.group))];
+/** The protocols with the workspace's own changes on top; applyProtocolItems sets it. */
+export let PROTOCOLS: ProtocolInfo[] = [...BUILT_IN_PROTOCOLS];
+export let PROTOCOL_GROUPS = [...new Set(PROTOCOLS.map((x) => x.group))];
+const BUILT_IN_PROTOCOL_IDS = new Set(BUILT_IN_PROTOCOLS.map((x) => x.id));
+export const isBuiltInProtocol = (id: string) => BUILT_IN_PROTOCOL_IDS.has(id);
+export const builtInProtocol = (id: string) => BUILT_IN_PROTOCOLS.find((x) => x.id === id);
+
+let applied = "";
+/** Puts a workspace's own protocols on top of the built-in ones, the same way as its components. */
+export function applyProtocolItems(items: Record<string, LibraryItem> | undefined): boolean {
+  const own = Object.values(items ?? {}).filter((i) => i.type === "protocol");
+  const key = own.map((i) => `${i.id}:${i.updatedAt}:${i.removed ? 1 : 0}`).sort().join("|");
+  if (key === applied) return false;
+  applied = key;
+  const removed = new Set(own.filter((i) => i.removed).map((i) => i.id));
+  const changed = new Map<string, ProtocolInfo>();
+  for (const i of own) {
+    if (i.removed || !i.protocol) continue;
+    changed.set(i.id, { id: i.id, ...i.protocol, port: i.protocol.port ?? "", use: i.protocol.use ?? "", ...(BUILT_IN_PROTOCOL_IDS.has(i.id) ? { changed: true } : { custom: true }) });
+  }
+  const next = BUILT_IN_PROTOCOLS.filter((x) => !removed.has(x.id)).map((x) => changed.get(x.id) ?? x);
+  for (const x of changed.values()) if (x.custom) next.push(x);
+  PROTOCOLS = next;
+  PROTOCOL_GROUPS = [...new Set(PROTOCOLS.map((x) => x.group))];
+  return true;
+}
 
 /** "HTTPS 443/TCP", as a protocol is written on a line. */
 export const protocolLabel = (x: { name: string; port?: string; transport?: string }) => [x.name, x.port ? `${x.port}${x.transport && x.transport !== "Other" && x.transport !== "IP" ? `/${x.transport}` : ""}` : ""].filter(Boolean).join(" ");

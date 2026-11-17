@@ -197,7 +197,7 @@ export function createDemoBackend(): Backend {
       diagrams: Object.keys(tables.diagrams).length,
       createdBy: me().id,
       createdAt: new Date().toISOString(),
-      tables: { ...(JSON.parse(JSON.stringify(tables)) as Tables), proposals: {}, adrs: {}, rules: {}, templates: {}, wizards: {}, reports: {}, branding: {} },
+      tables: { ...(JSON.parse(JSON.stringify(tables)) as Tables), proposals: {}, adrs: {}, rules: {}, templates: {}, wizards: {}, reports: {}, branding: {}, library: {} },
     };
     versionsOf(db, workspaceId).unshift(version);
     return version.id;
@@ -752,7 +752,7 @@ export function createDemoBackend(): Backend {
       for (const m of db.members.filter((x) => x.workspaceId === workspaceId && canEditRole(x.role))) db.members.push({ workspaceId: scenarioId, userId: m.userId, role: m.role });
       const source = db.rows[workspaceId] ?? emptyTables();
       // A scenario is judged by the same rules as the model it came from.
-      db.rows[scenarioId] = { ...(JSON.parse(JSON.stringify(source)) as Tables), proposals: {}, adrs: {}, rules: JSON.parse(JSON.stringify(source.rules ?? {})) as Tables["rules"], templates: {}, wizards: JSON.parse(JSON.stringify(source.wizards ?? {})) as Tables["wizards"], reports: {}, branding: JSON.parse(JSON.stringify(source.branding ?? {})) as Tables["branding"] };
+      db.rows[scenarioId] = { ...(JSON.parse(JSON.stringify(source)) as Tables), proposals: {}, adrs: {}, rules: JSON.parse(JSON.stringify(source.rules ?? {})) as Tables["rules"], templates: {}, wizards: JSON.parse(JSON.stringify(source.wizards ?? {})) as Tables["wizards"], reports: {}, branding: JSON.parse(JSON.stringify(source.branding ?? {})) as Tables["branding"], library: JSON.parse(JSON.stringify(source.library ?? {})) as Tables["library"] };
       log(db, workspaceId, "scenario", scenarioId, name.trim(), "created");
       log(db, scenarioId, "scenario", scenarioId, name.trim(), "created", { "copied from": db.workspaces[workspaceId].name });
       write(db);

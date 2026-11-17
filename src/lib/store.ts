@@ -7,6 +7,8 @@ import {
   type RelationshipInput,
 } from "./model";
 import { cloudEnabled } from "./cloud/config";
+import { applyLibraryItems } from "./library";
+import { applyProtocolItems } from "./library/protocols";
 import { emptyWorkspace } from "./model";
 import { LocalStorageRepository } from "./repository";
 import type { Diagram, ModelObject, Relationship, Workspace } from "./types";
@@ -84,6 +86,17 @@ export const useStore = create<State>((set, get) => ({
     set({ ws: future[0], past: [...past, ws], future: future.slice(1) });
   },
 }));
+
+// The workspace's own components and protocols take their place in the library everywhere,
+// before anything on the page draws with them.
+const applyOwnLibrary = (ws: Workspace) => {
+  applyLibraryItems(ws.library);
+  applyProtocolItems(ws.library);
+};
+applyOwnLibrary(useStore.getState().ws);
+useStore.subscribe((state, previous) => {
+  if (state.ws.library !== previous.ws.library) applyOwnLibrary(state.ws);
+});
 
 let timer: ReturnType<typeof setTimeout> | undefined;
 const flush = () => {

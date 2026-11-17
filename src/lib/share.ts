@@ -110,6 +110,7 @@ export function payloadToWorkspace(payload: SharePayload): Workspace {
     wizards: {},
     reports: {},
     branding: {},
+    library: {},
     updatedAt: payload.sharedAt,
   };
 }
