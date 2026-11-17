@@ -1,0 +1,10 @@
+{
+ "Devices": [
+  {"device_id": 1, "name": "esx-01", "type": "physical", "os": "VMware ESXi"},
+  {"device_id": 2, "name": "app-vm-01", "type": "virtual", "os": "Ubuntu", "virtual_host_name": "esx-01", "ip_addresses": [{"ip": "10.2.0.11"}]},
+  {"device_id": 3, "name": "db-vm-01", "type": "virtual", "os": "Windows Server", "virtual_host_name": "esx-01"}
+ ],
+ "communications": [
+  {"client": "app-vm-01", "listener": "db-vm-01", "port": 1433, "protocol": "tcp"}
+ ]
+}

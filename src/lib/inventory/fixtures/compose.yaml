@@ -1,0 +1,17 @@
+services:
+  web:
+    image: nginx:1.27
+    ports: ["80:80"]
+    depends_on: [api]
+  api:
+    build: ./api
+    environment:
+      DATABASE_URL: postgres://app@db:5432/app
+      REDIS_HOST: cache
+    depends_on:
+      db:
+        condition: service_healthy
+  db:
+    image: postgres:16
+  cache:
+    image: redis:7

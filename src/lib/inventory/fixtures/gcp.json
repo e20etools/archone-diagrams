@@ -1,0 +1,9 @@
+[
+ {"name": "//compute.googleapis.com/projects/p1/global/networks/default", "assetType": "compute.googleapis.com/Network", "displayName": "default", "project": "projects/123"},
+ {"name": "//compute.googleapis.com/projects/p1/regions/europe-west1/subnetworks/apps", "assetType": "compute.googleapis.com/Subnetwork", "displayName": "apps",
+  "additionalAttributes": {"network": "https://www.googleapis.com/compute/v1/projects/p1/global/networks/default"}},
+ {"name": "//compute.googleapis.com/projects/p1/zones/europe-west1-b/instances/vm-a", "assetType": "compute.googleapis.com/Instance", "displayName": "vm-a", "location": "europe-west1-b",
+  "additionalAttributes": {"networkInterfaceSubnetworks": ["https://www.googleapis.com/compute/v1/projects/p1/regions/europe-west1/subnetworks/apps"]}},
+ {"name": "//sqladmin.googleapis.com/projects/p1/instances/orders", "assetType": "sqladmin.googleapis.com/Instance", "displayName": "orders"},
+ {"name": "//storage.googleapis.com/shop-assets", "assetType": "storage.googleapis.com/Bucket", "displayName": "shop-assets"}
+]

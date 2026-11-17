@@ -1122,6 +1122,55 @@ of how they connect.
   and not on a schedule, and licence values are not read. It has been run against a
   stand-in for APM's feeds built from APM's own code, not against the live APM.
 
+### Infrastructure as code and discovery
+
+Import also reads what describes or reports infrastructure, and makes a draft of it like any
+other import. Each resource becomes an object with the matching component from the library
+(an AWS EC2 instance, an Azure App Service, a Kubernetes Deployment), its type, address and
+settings kept as fields. References between resources become relationships. Networks and
+subnets become zones, with what sits in them drawn inside. The glue between resources
+(listeners, target groups, security group rules, role attachments, route tables) is not drawn
+as boxes: a load balancer reached through a listener and a target group is drawn with one
+arrow to the instance it serves. A shared security group or role joins nothing.
+
+- **Infrastructure as code.** Terraform (.tf files, `terraform show -json` of a plan or a
+  state, and .tfstate), AWS CloudFormation and SAM templates (JSON or YAML, with !Ref, !GetAtt
+  and !Sub), Azure ARM templates and Bicep files, Kubernetes and OpenShift manifests (a
+  Service is joined to the workloads it selects, an Ingress or Route to its Services,
+  namespaces become zones), Docker Compose files (depends_on, links and addresses in the
+  environment) and Pulumi stack exports.
+- **Files from what is running.** AWS Config query results (with what each resource is
+  contained in), AWS Resource Explorer and tagging results, Azure Resource Graph results,
+  Google Cloud Asset Inventory results, a ServiceNow CMDB export (configuration items and the
+  cmdb_rel_ci relationships), and BMC Helix Discovery or Device42 results as JSON. Choose the
+  tool under "What is running" when its rows could be either.
+
+#### Live discovery
+
+When this app's server has credentials for a source, Import shows **Discover what is
+running** with a button for each connected source. The server reads the source, the dialog
+shows what was found, and **Create draft to review** makes the draft. Only someone signed in
+who is an owner or editor of the workspace can use it, and the credentials never reach the
+browser. Each source reads at most 5,000 resources at a time; the draft says when it stopped.
+
+The credentials are added by whoever runs the hosting, as environment variables (on Vercel:
+Project → Settings → Environment Variables, then redeploy). Give each one read-only access.
+
+| Source | Settings | Access it needs |
+|---|---|---|
+| AWS | `DISCOVERY_AWS_ACCESS_KEY_ID`, `DISCOVERY_AWS_SECRET_ACCESS_KEY`, `DISCOVERY_AWS_REGIONS` (comma separated). Optional: `DISCOVERY_AWS_SESSION_TOKEN`, `DISCOVERY_AWS_AGGREGATOR` | `config:SelectResourceConfig` (or `config:SelectAggregateResourceConfig`), with AWS Config recording |
+| Azure | `DISCOVERY_AZURE_TENANT_ID`, `DISCOVERY_AZURE_CLIENT_ID`, `DISCOVERY_AZURE_CLIENT_SECRET`. Optional: `DISCOVERY_AZURE_SUBSCRIPTIONS` | Reader on the subscriptions |
+| Google Cloud | `DISCOVERY_GCP_SERVICE_ACCOUNT` (the JSON key), `DISCOVERY_GCP_SCOPE` (`projects/ID`, `folders/N` or `organizations/N`) | Cloud Asset Viewer, with the Cloud Asset API on |
+| ServiceNow | `DISCOVERY_SERVICENOW_URL` and `DISCOVERY_SERVICENOW_TOKEN`, or `DISCOVERY_SERVICENOW_USER` and `DISCOVERY_SERVICENOW_PASSWORD`. Optional: `DISCOVERY_SERVICENOW_QUERY` (an encoded query on cmdb_ci) | Read on cmdb_ci and cmdb_rel_ci |
+| BMC Helix Discovery | `DISCOVERY_BMC_URL`, `DISCOVERY_BMC_TOKEN`. Optional: `DISCOVERY_BMC_API_VERSION` (default 1.0), `DISCOVERY_BMC_QUERIES` (one query per line, to replace the built-in ones) | A user that may run searches |
+| Device42 | `DISCOVERY_DEVICE42_URL`, `DISCOVERY_DEVICE42_USER`, `DISCOVERY_DEVICE42_PASSWORD`. Optional: `DISCOVERY_DEVICE42_DOQL` (the query for service communications) | Read-only user with DOQL |
+
+The names start with `DISCOVERY_` because Vercel keeps names such as `AWS_ACCESS_KEY_ID` for
+itself. Addresses must be plain https, and the server does not follow redirects, so the
+credentials go only where the settings say. A copy without accounts refuses live discovery
+unless `DISCOVERY_REQUIRE_SIGN_IN=false` is set, which only makes sense on a copy that only
+its owner can reach.
+
 ### Flows: a use case, step by step
 
 A diagram shows what exists. A flow tells what happens: one use case, in order, over the
@@ -1189,6 +1238,15 @@ or click it.
   and operations, AI and analytics, IoT and OT, cloud (any provider), external services, and
   Gulf government and payment services (Nafath, Yakeen, SADAD, mada, ZATCA e-invoicing and
   others).
+- **Container platforms (91):** Red Hat OpenShift (OCP, OKD, ROSA, ARO, Dedicated,
+  MicroShift), SUSE Rancher (RKE2, K3s, Fleet), VMware Tanzu, Mirantis, Canonical, Nutanix,
+  GKE Enterprise, Azure Arc, EKS Anywhere and other distributions; Nomad, Swarm and Mesos;
+  runtimes (Docker Engine, Podman, containerd, CRI-O, Kata, gVisor); registries (Docker Hub,
+  Harbor, Quay, Artifactory, Nexus); meshes, CNIs and ingress (Istio, Linkerd, Consul, Cilium,
+  Calico, OVN-Kubernetes, Envoy, NGINX, Traefik, Gateway API, MetalLB); storage and backup
+  (Rook Ceph, Longhorn, Portworx, OpenEBS, Trident, Velero, Kasten); GitOps and delivery
+  (Argo CD, Flux, Tekton, operators); autoscaling, management and security (KEDA, Karpenter,
+  ACM, ACS, NeuVector, Falco, Trivy, Kyverno, Gatekeeper, cert-manager).
 - **Cloud providers (1,281 services):** Amazon Web Services, Microsoft Azure, Google Cloud,
   Oracle Cloud Infrastructure, IBM Cloud, Alibaba Cloud and Huawei Cloud, each in the
   provider's own sections. The AWS, Azure, Google Cloud and IBM names start from draw.io's
@@ -1222,7 +1280,7 @@ Owners and editors change the library for their workspace; the built-in one stay
 
 - **New component:** a name, its section (general or a cloud provider's), what it is in the
   model, the basic information it asks for, other names to find it by, and an icon picked
-  from the library's 642. It joins its section, marked "Your own", and is found by name and
+  from the library's icons. It joins its section, marked "Your own", and is found by name and
   search like any other.
 - **Edit** any component, built-in ones included. A changed built-in one is marked "Changed
   here" and every object made from it shows the change; **Back to built-in** undoes it.

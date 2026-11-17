@@ -1,5 +1,5 @@
 import type { ViewType } from "@/lib/types";
-import { FileCode2, FileSpreadsheet, FileUp, Workflow } from "lucide-react";
+import { Cloud, FileCode2, FileSpreadsheet, FileUp, ScanSearch, Workflow } from "lucide-react";
 import { useMemo, useRef, useState, type DragEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { TypeOptions } from "@/components/ObjectPanel";
@@ -10,6 +10,7 @@ import { decodeText, parseCsv } from "@/lib/import/csv";
 import type { ImportedPage } from "@/lib/import/diagramFile";
 import { fieldsOf, guessMapping, pageToProposal, remap, sheetsToProposal, textModelToProposal, type SheetMapping, type SheetRole } from "@/lib/import/draft";
 import { ApmImport } from "@/components/ApmImport";
+import { DiscoverImport } from "@/components/DiscoverImport";
 import { archimate4Notes, isArchimate, readArchimate } from "@/lib/import/archimate";
 import { readDrawio } from "@/lib/import/drawio";
 import { isMermaid, readMermaid, type TextModel } from "@/lib/import/mermaid";
@@ -18,17 +19,23 @@ import { readVsdx } from "@/lib/import/visio";
 import { readXlsx, type Sheet } from "@/lib/import/xlsx";
 import { apply, useWorkspace } from "@/lib/store";
 import type { Proposal } from "@/lib/types";
+import { inventoryToProposal, readInventory, type Inventory, type InventoryHint } from "@/lib/inventory";
 
 const MAX_BYTES = 25 * 1024 * 1024;
-const ACCEPT = ".xlsx,.csv,.tsv,.txt,.vsdx,.drawio,.xml,.archimate,.mmd,.mermaid,.md,.markdown,.dsl";
+const ACCEPT = ".xlsx,.csv,.tsv,.txt,.vsdx,.drawio,.xml,.archimate,.mmd,.mermaid,.md,.markdown,.dsl,.tf,.hcl,.tfstate,.json,.jsonl,.yaml,.yml,.bicep";
 
 type Loaded =
   | { kind: "sheets"; fileName: string; sheets: Sheet[]; notes?: string[] }
   | { kind: "pages"; fileName: string; format: "visio" | "drawio"; pages: ImportedPage[] }
-  | { kind: "text"; fileName: string; format: "mermaid" | "structurizr"; model: TextModel };
+  | { kind: "text"; fileName: string; format: "mermaid" | "structurizr"; model: TextModel }
+  | { kind: "inventory"; fileName: string; inventory: Inventory; source: string; importKind?: "iac" | "discovery" };
+
+/** Whether an inventory came from code (Terraform, templates, manifests) or from what is running. */
+const DISCOVERY_FORMATS = /AWS Config|Resource Explorer|tagged resources|Resource Graph|Asset Inventory|ServiceNow|BMC|Device42|discovery tool/;
+const inventoryKind = (inventory: Inventory): "iac" | "discovery" => (DISCOVERY_FORMATS.test(inventory.format) ? "discovery" : "iac");
 
 /** Reads a chosen file into sheets or diagram pages. Every refusal says what to do about it. */
-async function load(file: File): Promise<Loaded> {
+async function load(file: File, hint: InventoryHint): Promise<Loaded> {
   const name = file.name;
   const extension = name.includes(".") ? name.slice(name.lastIndexOf(".") + 1).toLowerCase() : "";
   if (file.size > MAX_BYTES) throw new Error(`"${name}" is larger than 25 MB. Split it into smaller files.`);
@@ -61,7 +68,15 @@ async function load(file: File): Promise<Loaded> {
     if (isArchimate(source) || extension === "archimate") return { kind: "sheets", fileName: name, sheets: readArchimate(source), notes: archimate4Notes(source) };
   }
   if (extension === "drawio" || extension === "xml") return { kind: "pages", fileName: name, format: "drawio", pages: await readDrawio(decodeText(bytes)) };
-  throw new Error(`"${name}" is not a kind of file this can import. Choose an Excel workbook (.xlsx), a CSV file, a Visio drawing (.vsdx), a draw.io file (.drawio), an ArchiMate exchange file (.xml), a Mermaid file (.mmd or .md) or a Structurizr file (.dsl).`);
+  if (["tf", "hcl", "tfstate", "json", "jsonl", "yaml", "yml", "bicep"].includes(extension)) {
+    const source = decodeText(bytes);
+    const inventory = readInventory(name, source, hint);
+    if (inventory) return { kind: "inventory", fileName: name, inventory, source: name };
+    throw new Error(
+      `"${name}" is not a kind of file this can import. As infrastructure it reads Terraform (.tf, a plan or state as JSON, .tfstate), CloudFormation and SAM, ARM and Bicep, Kubernetes and OpenShift manifests, Docker Compose, a Pulumi stack export, AWS Config or Resource Explorer results, Azure Resource Graph and Google Cloud Asset Inventory results, a ServiceNow CMDB export, and BMC Helix Discovery or Device42 results.`,
+    );
+  }
+  throw new Error(`"${name}" is not a kind of file this can import. Choose an Excel workbook (.xlsx), a CSV file, a Visio drawing (.vsdx), a draw.io file (.drawio), an ArchiMate exchange file (.xml), a Mermaid file (.mmd or .md), a Structurizr file (.dsl), or infrastructure as code (.tf, .json, .yaml, .bicep).`);
 }
 
 function Problem({ text }: { text: string }) {
@@ -148,13 +163,14 @@ export function ImportDialog({ onClose, start, only }: { onClose: () => void; st
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState("");
   const [over, setOver] = useState(false);
+  const [hint, setHint] = useState<InventoryHint>(null);
 
   const choose = async (file: File | undefined) => {
     if (!file) return;
     setBusy(true);
     setProblem("");
     try {
-      const result = await load(file);
+      const result = await load(file, hint);
       setLoaded(result);
       if (result.kind === "sheets") setMappings(result.sheets.map(guessMapping));
       else if (result.kind === "pages") setPageIndex(Math.max(0, result.pages.findIndex((p) => p.shapes.length > 0)));
@@ -176,6 +192,7 @@ export function ImportDialog({ onClose, start, only }: { onClose: () => void; st
     if (!loaded) return null;
     try {
       if (loaded.kind === "text") return { proposal: textModelToProposal(ws, loaded.model, loaded.format, loaded.fileName), lines: [] };
+      if (loaded.kind === "inventory") return { proposal: inventoryToProposal(ws, loaded.inventory, loaded.importKind ?? inventoryKind(loaded.inventory), loaded.source), lines: [] };
       if (loaded.kind === "pages") {
         const page = loaded.pages[pageIndex];
         const proposal = pageToProposal(ws, page, loaded.format, loaded.fileName);
@@ -210,7 +227,7 @@ export function ImportDialog({ onClose, start, only }: { onClose: () => void; st
 
   return (
     <Modal
-      title={loaded ? `Import "${loaded.fileName}"` : only === "drawio" ? "Import a draw.io file" : "Import a file"}
+      title={loaded ? (loaded.kind === "inventory" && loaded.importKind === "discovery" ? `Discovered in ${loaded.fileName}` : `Import "${loaded.fileName}"`) : only === "drawio" ? "Import a draw.io file" : "Import a file"}
       width={loaded?.kind === "sheets" ? 720 : 560}
       onClose={onClose}
       footer={
@@ -259,6 +276,15 @@ export function ImportDialog({ onClose, start, only }: { onClose: () => void; st
             shape is listed in the draft so you can check its type before accepting.
           </p>
           {!only && <ApmImport canEdit={canEdit} onDone={onClose} />}
+          {!only && (
+            <DiscoverImport
+              canEdit={canEdit}
+              onInventory={(inventory, label) => {
+                setProblem("");
+                setLoaded({ kind: "inventory", fileName: label, inventory, source: label, importKind: "discovery" });
+              }}
+            />
+          )}
           <ul className="space-y-2.5">
             <li className="flex gap-3">
               <FileSpreadsheet size={18} className="mt-0.5 shrink-0 text-ink-soft" />
@@ -272,6 +298,28 @@ export function ImportDialog({ onClose, start, only }: { onClose: () => void; st
               <span>
                 <span className="font-medium">A diagram</span> from Visio (.vsdx) or draw.io (.drawio). Each labelled shape becomes an object, each connector a relationship, and
                 the diagram is redrawn with the boxes where they were.
+              </span>
+            </li>
+            <li className="flex gap-3" data-import-iac>
+              <Cloud size={18} className="mt-0.5 shrink-0 text-ink-soft" />
+              <span>
+                <span className="font-medium">Infrastructure as code:</span> Terraform (.tf, a plan or state as JSON, .tfstate), CloudFormation and SAM, ARM and Bicep, Kubernetes and OpenShift
+                manifests, Docker Compose, or a Pulumi stack export. Each resource becomes a box from the library, each reference a relationship, and networks hold what sits in them.
+              </span>
+            </li>
+            <li className="flex gap-3" data-import-discovery>
+              <ScanSearch size={18} className="mt-0.5 shrink-0 text-ink-soft" />
+              <span>
+                <span className="font-medium">What is running:</span> AWS Config or Resource Explorer results, Azure Resource Graph or Google Cloud Asset Inventory results, a ServiceNow CMDB export
+                (configuration items and relationships), or BMC Helix Discovery or Device42 results as JSON.
+                <label className="mt-1 flex items-center gap-2 text-[13px] text-ink-soft">
+                  Discovery rows come from
+                  <Select className="!h-7 !w-auto text-[13px]" value={hint ?? ""} onChange={(e) => setHint((e.target.value || null) as InventoryHint)} aria-label="Discovery tool">
+                    <option value="">Any tool</option>
+                    <option value="bmc">BMC Helix Discovery</option>
+                    <option value="device42">Device42</option>
+                  </Select>
+                </label>
               </span>
             </li>
             <li className="flex gap-3">
@@ -310,6 +358,27 @@ export function ImportDialog({ onClose, start, only }: { onClose: () => void; st
                 </Field>
               )}
             </>
+          ) : loaded.kind === "inventory" ? (
+            <div className="space-y-2 text-[13px]" data-import-inventory>
+              <p>
+                <span className="font-medium">{loaded.inventory.format}</span>
+                <span className="text-ink-soft">
+                  {" "}
+                  with {countOf(loaded.inventory.items.length, "resource")} and {countOf(loaded.inventory.links.length, "relationship")}
+                  {loaded.inventory.items.some((i) => i.typeId === "zone") ? `, networks drawn as zones` : ""}.
+                </span>
+              </p>
+              <p className="text-ink-soft">
+                {loaded.inventory.items.filter((i) => i.componentId).length} of them matched to a library component. Each resource keeps its type, address and settings as fields.
+              </p>
+              {loaded.inventory.skipped.length > 0 && (
+                <ul className="list-disc pl-5 text-ink-soft">
+                  {loaded.inventory.skipped.map((line) => (
+                    <li key={line}>{line}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
           ) : loaded.kind === "text" ? (
             <p className="text-[13px] text-ink-soft" data-import-text>
               {loaded.format === "mermaid" ? "A Mermaid diagram" : "A Structurizr workspace"} with {countOf(loaded.model.elements.length, "element")} and {countOf(loaded.model.links.length, "link")}.

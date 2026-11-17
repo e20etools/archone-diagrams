@@ -54,7 +54,8 @@ export function DocumentPage() {
       if (!live) return;
       const nodes = canvas.current?.nodes() ?? [];
       const element = canvas.current?.element();
-      const drawn = nodes.length >= wanted && nodes.every((n) => n.measured?.width);
+      // Zones are drawn at the size they are given, so React Flow never reports measuring them.
+      const drawn = nodes.length >= wanted && nodes.every((n) => n.measured?.width || (n.type === "zone" && n.width));
       if (wanted === 0) finish(null);
       else if (element && drawn) capturePng(element, nodes).then(finish, () => finish(null));
       else if (Date.now() - started > DRAW_TIMEOUT_MS) finish(null);

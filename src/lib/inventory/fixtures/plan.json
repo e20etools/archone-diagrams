@@ -1,0 +1,13 @@
+{"format_version": "1.2", "terraform_version": "1.9.0",
+ "planned_values": {"root_module": {"resources": [
+   {"address": "google_compute_network.vpc", "mode": "managed", "type": "google_compute_network", "name": "vpc", "values": {"name": "shop-net"}},
+   {"address": "google_compute_subnetwork.apps", "mode": "managed", "type": "google_compute_subnetwork", "name": "apps", "values": {"name": "apps", "ip_cidr_range": "10.9.0.0/24"}},
+   {"address": "google_container_cluster.gke", "mode": "managed", "type": "google_container_cluster", "name": "gke", "values": {"name": "shop-gke"}},
+   {"address": "google_sql_database_instance.db", "mode": "managed", "type": "google_sql_database_instance", "name": "db", "values": {"name": "orders-sql"}}
+ ]}},
+ "configuration": {"root_module": {"resources": [
+   {"address": "google_compute_subnetwork.apps", "expressions": {"network": {"references": ["google_compute_network.vpc.id", "google_compute_network.vpc"]}}},
+   {"address": "google_container_cluster.gke", "expressions": {"subnetwork": {"references": ["google_compute_subnetwork.apps.id"]}}},
+   {"address": "google_sql_database_instance.db", "depends_on": ["google_container_cluster.gke"]}
+ ]}}
+}

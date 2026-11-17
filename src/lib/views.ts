@@ -1,3 +1,4 @@
+import { zonesOf } from "./zones";
 import { objectType } from "./catalog";
 import { autoLayout } from "./layout";
 import { ancestorsOf, childrenOf, createDiagram, descendantsOf, placeNodes, type DiagramInput } from "./model";
@@ -164,10 +165,30 @@ export const DEFAULT_EDGE_KINDS: Record<ViewType, RelationKind[] | null> = {
   custom: null,
 };
 
-function layoutGroups(ws: Workspace, diagram: Diagram): Record<string, string> | undefined {
-  const members = scopeMembers(ws, diagram);
-  if (!members.length || !diagram.scopeId) return undefined;
-  return Object.fromEntries(members.map((id) => [id, diagram.scopeId!]));
+/**
+ * What the layout keeps together: the members of a scoped diagram's boundary, and what sits in
+ * each network zone drawn on the diagram, so a zone's frame holds its own boxes and no others.
+ */
+function layoutGroups(ws: Workspace, diagram: Diagram): { groups?: Record<string, string>; groupParents?: Record<string, string> } {
+  const groups: Record<string, string> = {};
+  const groupParents: Record<string, string> = {};
+  const scoped = new Set(diagram.scopeId ? scopeMembers(ws, diagram) : []);
+  for (const id of scoped) groups[id] = diagram.scopeId!;
+  const zoneIds = new Set(zonesOf(ws, diagram).map((z) => z.id));
+  const innermostZone = (id: string) => {
+    for (let cur = ws.objects[id]?.parentId, n = 0; cur && n < 12; cur = ws.objects[cur]?.parentId, n++) if (zoneIds.has(cur)) return cur;
+    return undefined;
+  };
+  for (const id of Object.keys(diagram.nodes)) {
+    const zone = innermostZone(id);
+    if (zoneIds.has(id)) {
+      // A zone with boxes in it is drawn around them, so it is a group rather than a box of its own.
+      delete groups[id];
+      if (zone) groupParents[id] = zone;
+      else if (scoped.has(id)) groupParents[id] = diagram.scopeId!;
+    } else if (zone) groups[id] = zone;
+  }
+  return Object.keys(groups).length ? { groups, groupParents } : {};
 }
 
 /** Arranges a diagram. Pinned nodes keep their place unless respectPinned is false, which also unpins everything. */
@@ -181,7 +202,7 @@ export function relayout(ws: Workspace, diagramId: string, respectPinned = true)
     direction: diagram.direction,
     current: diagram.nodes,
     respectPinned,
-    groups: layoutGroups(ws, diagram),
+    ...layoutGroups(ws, diagram),
   });
   const placements: Record<string, NodePlacement> = {};
   for (const id of nodeIds) {

@@ -1,0 +1,6 @@
+[
+ {"headings": ["#id", "name", "kind", "os"], "results": [["h1", "lnx-app-01", "Host", "RHEL 9"], ["h2", "lnx-db-01", "Host", "RHEL 9"]]},
+ {"headings": ["#id", "name", "kind", "host_id"], "results": [["s1", "Apache Tomcat on lnx-app-01", "SoftwareInstance", "h1"], ["s2", "Oracle Database ORCL", "SoftwareInstance", "h2"]]},
+ {"headings": ["#id", "name", "kind", "members"], "results": [["b1", "Payments", "BusinessApplicationInstance", ["s1", "s2"]]]},
+ {"headings": ["client", "listener", "port"], "results": [["s1", "s2", "1521"]]}
+]

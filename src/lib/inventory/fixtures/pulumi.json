@@ -1,0 +1,6 @@
+{"version": 3, "deployment": {"resources": [
+ {"urn": "urn:pulumi:dev::shop::pulumi:pulumi:Stack::shop-dev", "type": "pulumi:pulumi:Stack"},
+ {"urn": "urn:pulumi:dev::shop::aws:ec2/vpc:Vpc::main", "type": "aws:ec2/vpc:Vpc", "outputs": {"id": "vpc-9"}},
+ {"urn": "urn:pulumi:dev::shop::aws:lambda/function:Function::orders", "type": "aws:lambda/function:Function", "outputs": {"name": "orders"}, "dependencies": ["urn:pulumi:dev::shop::aws:dynamodb/table:Table::orders-table"]},
+ {"urn": "urn:pulumi:dev::shop::aws:dynamodb/table:Table::orders-table", "type": "aws:dynamodb/table:Table", "outputs": {"name": "orders-table"}}
+]}}

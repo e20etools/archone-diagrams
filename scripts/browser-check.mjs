@@ -847,6 +847,28 @@ try {
   check("a Structurizr workspace is read from its model block", (await hasText(page, "A Structurizr workspace with 3 elements and 1 link")) && (await page.$eval("[data-import-summary]", (e) => e.innerText)).includes("3 objects and 1 relationship"));
   await page.keyboard.press("Escape");
 
+  // Infrastructure as code: a Terraform file becomes resources from the library, inside their networks.
+  await page.goto(base, { waitUntil: "networkidle0" });
+  await clickText(page, "Import");
+  await waitText(page, "The file becomes a draft.");
+  check("the import dialog offers infrastructure as code and discovery results", !!(await page.$("[data-import-iac]")) && !!(await page.$("[data-import-discovery]")) && !(await page.$("[data-discover-import]")));
+  await (await page.$('input[aria-label="File to import"]')).uploadFile(join(root, "src/lib/inventory/fixtures/main.tf"));
+  await page.waitForSelector("[data-import-inventory]");
+  const iacSummary = await page.$eval("[data-import-inventory]", (e) => e.innerText.replace(/\s+/g, " "));
+  check("a Terraform configuration is read as resources, relationships and networks", iacSummary.includes("A Terraform configuration with 7 resources and 2 relationships, networks drawn as zones") && iacSummary.includes("1 data source"), iacSummary.slice(0, 200));
+  await clickText(page, "Create draft to review");
+  await waitText(page, "Read from infrastructure as code");
+  await clickText(page, "Accept all");
+  await clickText(page, "Save accepted to the model");
+  await page.waitForSelector(".object-node");
+  await sleep(400);
+  {
+    const objects = Object.values((await stored()).objects);
+    const web = objects.find((o) => o.name === "web-1");
+    const subnet = objects.find((o) => o.name === "app-subnet");
+    check("accepting it adds library components inside their subnet, with the resource's fields", web?.componentId === "aws.ec2" && subnet?.typeId === "zone" && web.parentId === subnet.id && web.fields?.instance_type === "t3.small", JSON.stringify({ c: web?.componentId, p: web?.parentId === subnet?.id, f: web?.fields?.instance_type }));
+  }
+
   // Health: what stops, what can be delivered, what is confirmed and what is still true.
   const objectNamed = async (name) => Object.values((await stored()).objects).find((o) => o.name === name);
   const setAvailability = async (name, value) => {
@@ -1654,7 +1676,7 @@ try {
   });
   await page.waitForFunction((n) => document.querySelectorAll(".object-node").length === n + 1, {}, before2);
   await sleep(350);
-  const s3 = Object.values((await stored()).objects).find((o) => o.componentId === "aws.simple-storage-service-s3");
+  const s3 = Object.values((await stored()).objects).find((o) => o.componentId === "aws.simple-storage-service-s3" && o.provenance?.origin !== "import");
   check("a cloud service dragged onto the canvas is storage, named by its provider", s3 && s3.typeId === "storage" && s3.technology === "AWS Simple Storage Service (S3)", JSON.stringify(s3 && { t: s3.typeId, tech: s3.technology }));
 
   await page.goto(`${base}/library`, { waitUntil: "networkidle0" });

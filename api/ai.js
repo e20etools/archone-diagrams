@@ -4034,7 +4034,9 @@ var proposalSchema = objectType({
 		"drawio",
 		"mermaid",
 		"structurizr",
-		"apm"
+		"apm",
+		"iac",
+		"discovery"
 	]).optional(),
 	/** A spreadsheet fills the model without drawing anything; a diagram file becomes a diagram laid out as it was drawn. */
 	/** What a drafted proposal was drafted from, when it was not a description. */

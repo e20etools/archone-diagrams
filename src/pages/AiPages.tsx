@@ -19,7 +19,7 @@ const STATUS = {
   dismissed: { label: "Discarded", tone: "neutral" },
 } as const;
 
-const sourceLabel = (p: Proposal) => (p.origin === "ai-image" ? `Image: ${p.source}` : p.origin === "import" ? (p.importKind === "apm" ? p.source : `File: ${p.source}`) : p.source.trim().replace(/\s+/g, " "));
+const sourceLabel = (p: Proposal) => (p.origin === "ai-image" ? `Image: ${p.source}` : p.origin === "import" ? (p.importKind === "apm" ? p.source : p.importKind === "discovery" && !/\.[a-z0-9]+$/i.test(p.source) ? `Discovered: ${p.source}` : `File: ${p.source}`) : p.source.trim().replace(/\s+/g, " "));
 
 export function AiInboxPage() {
   const ws = useWorkspace();
@@ -159,7 +159,7 @@ export function ProposalReviewPage() {
       </div>
 
       <div className="mt-4 rounded-lg border border-line bg-surface px-4 py-3.5">
-        <div className="text-[13px] text-ink-soft">{proposal.origin === "ai-image" ? "Drafted from an uploaded image" : proposal.sourceKind === "transcript" ? "Drafted from what was said in a meeting" : proposal.importKind === "apm" ? "Read from the application portfolio" : proposal.origin === "import" ? "Imported from this file" : proposal.origin === "api" ? "Proposed through the API or an AI assistant" : "Drafted from this description"}</div>
+        <div className="text-[13px] text-ink-soft">{proposal.origin === "ai-image" ? "Drafted from an uploaded image" : proposal.sourceKind === "transcript" ? "Drafted from what was said in a meeting" : proposal.importKind === "apm" ? "Read from the application portfolio" : proposal.importKind === "iac" ? "Read from infrastructure as code" : proposal.importKind === "discovery" ? "Read from what a cloud account or discovery tool reports" : proposal.origin === "import" ? "Imported from this file" : proposal.origin === "api" ? "Proposed through the API or an AI assistant" : "Drafted from this description"}</div>
         <p className="mt-1 whitespace-pre-wrap">{proposal.source}</p>
         <p className="mt-2.5 text-[13px] text-ink-soft">
           {proposal.origin === "import" ? "Read by" : proposal.origin === "api" ? "Sent with" : "Engine"}: {proposal.engine}. {proposal.origin === "import" ? "Imported" : proposal.origin === "api" ? "Received" : "Drafted"} {formatDateTime(proposal.createdAt)}.

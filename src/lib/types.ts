@@ -210,7 +210,7 @@ export const proposalSchema = z.object({
   id: z.string(),
   origin: z.enum(["ai-prompt", "ai-image", "import", "api"]),
   /** For an import: what kind of file it was. */
-  importKind: z.enum(["spreadsheet", "visio", "drawio", "mermaid", "structurizr", "apm"]).optional(),
+  importKind: z.enum(["spreadsheet", "visio", "drawio", "mermaid", "structurizr", "apm", "iac", "discovery"]).optional(),
   /** A spreadsheet fills the model without drawing anything; a diagram file becomes a diagram laid out as it was drawn. */
   /** What a drafted proposal was drafted from, when it was not a description. */
   sourceKind: z.enum(["transcript", "voice"]).optional(),

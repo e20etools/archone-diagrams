@@ -60,11 +60,18 @@ function localAiEndpoint(env: Env): Plugin {
           return http.createApmHandler(() => env);
         }, "/api/apm"),
       );
+      server.middlewares.use(
+        "/api/discover",
+        serve(async () => {
+          const http = (await server.ssrLoadModule("/src/lib/discover/http.ts")) as typeof import("./src/lib/discover/http");
+          return http.createDiscoverHandler(() => env);
+        }, "/api/discover"),
+      );
     },
     configurePreviewServer(server) {
       // The bundled function reads process.env, as it does on the host.
       for (const [name, value] of Object.entries(env)) {
-        if (/^(AI_|ANTHROPIC_|OPENAI_|GROQ_|LOVABLE_|APM_)/.test(name) && process.env[name] === undefined) process.env[name] = value;
+        if (/^(AI_|ANTHROPIC_|OPENAI_|GROQ_|LOVABLE_|APM_|DISCOVERY_)/.test(name) && process.env[name] === undefined) process.env[name] = value;
       }
       const bundle = pathToFileURL(fileURLToPath(new URL("./api/ai.js", import.meta.url))).href;
       server.middlewares.use(
@@ -73,6 +80,14 @@ function localAiEndpoint(env: Env): Plugin {
           const module = (await import(/* @vite-ignore */ bundle)) as { default: { fetch: Handle } };
           return module.default.fetch;
         }),
+      );
+      const discover = pathToFileURL(fileURLToPath(new URL("./api/discover.js", import.meta.url))).href;
+      server.middlewares.use(
+        "/api/discover",
+        serve(async () => {
+          const module = (await import(/* @vite-ignore */ discover)) as { default: { fetch: Handle } };
+          return module.default.fetch;
+        }, "/api/discover"),
       );
       const apm = pathToFileURL(fileURLToPath(new URL("./api/apm.js", import.meta.url))).href;
       server.middlewares.use(

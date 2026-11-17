@@ -1,0 +1,39 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Orders service
+Transform: AWS::Serverless-2016-10-31
+Resources:
+  OrdersApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: prod
+  OrdersFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: orders-handler
+      Runtime: nodejs20.x
+      Environment:
+        Variables:
+          TABLE: !Ref OrdersTable
+          QUEUE_URL: !GetAtt OrdersQueue.QueueUrl
+      Events:
+        Post:
+          Type: Api
+          Properties:
+            RestApiId: !Ref OrdersApi
+            Path: /orders
+            Method: post
+  OrdersTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: orders
+  OrdersQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: orders-events
+  OrdersRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Policies:
+        - PolicyDocument:
+            Statement:
+              - Resource: !Sub "${OrdersTable.Arn}"

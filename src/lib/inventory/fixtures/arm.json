@@ -1,0 +1,14 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "parameters": { "appName": { "type": "string", "defaultValue": "shop-web" } },
+  "variables": { "planName": "shop-plan", "dbServer": "shop-sql" },
+  "resources": [
+    { "type": "Microsoft.Web/serverfarms", "name": "[variables('planName')]", "location": "westeurope", "sku": { "name": "P1v3" } },
+    { "type": "Microsoft.Web/sites", "name": "[parameters('appName')]", "location": "westeurope",
+      "dependsOn": ["[resourceId('Microsoft.Web/serverfarms', variables('planName'))]"],
+      "properties": { "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', variables('planName'))]" } },
+    { "type": "Microsoft.Sql/servers", "name": "[variables('dbServer')]", "location": "westeurope",
+      "resources": [ { "type": "databases", "name": "orders", "dependsOn": ["[variables('dbServer')]"] } ] },
+    { "type": "Microsoft.KeyVault/vaults", "name": "shop-kv", "location": "westeurope" }
+  ]
+}

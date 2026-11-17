@@ -1,0 +1,13 @@
+{
+ "cmdb_ci": {"result": [
+  {"sys_id": "a1", "name": "Online Banking", "sys_class_name": "cmdb_ci_service_auto"},
+  {"sys_id": "b1", "name": "obk-app-01", "sys_class_name": "cmdb_ci_app_server_tomcat", "ip_address": "10.0.0.5"},
+  {"sys_id": "c1", "name": "lnx-web-01", "sys_class_name": "cmdb_ci_linux_server", "os": "Red Hat Enterprise Linux"},
+  {"sys_id": "d1", "name": "ORDERSDB", "sys_class_name": "cmdb_ci_db_ora_instance"}
+ ]},
+ "cmdb_rel_ci": {"result": [
+  {"parent": {"value": "a1", "display_value": "Online Banking"}, "child": {"value": "b1"}, "type": {"display_value": "Depends on::Used by"}},
+  {"parent": {"value": "b1"}, "child": {"value": "c1"}, "type": {"display_value": "Runs on::Runs"}},
+  {"parent": {"value": "b1"}, "child": {"value": "d1"}, "type": {"display_value": "Connects to::Connected by"}}
+ ]}
+}

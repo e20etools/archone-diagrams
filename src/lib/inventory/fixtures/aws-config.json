@@ -1,0 +1,7 @@
+{"Results": [
+ "{\"resourceId\":\"vpc-1\",\"resourceType\":\"AWS::EC2::VPC\",\"awsRegion\":\"eu-west-1\",\"tags\":[{\"key\":\"Name\",\"value\":\"core\"}],\"relationships\":[]}",
+ "{\"resourceId\":\"subnet-1\",\"resourceType\":\"AWS::EC2::Subnet\",\"awsRegion\":\"eu-west-1\",\"relationships\":[{\"resourceId\":\"vpc-1\",\"resourceType\":\"AWS::EC2::VPC\",\"relationshipName\":\"Is contained in Vpc\"}]}",
+ "{\"resourceId\":\"i-1\",\"resourceType\":\"AWS::EC2::Instance\",\"awsRegion\":\"eu-west-1\",\"configuration\":{\"instanceType\":\"m5.large\"},\"tags\":[{\"key\":\"Name\",\"value\":\"app-1\"}],\"relationships\":[{\"resourceId\":\"subnet-1\",\"relationshipName\":\"Is contained in Subnet\"},{\"resourceId\":\"vpc-1\",\"relationshipName\":\"Is contained in Vpc\"},{\"resourceId\":\"eni-1\",\"relationshipName\":\"Is attached to NetworkInterface\"}]}",
+ "{\"resourceId\":\"eni-1\",\"resourceType\":\"AWS::EC2::NetworkInterface\",\"relationships\":[{\"resourceId\":\"subnet-1\",\"relationshipName\":\"Is contained in Subnet\"}]}",
+ "{\"resourceId\":\"orders\",\"resourceName\":\"orders\",\"resourceType\":\"AWS::RDS::DBInstance\",\"relationships\":[{\"resourceId\":\"subnet-1\",\"relationshipName\":\"Is associated with Subnet\"}]}"
+]}

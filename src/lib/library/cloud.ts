@@ -32,7 +32,7 @@ interface Look {
 
 /** Read top to bottom; the first rule whose pattern matches the name wins. */
 const BY_NAME: [RegExp, Look][] = [
-  [/\b(registry|artifact ?registry|codeartifact|container registry|ecr|acr|swr)\b/i, { kind: "storage", icon: "Package", profile: "cloud-storage" }],
+  [/\b(registry|registries|artifact ?registry|codeartifact|container registry|ecr|acr|swr)\b/i, { kind: "storage", icon: "Package", profile: "cloud-storage" }],
   [/(web application firewall|\bwaf\b)/i, { kind: "gateway", icon: "ShieldHalf", profile: "cloud-security" }],
   [/(ddos|anti-?bot|\bshield\b|cloud armor)/i, { kind: "network", icon: "ShieldBan", profile: "cloud-security" }],
   [/firewall/i, { kind: "network", icon: "BrickWallFire", profile: "cloud-security" }],

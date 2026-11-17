@@ -13,13 +13,15 @@ export interface LayoutInput {
   /** Current placements; pinned ones are kept when respectPinned is true. */
   current?: Record<string, NodePlacement>;
   respectPinned?: boolean;
-  /** nodeId -> group id. Members of one group are kept together (used for the boundary of a scoped diagram). */
+  /** nodeId -> group id. Members of one group are kept together (the boundary of a scoped diagram, a network zone). */
   groups?: Record<string, string>;
+  /** group id -> the group it sits in, for a zone inside a zone or inside the boundary. */
+  groupParents?: Record<string, string>;
 }
 
 type Point = { x: number; y: number };
 
-function runDagre(nodeIds: string[], edges: LayoutInput["edges"], direction: "TB" | "LR", groups?: Record<string, string>) {
+function runDagre(nodeIds: string[], edges: LayoutInput["edges"], direction: "TB" | "LR", groups?: Record<string, string>, groupParents?: Record<string, string>) {
   const compound = !!groups && Object.keys(groups).length > 0;
   const g = new dagre.graphlib.Graph({ compound });
   // Left to right, an arrow's label rests on its last horizontal run, so the columns need more room between them.
@@ -32,6 +34,13 @@ function runDagre(nodeIds: string[], edges: LayoutInput["edges"], direction: "TB
       const gid = `group:${groupId}`;
       if (!g.hasNode(gid)) g.setNode(gid, {});
       g.setParent(nodeId, gid);
+    }
+    for (const [groupId, parentId] of Object.entries(groupParents ?? {})) {
+      const gid = `group:${groupId}`;
+      const pid = `group:${parentId}`;
+      if (!g.hasNode(gid) || groupId === parentId) continue;
+      if (!g.hasNode(pid)) g.setNode(pid, {});
+      g.setParent(gid, pid);
     }
   }
   const ids = new Set(nodeIds);
@@ -65,7 +74,7 @@ function grid(nodeIds: string[], origin: Point, direction: "TB" | "LR"): Record<
  * arranged around them (PRD FR-09).
  */
 export function autoLayout(input: LayoutInput): Record<string, Point> {
-  const { nodeIds, edges, direction, current = {}, respectPinned = true, groups } = input;
+  const { nodeIds, edges, direction, current = {}, respectPinned = true, groups, groupParents } = input;
   if (nodeIds.length === 0) return {};
 
   const ids = new Set(nodeIds);
@@ -84,7 +93,7 @@ export function autoLayout(input: LayoutInput): Record<string, Point> {
   let computed: Record<string, Point> = {};
   if (linked.length) {
     try {
-      computed = runDagre(linked, edges, direction, groups);
+      computed = runDagre(linked, edges, direction, groups, groupParents);
     } catch {
       // The grouped layout can fail on unusual graphs; a flat layout is still a usable result.
       computed = runDagre(linked, edges, direction);
