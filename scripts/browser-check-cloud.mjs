@@ -57,7 +57,8 @@ const until = async (page, fn, timeout, ...args) => {
   await page.bringToFront();
   return page.waitForFunction(fn, { timeout, polling: 100 }, ...args);
 };
-const waitText = (page, text, timeout = 8000) => until(page, (t) => document.body.innerText.includes(t), timeout, text);
+// Generous: on a small machine several tabs share two cores, and a change can take seconds to arrive.
+const waitText = (page, text, timeout = 15000) => until(page, (t) => document.body.innerText.includes(t), timeout, text);
 const hasText = async (page, text) => {
   await page.bringToFront();
   return page.evaluate((t) => document.body.innerText.includes(t), text);
@@ -272,7 +273,7 @@ try {
     await sleep(1500);
     console.log("VERA banner:", await vera.evaluate(() => document.body.innerText.includes("You have view access")));
   }
-  await until(vera, () => !document.body.innerText.includes("You have view access to this workspace"), 5000);
+  await until(vera, () => !document.body.innerText.includes("You have view access to this workspace"), 15000);
   await visit(vera, diagramUrl, ".object-node");
   await vera.evaluate(() => [...document.querySelectorAll("aside button")].find((b) => b.textContent.trim() === "Database")?.click());
   await until(vera, (n) => document.querySelectorAll(".object-node").length === n + 1, 5000, veraBoxes);

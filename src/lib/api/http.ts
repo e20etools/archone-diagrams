@@ -1,10 +1,12 @@
+import { ProcessRequestError, processRequestBody } from "../bpm/api";
 import { openApiDocument } from "./openapi";
 
 /**
  * The public REST API as a web-standard request handler. It is deliberately thin: it reads
  * the key, the path and the body, hands them to the database function api_request(), and
  * passes the reply on. Every rule of the API is in the database (see the phase2_api
- * migration), so this file holds no access logic to get wrong.
+ * migration), so this file holds no access logic to get wrong. The one thing it adds is laying
+ * out a process sent as a list of steps as a BPMN file, which the database then checks.
  */
 
 export type ApiEnv = Record<string, string | undefined>;
@@ -54,6 +56,15 @@ export function createApiHandler(getEnv: () => ApiEnv, fetchImpl: Fetch = (input
         } catch {
           return problem(400, "invalid", "The request body is not valid JSON.");
         }
+      }
+    }
+    // A process may be sent as a list of steps: laid out here as BPMN, then checked by the database like any other.
+    if ((request.method === "POST" || request.method === "PATCH") && /^\/processes(\/[^/]+)?\/?$/.test(path)) {
+      try {
+        body = processRequestBody(body, request.method === "POST");
+      } catch (error) {
+        if (error instanceof ProcessRequestError) return problem(422, "invalid", error.message);
+        throw error;
       }
     }
     const query: Record<string, string> = {};

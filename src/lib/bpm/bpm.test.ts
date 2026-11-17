@@ -8,6 +8,7 @@ import { compareModels, createProcess, deleteProcess, ensureProcessObject, pathO
 import { baseScenario, rolesOf, simulate } from "./simulate";
 import { PROCESS_TEMPLATES, fromTemplate } from "./templates";
 import { checkProcess } from "./validate";
+import { repairProcess } from "./repair";
 import { draftElements, draftProcessFromText, normalizeProcessDraft, reviveProcessDraft } from "./draft";
 
 const simple = () =>
@@ -461,5 +462,23 @@ describe("Drafting a process from words", () => {
     expect(reviveProcessDraft({ spec: {} })).toBeNull();
     expect(normalizeProcessDraft({ steps: [] })).toBeNull();
     expect(normalizeProcessDraft("nonsense")).toBeNull();
+  });
+});
+
+describe("Reading a stored process", () => {
+  it("fills what is missing and leaves out only the parts it cannot read", () => {
+    const p = repairProcess("proc_1", {
+      name: "Order to cash",
+      updatedAt: "2026-11-18T00:00:00.000Z",
+      elements: { good: { objectIds: ["obj_1"], raci: { Sales: "R" } }, bad: { objectIds: "obj_1" } },
+      kpis: [{ id: "k1", name: "Cycle time" }, { id: "k2" }],
+      status: "draft",
+      level: 9,
+    })!;
+    expect(p).toMatchObject({ id: "proc_1", name: "Order to cash", createdAt: "2026-11-18T00:00:00.000Z", level: 2, xml: "", versions: [], decisions: {} });
+    expect(Object.keys(p.elements)).toEqual(["good"]);
+    expect(p.kpis.map((k) => k.id)).toEqual(["k1"]);
+    expect(repairProcess("x", "nonsense")).toBeNull();
+    expect(repairProcess("x", { name: "" })?.name).toBe("Untitled process");
   });
 });

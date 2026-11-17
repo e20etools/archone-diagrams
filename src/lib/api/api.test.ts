@@ -5,7 +5,7 @@ import { PGlite } from "@electric-sql/pglite";
 import { beforeAll, describe, expect, it } from "vitest";
 import { OBJECT_TYPES } from "../catalog";
 import { fromRow, type Row } from "../cloud/rows";
-import { RELATION_KINDS } from "../types";
+import { RELATION_KINDS, processModelSchema } from "../types";
 import { createApiHandler } from "./http";
 
 /**
@@ -94,7 +94,7 @@ describe("REST API", () => {
     const spec = await call("GET", "/openapi.json", undefined, "");
     expect(spec.status).toBe(200);
     expect(spec.body.servers[0].url).toBe("https://project.supabase.co/functions/v1/api/v1");
-    expect(Object.keys(spec.body.paths)).toEqual(["/", "/model", "/objects", "/objects/{id}", "/relationships", "/relationships/{id}", "/diagrams", "/diagrams/{id}", "/proposals", "/proposals/{id}"]);
+    expect(Object.keys(spec.body.paths)).toEqual(["/", "/model", "/objects", "/objects/{id}", "/relationships", "/relationships/{id}", "/diagrams", "/diagrams/{id}", "/processes", "/processes/{id}", "/proposals", "/proposals/{id}"]);
     expect((await handler(new Request("https://x/functions/v1/api/v1/objects", { method: "OPTIONS" }))).headers.get("access-control-allow-origin")).toBe("*");
   });
 
@@ -370,5 +370,120 @@ describe("live links", () => {
     expect((await view(token)).status).toBe("ok");
     await as("edgar", (q) => q("update public.diagrams set deleted = true where id = 'ctx'"));
     expect(await view(token)).toEqual({ status: "gone" });
+  });
+});
+
+describe("processes through the API", () => {
+  let area = "";
+  let order = "";
+  let erp = "";
+  it("creates a process from a list of steps, laid out as BPMN in its lanes", async () => {
+    erp = (await call("POST", "/objects", { name: "Order ERP", typeId: "application" })).body.id;
+    const made = await call("POST", "/processes", {
+      name: "Order to cash",
+      owner: "Head of Sales",
+      lanes: ["Sales", "Warehouse"],
+      steps: [
+        { id: "check", name: "Check the order", type: "userTask", lane: "Sales", minutes: 10 },
+        { id: "ok", name: "Order complete?", type: "exclusiveGateway", lane: "Sales" },
+        { id: "ship", name: "Ship the goods", type: "manualTask", lane: "Warehouse", minutes: 30 },
+        { id: "ask", name: "Ask the customer", type: "sendTask", lane: "Sales" },
+      ],
+      flows: [
+        { from: "check", to: "ok" },
+        { from: "ok", to: "ship", name: "Yes", probability: 90 },
+        { from: "ok", to: "ask", name: "No", probability: 10 },
+      ],
+      kpis: [{ name: "Cycle time", unit: "days", target: "2", better: "lower" }],
+    });
+    expect(made.status).toBe(201);
+    order = made.body.id;
+    expect(made.body).toMatchObject({ name: "Order to cash", level: 2, status: "draft", version: 0, modelled: true, steps: 3, owner: "Head of Sales" });
+    expect(made.body.xml).toContain('name="Ship the goods"');
+    expect(made.body.xml).toContain('<bpmn:lane id="Lane_2" name="Warehouse">');
+    expect(made.body.elements.check.duration).toEqual({ min: 5, mode: 10, max: 20 });
+    expect(Object.values(made.body.elements).filter((e: any) => e.probability).map((e: any) => e.probability).sort()).toEqual([10, 90]);
+    expect(made.body.kpis[0]).toMatchObject({ name: "Cycle time", better: "lower" });
+    // What the API stored is what the app keeps, and opens in it.
+    const row = (await db.query<{ data: unknown }>("select data from public.process_models where id = $1", [order])).rows[0];
+    expect(processModelSchema.safeParse(row.data).success).toBe(true);
+  });
+
+  it("keeps a landscape: areas without a model, and levels below their parent", async () => {
+    const made = await call("POST", "/processes", { name: "Sell and serve", level: 0, category: "core" });
+    area = made.body.id;
+    expect(made.body).toMatchObject({ level: 0, modelled: false, steps: 0 });
+    const child = await call("POST", "/processes", { name: "Returns", parentId: area });
+    expect(child.body).toMatchObject({ level: 1, parentId: area, category: "core", modelled: false });
+    expect((await call("PATCH", `/processes/${order}`, { parentId: area })).body.parentId).toBe(area);
+    expect((await call("PATCH", `/processes/${area}`, { parentId: order })).body.error.message).toMatch(/inside itself/);
+    expect((await call("POST", "/processes", { name: "Too high", parentId: order, level: 1 })).body.error.message).toMatch(/lower level number/);
+    expect((await call("GET", "/processes?parent=none")).body.data.map((p: any) => p.name)).toEqual(["Sell and serve"]);
+    await call("DELETE", `/processes/${child.body.id}`);
+  });
+
+  it("says exactly what is wrong with a process it will not take", async () => {
+    expect((await call("POST", "/processes", { description: "No name" })).body.error.message).toMatch(/"name" is required/);
+    expect((await call("POST", "/processes", { name: "X", steps: [{ id: "a", name: "A", type: "spaceship" }] })).body.error.message).toMatch(/type "spaceship"/);
+    expect((await call("POST", "/processes", { name: "X", steps: [{ id: "a", name: "A", type: "task" }], flows: [{ from: "a", to: "zz" }] })).status).toBe(422);
+    expect((await call("POST", "/processes", { name: "X", xml: "<definitions/>" })).body.error.message).toMatch(/BPMN 2.0/);
+    const noDiagram = '<definitions xmlns="http://www.omg.org/spec/BPMN/20100524/MODEL"><process id="p"/></definitions>';
+    expect((await call("POST", "/processes", { name: "X", xml: noDiagram })).body.error.message).toMatch(/no diagram/);
+    expect((await call("POST", "/processes", { name: "X", xml: `<!DOCTYPE x [<!ENTITY a "b">]>${noDiagram}` })).status).toBe(422);
+    expect((await call("POST", "/processes", { name: "X", category: "fun" })).status).toBe(422);
+    expect((await call("PATCH", `/processes/${order}`, { elements: { check: { raci: { Sales: "Z" } } } })).body.error.message).toMatch(/R, A, C or I/);
+    expect((await call("PATCH", `/processes/${order}`, { status: "approved" })).status).toBe(422);
+  });
+
+  it("links steps to systems, finds the processes a system takes part in, and names the systems", async () => {
+    const before = (await call("GET", `/processes/${order}`)).body.elements;
+    const changed = await call("PATCH", `/processes/${order}`, { elements: { ...before, check: { ...before.check, objectIds: [erp], raci: { Sales: "R", "Head of Sales": "A" }, automation: "partly" } } });
+    expect(changed.body.elements.check).toMatchObject({ objectIds: [erp], automation: "partly", duration: { mode: 10 } });
+    expect(changed.body.objects[erp]).toEqual({ name: "Order ERP", typeId: "application" });
+    expect((await call("GET", `/processes?uses=${erp}`)).body.data.map((p: any) => p.name)).toEqual(["Order to cash"]);
+    expect((await call("GET", "/processes?q=cash&status=draft")).body.data).toHaveLength(1);
+    const listed = (await call("GET", "/processes")).body.data.find((p: any) => p.id === order);
+    expect(listed.xml).toBeUndefined();
+    const model = (await call("GET", "/model")).body;
+    expect(model.processes.map((p: any) => p.name).sort()).toEqual(["Order to cash", "Sell and serve"]);
+    expect(model.processes[0].xml).toBeUndefined();
+  });
+
+  it("sends a process for review and publishes it as a numbered version, recorded under the key", async () => {
+    expect((await call("PATCH", `/processes/${order}`, { status: "review", reviewer: "Dana", note: "Check the warehouse lane" })).body).toMatchObject({ status: "review", reviewer: "Dana", reviewNote: "Check the warehouse lane" });
+    const published = (await call("PATCH", `/processes/${order}`, { status: "published", note: "First agreed version" })).body;
+    expect(published).toMatchObject({ status: "published", version: 1 });
+    expect(published.versions).toEqual([expect.objectContaining({ version: 1, publishedBy: "API key: write key", note: "First agreed version" })]);
+    expect(published.versions[0].xml).toBeUndefined();
+    const again = (await call("PATCH", `/processes/${order}`, { steps: [{ id: "a", name: "Check and ship", type: "userTask" }], status: "published", note: "Simpler" })).body;
+    expect(again.version).toBe(2);
+    expect(again.xml).toContain("Check and ship");
+    const stored = (await db.query<{ data: any }>("select data from public.process_models where id = $1", [order])).rows[0].data;
+    expect(stored.versions.map((v: any) => v.version)).toEqual([2, 1]);
+    expect(stored.versions[1].xml).toContain("Ship the goods");
+    const audit = (await db.query<{ action: string; actor_name: string }>("select action, actor_name from public.audit_log where entity = 'process' and entity_id = $1 order by id", [order])).rows;
+    expect(audit.map((a) => a.action)).toEqual(["added", "changed", "changed", "sent for review", "published version 1", "published version 2"]);
+    expect(new Set(audit.map((a) => a.actor_name))).toEqual(new Set(['API key "write key"']));
+  });
+
+  it("lets only a write key without a domain limit change processes", async () => {
+    expect((await call("POST", "/processes", { name: "X" }, keys.read)).body.error.code).toBe("read_only");
+    expect((await call("GET", `/processes/${order}`, undefined, keys.read)).status).toBe(200);
+    const propose = (await as("olivia", (q) => q("select * from public.create_api_key($1, 'assistant', 'propose')", [workspace])))[0].key;
+    const refused = await call("PATCH", `/processes/${order}`, { name: "Renamed" }, propose);
+    expect(refused).toMatchObject({ status: 403, body: { error: { code: "propose_only" } } });
+    expect(refused.body.error.message).toMatch(/write access/);
+    const domain = (await call("POST", "/objects", { name: "Sales domain", typeId: "domain" })).body.id;
+    const limited = (await as("olivia", (q) => q("select * from public.create_api_key($1, 'limited', 'write')", [workspace])))[0];
+    await as("olivia", (q) => q("select public.set_api_key_domains($1, $2)", [limited.id, [domain]]));
+    expect((await call("POST", "/processes", { name: "X" }, limited.key)).body.error.code).toBe("outside_limit");
+    expect((await call("GET", `/processes/${order}`, undefined, keys.other)).status).toBe(404);
+  });
+
+  it("deletes a process the way the app does: what was inside moves up", async () => {
+    const inner = (await call("POST", "/processes", { name: "Pick", parentId: order, level: 3 })).body.id;
+    expect((await call("DELETE", `/processes/${order}`)).status).toBe(204);
+    expect((await call("GET", `/processes/${order}`)).status).toBe(404);
+    expect((await call("GET", `/processes/${inner}`)).body.parentId).toBe(area);
   });
 });

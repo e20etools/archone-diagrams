@@ -126,7 +126,7 @@ describe("tools", () => {
     expect((await tool("may_connect", { source: "Ledger", target: "Nowhere" })).structuredContent.answer).toBe("unknown");
     expect((await tool("may_connect", { source: "Ledger" })).isError).toBe(true);
     const listed = (await rpc("tools/list")).body.result.tools;
-    expect(listed).toHaveLength(18);
+    expect(listed).toHaveLength(24);
     expect(listed.find((t: { name: string }) => t.name === "may_connect").annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false });
   });
 
@@ -208,5 +208,74 @@ describe("tools", () => {
     expect((await tool("propose_changes", { title: "T", objects: [{ name: "A" }] }, { key: keys.read })).isError).toBe(true);
     const listed = (await rpc("tools/list")).body.result.tools.find((t: { name: string }) => t.name === "propose_changes");
     expect(listed.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: false });
+  });
+});
+
+describe("processes", () => {
+  let order = "";
+  let erp = "";
+  it("lets an assistant with a write key create a process from its steps", async () => {
+    erp = (await tool("create_object", { name: "Warehouse system", typeId: "application" })).structuredContent.id;
+    const made = await tool("create_process", {
+      name: "Order to cash",
+      owner: "Head of Sales",
+      lanes: ["Sales", "Warehouse"],
+      steps: [
+        { id: "check", name: "Check the order", type: "userTask", lane: "Sales", minutes: 20 },
+        { id: "pick", name: "Pick and pack", type: "manualTask", lane: "Warehouse", minutes: 50 },
+        { id: "invoice", name: "Send the invoice", type: "sendTask", lane: "Sales" },
+      ],
+    });
+    expect(made.isError).toBe(false);
+    order = made.structuredContent.id;
+    expect(made.content[0].text).toMatch(/^Created\.\nOrder to cash \(draft\), owned by Head of Sales\./);
+    expect(made.structuredContent.steps.map((s: { name: string; doneBy: string }) => `${s.name}/${s.doneBy}`)).toEqual(["Check the order/Sales", "Pick and pack/Warehouse", "Send the invoice/automated"]);
+    expect(made.structuredContent.findings.filter((f: { severity: string }) => f.severity === "error")).toEqual([]);
+  });
+
+  it("reads a process as steps, roles, systems and checks, and finds the processes a system is in", async () => {
+    const before = (await db.query<{ data: any }>("select data from public.process_models where id = $1", [order])).rows[0].data.elements;
+    await tool("update_process", { id: order, kpis: [{ name: "Cycle time", target: "2", actual: "3", unit: "days", better: "lower" }] });
+    await db.query("update public.process_models set data = jsonb_set(data, '{elements}', $2::jsonb) where id = $1", [order, JSON.stringify({ ...before, pick: { ...before.pick, objectIds: [erp] } })]);
+    const read = await tool("get_process", { id: order }, { key: keys.read });
+    expect(read.isError).toBe(false);
+    expect(read.structuredContent.steps[1]).toMatchObject({ name: "Pick and pack", lane: "Warehouse", systems: ["Warehouse system"], minutes: { mode: 50 } });
+    expect(read.content[0].text).toContain("2. Pick and pack [pick]: manualTask; by Warehouse; 50 min (25 to 100); uses Warehouse system");
+    expect(read.content[0].text).toContain("Measures: Cycle time 3 (target 2 days).");
+    const using = await tool("list_processes", { uses: erp }, { key: keys.read });
+    expect(using.structuredContent.data.map((p: { name: string }) => p.name)).toEqual(["Order to cash"]);
+    expect((await tool("list_processes", { search: "nothing like it" }, { key: keys.read })).structuredContent.data).toEqual([]);
+  });
+
+  it("answers what-if questions by simulation, saving nothing", async () => {
+    const asked = await tool("simulate_process", { id: order, cases: 200, arrivalMinutes: 30, people: { Warehouse: 2 }, faster: { "Check the order": 0.5, "No such step": 2 } }, { key: keys.read });
+    expect(asked.isError).toBe(false);
+    const r = asked.structuredContent;
+    expect(r.asIs.completed).toBe(200);
+    expect(r.asIs.bottleneck).toBe("Pick and pack");
+    expect(r.whatIf.averageHours).toBeLessThan(r.asIs.averageHours);
+    expect(r.change.averageTime).toMatch(/^-\d+%$/);
+    expect(r.notFound).toEqual(["No such step"]);
+    expect(asked.content[0].text).toContain("With the change:");
+    const stored = (await db.query<{ data: any }>("select data from public.process_models where id = $1", [order])).rows[0].data;
+    expect(stored.scenarios).toEqual([]);
+  });
+
+  it("publishes, refuses steps that lead nowhere before asking the database, and keeps other keys out", async () => {
+    const published = await tool("update_process", { id: order, status: "published", note: "Agreed with sales" });
+    expect(published.structuredContent).toMatchObject({ status: "published", version: 1 });
+    const before = calls;
+    const bad = await tool("create_process", { name: "Broken", steps: [{ id: "a", name: "A", type: "task" }], flows: [{ from: "a", to: "nowhere" }] });
+    expect(bad).toMatchObject({ isError: true });
+    expect(bad.content[0].text).toMatch(/Flow 1 has to join two steps/);
+    expect(calls).toBe(before);
+    const proposeOnly = await tool("create_process", { name: "Sneaky" }, { key: keys.propose });
+    expect(proposeOnly.isError).toBe(true);
+    expect(proposeOnly.content[0].text).toMatch(/write access/);
+    const listed = (await rpc("tools/list")).body.result.tools;
+    const hints = Object.fromEntries(listed.map((t: { name: string; annotations: unknown }) => [t.name, t.annotations]));
+    expect(hints.simulate_process).toMatchObject({ readOnlyHint: true });
+    expect(hints.delete_process).toMatchObject({ readOnlyHint: false, destructiveHint: true });
+    expect((await tool("delete_process", { id: order })).content[0].text).toBe("Done.");
   });
 });

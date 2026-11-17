@@ -197,7 +197,12 @@ An AI assistant that speaks the Model Context Protocol connects to
 `Authorization: Bearer <key>`. A read key gives it seven tools to read the model and
 `list_proposals`; a propose key adds `propose_changes`; a write key adds seven more to
 create, change and delete objects and relationships and to create diagrams. Any key can
-ask `may_connect` and `show_diagram`. 18 tools.
+ask `may_connect` and `show_diagram`. For business processes, any key can use `list_processes`
+(with `uses` for the processes a system takes part in), `get_process` (the steps in order, who does
+them, how long they take, the systems they use, the decisions and the checks) and `simulate_process`
+(what if: more people in a role, a faster step, other shares at a decision, side by side; nothing is
+saved); a write key adds `create_process` (from a list of steps, laid out as BPMN), `update_process`
+(including review and publishing) and `delete_process`. 24 tools.
 
 - It is the REST API under another protocol: the same database function answers, so the
   key's rights, the 300-a-minute limit, webhooks and the audit log apply unchanged. An
@@ -287,9 +292,10 @@ curl -X POST -H "Authorization: Bearer ark_..." -H "Content-Type: application/js
   https://<your-project>.supabase.co/functions/v1/api/v1/objects
 ```
 
-`/objects`, `/relationships` and `/diagrams` each take GET (list, with filters and a cursor),
-POST, and GET, PATCH and DELETE on `/{id}`. `/model` returns everything in one reply, and
-`/openapi.json` describes the API for tools (no key needed). Things to know:
+`/objects`, `/relationships`, `/diagrams` and `/processes` each take GET (list, with filters and a
+cursor), POST, and GET, PATCH and DELETE on `/{id}`. `/model` returns everything in one reply
+(processes without their BPMN files), and `/openapi.json` describes the API for tools (no key
+needed). Things to know:
 
 - Every rule of the API is in the database function `api_request()`; the Edge Function only
   passes requests to it. It uses the public key, never the `service_role` key.
@@ -317,7 +323,7 @@ receives one POST:
 ```
 
 - The body lists ids, not contents; fetch what you need through the API. A box moved on a
-  diagram is reported as a change to that diagram.
+  diagram is reported as a change to that diagram, and a changed process has `"resource": "processes"`.
 - `X-ArchONE-Signature` is `sha256=` followed by the HMAC-SHA256 of the exact body, keyed
   with the secret shown once when the webhook was added. Check it before trusting a delivery.
 - Deliveries are sent by Supabase's `pg_net` extension, once, with a 5 second timeout. There
@@ -1258,6 +1264,34 @@ sent for review, published version N, back to draft, retired and deleted, withou
 scenario starts with the processes of its workspace, and emptying the bin removes deleted processes
 (20261117160000). There is no execution engine: processes are modelled, governed and analysed here,
 and their BPMN and DMN files run in an engine of your choice.
+
+**Processes through the API and MCP** (migration 20261118090000). `GET /processes` lists the
+landscape without the BPMN files, filtered by `status`, `category`, `level`, `parent` (`none` for the
+top), `owner`, `q`, `updatedSince`, and `uses=<object id>` for the processes whose steps use a
+system. `GET /processes/{id}` returns the BPMN file, the step details, KPIs, risks, decision tables,
+the published versions (without their files) and the names of the objects the steps use.
+
+```bash
+curl -X POST -H "Authorization: Bearer ark_..." -H "Content-Type: application/json" \
+  -d '{"name":"Refunds","lanes":["Service desk","Finance"],
+       "steps":[{"id":"check","name":"Check the request","type":"userTask","lane":"Service desk","minutes":10},
+                {"id":"pay","name":"Pay the refund","type":"serviceTask","lane":"Finance"}]}' \
+  https://<your-project>.supabase.co/functions/v1/api/v1/processes
+```
+
+- A process can be sent as `steps` and `flows` (without flows the steps follow one another), and the
+  API lays it out as BPMN with its lanes, the same way the app does; or as a BPMN 2.0 file in `xml`,
+  which must carry its diagram. A new process at level 2 or below starts with a start, a step and an
+  end; an area or a group has no model.
+- `PATCH` changes the fields sent. `"status": "review"` (with `reviewer`), `"published"` (the next
+  version, with a `note`; the ten latest are kept), `"retired"` or `"draft"` moves it along, as the
+  buttons in the app do. `kpis` and `risks` replace their lists; `elements` replaces the step details.
+- Only a key with write access changes processes. A propose key cannot (proposals cover objects and
+  relationships), and neither can a write key limited to domains, since a process is not inside a
+  domain. Every change is in the audit log under the key's name.
+- Everything is checked in the database and stored in the shape the app keeps; the app also reads
+  every stored process with care, so a damaged part (one step's details, one KPI) is left out instead
+  of the whole process.
 
 ### Flows: a use case, step by step
 

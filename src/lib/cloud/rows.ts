@@ -1,3 +1,4 @@
+import { repairProcess } from "../bpm/repair";
 import type { Adr, AiPolicy, Branding, CustomReport, CustomRule, DiagramArchive, LibraryItem, WizardConfig, SavedTemplate, Flow, ModelLink, ModelObject, NodePlacement, Notation, Proposal, Relationship, ProcessModel } from "../types";
 import { nodeKey, splitNodeKey, type DiagramMeta, type TableName } from "./tables";
 
@@ -265,7 +266,8 @@ export function fromRow(table: TableName, row: Row): { key: string; value: unkno
     case "aiPolicy":
       return { key, value: row.data as AiPolicy };
     case "processes":
-      return { key, value: row.data as ProcessModel };
+      // Written by the app, the API and older versions: read with care.
+      return { key, value: repairProcess(key, row.data) as ProcessModel };
   }
 }
 
