@@ -8,6 +8,7 @@ import { BasicInformation, ComponentField } from "@/components/BasicInformation"
 import { TypeIcon } from "@/components/icons";
 import { componentsIn, profileOf } from "@/lib/library";
 import { PROTOCOLS, protocolByName, protocolLabel } from "@/lib/library/protocols";
+import { networkLink } from "@/lib/networkLinks";
 import { Badge, Button, CommitInput, Field, IconButton, Input, Select, formatDateTime } from "@/components/ui";
 import { CATEGORY_INFO, LIFECYCLE_INFO, OBJECT_TYPES, RELATION_KIND_INFO, objectType, type Category } from "@/lib/catalog";
 import { allOwners, diagramsUsing, possibleParents, protocolsOf, relationshipsOf, setProtocols, updateObject, updateRelationship } from "@/lib/model";
@@ -631,6 +632,18 @@ export function ConnectionProperties({ ws, relationship }: { ws: Workspace; rela
               <option key={n} value={n} />
             ))}
           </datalist>
+          {relationship.network && (
+            <span className="mt-1 flex items-center gap-1.5 text-[11px] text-ink-soft" data-network-shown={networkLink(relationship.network)?.name ?? ""}>
+              {networkLink(relationship.network) ? (
+                <>
+                  <span className="h-1 w-4 rounded-full" style={{ background: networkLink(relationship.network)!.color }} />
+                  The line is drawn in the {networkLink(relationship.network)!.name} colour
+                </>
+              ) : (
+                "Not a kind the library knows, so the line keeps its usual colour"
+              )}
+            </span>
+          )}
         </Field>
         <Field label="Encrypted">
           <Select value={relationship.encrypted ?? ""} aria-label="Encrypted" onChange={(e) => apply((w) => updateRelationship(w, relationship.id, { encrypted: (e.target.value || undefined) as "yes" | "no" | undefined }))}>

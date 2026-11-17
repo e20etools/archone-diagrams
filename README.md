@@ -994,6 +994,24 @@ protocols and ports (LDAPS 636, Kerberos 88, Oracle 1521, Kafka over TLS 9093, I
 boxes stand for the network, identity and backup diagrams. Every object is tagged
 enterprise-sample. An empty workspace offers it on the Diagrams page too.
 
+### Colours for network connections
+
+Every kind of network connection in the library (54 of them, from LAN and MPLS to LoRaWAN and SIP
+trunks) has its own colour. The family sets the hue so the picture reads at a glance: local and
+data centre links are blue, storage and compute fabrics violet, carrier WAN links teal, the
+Internet and broadband red and orange, encrypted tunnels green, cloud connections amber,
+wireless and mobile pink, industrial links brown, and voice and legacy links grey. Each kind
+has its own shade within its family.
+
+- A line whose relationship says what it "Runs over" is drawn in that network's colour, a
+  little thicker, and its label carries the colour too. The name is matched the way people
+  write it: "MPLS VPN" is MPLS, "VPN" a site-to-site VPN, "4G" LTE / 4G. A name the library does
+  not know keeps the usual grey, and the connection panel says so.
+- A box that stands for a network (dragged from Network connections) takes the same colour.
+- The canvas shows a "Network links" legend for the networks the diagram draws.
+- The library shows each kind's icon in its colour; the Diagrams cards, SVG and draw.io exports
+  use the colours too.
+
 ### Network zones, connections, integrations and diagram boxes
 
 Four more sections in the library:

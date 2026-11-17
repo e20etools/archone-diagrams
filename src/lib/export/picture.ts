@@ -6,6 +6,7 @@ import { visibleEdges } from "../views";
 import { protocolsOf } from "../model";
 import { protocolLabel } from "../library/protocols";
 import { zonesOf } from "../zones";
+import { networkLink, objectNetwork } from "../networkLinks";
 
 /**
  * A diagram drawn from the model rather than from the screen: boxes where the diagram puts
@@ -36,6 +37,9 @@ export interface PictureEdge {
   label: string;
   kind: string;
   flow: "out" | "in" | "both";
+  /** The colour of the network it runs over, when it names one we know. */
+  color?: string;
+  network?: string;
 }
 export interface Picture {
   title: string;
@@ -82,7 +86,7 @@ export function diagramPicture(ws: Workspace, diagram: Diagram): Picture {
       ...Object.entries(o.fields ?? {}).map(([label, value]) => ({ label, value: String(value) })),
       ...(o.links ?? []).map((l) => ({ label: l.label || "Link", value: l.url })),
     ].filter((d) => d.value.trim());
-    return { id, x: p.x - minX + PAD, y: p.y - minY + PAD, w: NODE_W, h: NODE_H, name: o.name, subtitle, color: CATEGORY_INFO[type.category]?.color ?? "#2447D6", details };
+    return { id, x: p.x - minX + PAD, y: p.y - minY + PAD, w: NODE_W, h: NODE_H, name: o.name, subtitle, color: objectNetwork(o)?.color ?? CATEGORY_INFO[type.category]?.color ?? "#2447D6", details };
   });
   const byId = new Map(nodes.map((n) => [n.id, n]));
   const edges: PictureEdge[] = [];
@@ -95,7 +99,9 @@ export function diagramPicture(ws: Workspace, diagram: Diagram): Picture {
     const rel = e.implied ? undefined : ws.relationships[e.relationshipIds[0]];
     const carried = rel ? protocolsOf(rel).slice(0, 2).map(protocolLabel).join(", ") : "";
     const label = [e.label || RELATION_KIND_INFO[e.kind]?.label || "", carried].filter(Boolean).join(" · ");
-    edges.push({ id: e.id, from: e.sourceId, to: e.targetId, x1, y1, x2, y2, label, kind: e.kind, flow: rel?.flow ?? "out" });
+    const networks = e.relationshipIds.map((id) => networkLink(ws.relationships[id]?.network));
+    const network = networks[0] && networks.every((n) => n === networks[0]) ? networks[0] : null;
+    edges.push({ id: e.id, from: e.sourceId, to: e.targetId, x1, y1, x2, y2, label, kind: e.kind, flow: rel?.flow ?? "out", ...(network ? { color: network.color, network: network.name } : {}) });
   }
   // Zones around their boxes, inner ones first so an outer zone can take in an inner one.
   const zoneFrames = new Map<string, { x: number; y: number; w: number; h: number }>();
@@ -182,7 +188,7 @@ export function pictureSvg(p: Picture, options: SvgOptions = {}): string {
     const ends = plain ? ` stroke-dasharray="4 4"` : `${e.flow !== "in" ? ` marker-end="${marker}"` : ""}${e.flow !== "out" ? ` marker-start="${marker}"` : ""}`;
     // Inbound traffic moves from the target back to the source.
     const moving = options.dash !== undefined && !plain ? ` stroke-dasharray="7 6" stroke-dashoffset="${e.flow === "in" ? options.dash : -options.dash}"` : "";
-    out.push(`<line x1="${e.x1.toFixed(1)}" y1="${e.y1.toFixed(1)}" x2="${e.x2.toFixed(1)}" y2="${e.y2.toFixed(1)}" stroke="${on ? "#E0662B" : "#8A95A8"}" stroke-width="${on ? 3 : 1.4}"${on ? "" : moving}${ends}/>`);
+    out.push(`<line x1="${e.x1.toFixed(1)}" y1="${e.y1.toFixed(1)}" x2="${e.x2.toFixed(1)}" y2="${e.y2.toFixed(1)}" stroke="${on ? "#E0662B" : e.color ?? "#8A95A8"}" stroke-width="${on ? 3 : e.color ? 2.2 : 1.4}"${on ? "" : moving}${ends}/>`);
     if (e.label) {
       const mx = (e.x1 + e.x2) / 2;
       const my = (e.y1 + e.y2) / 2;

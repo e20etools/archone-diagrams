@@ -4,6 +4,7 @@ import { DRAG_MIME, type DragItem } from "@/components/canvas/DiagramCanvas";
 import { PROTOCOLS, protocolLabel, searchProtocols, type ProtocolInfo } from "@/lib/library/protocols";
 import { LibraryIcon } from "@/components/icons";
 import { Input, Select } from "@/components/ui";
+import { networkLink } from "@/lib/networkLinks";
 import { LIBRARY_SECTIONS, PROVIDERS, componentsIn, providerById, searchLibrary, sectionById, type LibraryComponent } from "@/lib/library";
 
 /** "general" or a provider id. */
@@ -22,6 +23,8 @@ const drag = (c: LibraryComponent) => (e: DragEvent) => {
 export function ComponentTile({ component, onPick, selected, draggable = true, showSection = false }: { component: LibraryComponent; onPick: (c: LibraryComponent) => void; selected?: boolean; draggable?: boolean; showSection?: boolean }) {
   const section = sectionById(component.sectionId);
   const provider = providerById(component.provider);
+  // Each kind of network connection has its own colour, the one its lines take in a diagram.
+  const network = component.sectionId === "connections" ? networkLink(component.name) : null;
   return (
     <button
       type="button"
@@ -30,10 +33,11 @@ export function ComponentTile({ component, onPick, selected, draggable = true, s
       onClick={() => onPick(component)}
       title={`${component.name}${provider ? `, ${provider.label}` : ""}. ${section?.label ?? ""}`}
       data-component={component.id}
+      data-network-color={network?.color}
       aria-pressed={selected}
       className={`group flex items-center gap-2 min-h-9 px-2 py-1 rounded-md border text-left text-[13px] ${draggable ? "cursor-grab active:cursor-grabbing" : ""} ${selected ? "border-blueprint bg-blueprint-soft" : "border-line hover:border-blueprint hover:bg-blueprint-soft"}`}
     >
-      <span className="shrink-0" style={{ color: section?.color }}>
+      <span className="shrink-0" style={{ color: network?.color ?? section?.color }}>
         <LibraryIcon name={component.icon} size={16} />
       </span>
       <span className="min-w-0">

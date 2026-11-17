@@ -9,6 +9,7 @@ import {
   Handle,
   MarkerType,
   MiniMap,
+  Panel,
   Position,
   ReactFlow,
   ReactFlowProvider,
@@ -22,7 +23,7 @@ import {
   type NodeChange,
   type NodeProps,
 } from "@xyflow/react";
-import { SquareDashed, MessageSquare } from "lucide-react";
+import { ChevronDown, Cable, SquareDashed, MessageSquare } from "lucide-react";
 import { memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type DragEvent, type Ref } from "react";
 import { TypeIcon } from "@/components/icons";
 import { LIFECYCLE_INFO, RELATION_KIND_INFO, objectType, ownerColor, typeColor } from "@/lib/catalog";
@@ -33,6 +34,7 @@ import { componentSubtitle } from "@/lib/library";
 import { childrenOf, protocolsOf } from "@/lib/model";
 import type { Diagram, ModelObject, Workspace } from "@/lib/types";
 import { scopeMembers, visibleEdges } from "@/lib/views";
+import { familyLabel, networkLink, objectNetwork, type NetworkLink } from "@/lib/networkLinks";
 
 export type Highlight = "focus" | "up" | "down" | "dim";
 export type DragItem = { kind: "type"; id: string } | { kind: "object"; id: string } | { kind: "component"; id: string };
@@ -209,7 +211,7 @@ const LabelledEdge = memo(function LabelledEdge({
   data,
   selected,
   interactionWidth,
-}: EdgeProps<Edge<{ slot: number; dim?: boolean; title?: string }>>) {
+}: EdgeProps<Edge<{ slot: number; dim?: boolean; title?: string; network?: string; networkColor?: string }>>) {
   const [path] = getSmoothStepPath({ sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition, borderRadius: 8 });
   const slot = data?.slot ?? 0;
   const vertical = targetPosition === Position.Top;
@@ -222,7 +224,13 @@ const LabelledEdge = memo(function LabelledEdge({
       <BaseEdge id={id} path={path} markerStart={markerStart} markerEnd={markerEnd} style={style} interactionWidth={interactionWidth} />
       {label && (
         <EdgeLabelRenderer>
-          <div className="edge-label" data-selected={selected || undefined} title={data?.title} style={{ transform, opacity: data?.dim ? 0.25 : undefined }}>
+          <div
+            className="edge-label"
+            data-selected={selected || undefined}
+            data-network={data?.network}
+            title={data?.title}
+            style={{ transform, opacity: data?.dim ? 0.25 : undefined, ...(data?.networkColor ? { ["--network-color" as string]: data.networkColor } : {}) }}
+          >
             {label}
           </div>
         </EdgeLabelRenderer>
@@ -251,7 +259,39 @@ const edgeTypes = { labelled: LabelledEdge };
 function nodeColor(o: ModelObject, colorBy: Diagram["colorBy"]): string {
   if (colorBy === "lifecycle") return LIFECYCLE_INFO[o.lifecycle].color;
   if (colorBy === "owner") return ownerColor(o.owner);
-  return typeColor(o.typeId);
+  // A box standing for a network takes that network's colour, the same as the lines that run over it.
+  return objectNetwork(o)?.color ?? typeColor(o.typeId);
+}
+
+/** The network a line runs over: its relationship's, or the one all the rolled-up relationships share. */
+function edgeNetwork(ws: Workspace, relationshipIds: string[]): NetworkLink | null {
+  const found = relationshipIds.map((id) => networkLink(ws.relationships[id]?.network));
+  return found[0] && found.every((n) => n === found[0]) ? found[0] : null;
+}
+
+/** Which colour stands for which network, for the networks this diagram draws. */
+function NetworkLegend({ networks }: { networks: { link: NetworkLink; lines: number; boxes: number }[] }) {
+  const [open, setOpen] = useState(networks.length <= 8);
+  return (
+    <div className="network-legend nodrag nopan" data-network-legend>
+      <button type="button" className="network-legend__head" aria-expanded={open} onClick={() => setOpen(!open)}>
+        <Cable size={13} aria-hidden />
+        Network links
+        <span className="network-legend__count">{networks.length}</span>
+        <ChevronDown size={13} aria-hidden className={open ? "rotate-180" : undefined} />
+      </button>
+      {open && (
+        <ul>
+          {networks.map(({ link, lines, boxes }) => (
+            <li key={link.name} data-network-kind={link.name} title={`${familyLabel(link.family)}: ${[lines && `${lines} ${lines === 1 ? "line" : "lines"}`, boxes && `${boxes} ${boxes === 1 ? "box" : "boxes"}`].filter(Boolean).join(", ")}`}>
+              <span className="network-legend__swatch" style={{ background: link.color }} />
+              {link.name}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
 }
 
 function Inner({
@@ -376,7 +416,8 @@ function Inner({
     const lit = spotlight ? new Set(spotlight.edges) : null;
     return visibleEdges(ws, diagram).map((e) => {
         const inStep = lit?.has(e.id) ?? false;
-        const color = inStep ? "#2447d6" : e.implied ? "#93a0b4" : "#5b6b84";
+        const network = edgeNetwork(ws, e.relationshipIds);
+        const color = inStep ? "#2447d6" : network ? network.color : e.implied ? "#93a0b4" : "#5b6b84";
         // Which way traffic goes, and what it carries, from the relationship behind the line.
         const rel = e.implied ? undefined : ws.relationships[e.relationshipIds[0]];
         const flow = rel?.flow ?? "out";
@@ -399,19 +440,21 @@ function Inner({
           data: {
             slot,
             dim: !!lit && !inStep,
+            network: network?.name,
+            networkColor: network?.color,
             title: [RELATION_KIND_INFO[e.kind].label, flow === "both" ? "both ways" : flow === "in" ? "inbound" : "outbound", ...carried.map(protocolLabel), rel?.network ? `over ${rel.network}` : "", rel?.encrypted === "yes" ? "encrypted" : rel?.encrypted === "no" ? "not encrypted" : ""].filter(Boolean).join(" · "),
           },
-          className: [lit ? (inStep ? "flow-edge" : "dim-edge") : "", !e.implied && !lit ? `traffic traffic-${flow}` : ""].filter(Boolean).join(" ") || undefined,
+          className: [lit ? (inStep ? "flow-edge" : "dim-edge") : "", !e.implied && !lit ? `traffic traffic-${flow}` : "", network ? "network-edge" : ""].filter(Boolean).join(" ") || undefined,
           animated: inStep,
           ...(arrow
             ? {
                 [arrow.reversed ? "markerStart" : "markerEnd"]: { type: arrow.head === "open" ? MarkerType.Arrow : MarkerType.ArrowClosed, width: 16, height: 16, color },
-                style: { stroke: color, strokeDasharray: e.implied ? "6 4" : arrow.dashed ? "4 4" : undefined },
+                style: { stroke: color, strokeDasharray: e.implied ? "6 4" : arrow.dashed ? "4 4" : undefined, ...(network ? { strokeWidth: 2.25 } : {}) },
               }
             : {
                 ...(flow !== "in" ? { markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16, color } } : {}),
                 ...(flow !== "out" ? { markerStart: { type: MarkerType.ArrowClosed, width: 16, height: 16, color } } : {}),
-                style: { stroke: color, strokeDasharray: e.implied ? "6 4" : undefined },
+                style: { stroke: color, strokeDasharray: e.implied ? "6 4" : undefined, ...(network ? { strokeWidth: 2.25 } : {}) },
               }),
           selected: selection?.edgeId === e.id,
           deletable: false,
@@ -420,6 +463,22 @@ function Inner({
         };
       });
   }, [ws, diagram, selection?.edgeId, spotlight]);
+
+  // The networks drawn here, by lines that run over them or boxes that stand for them, for the legend.
+  const networks = useMemo(() => {
+    const found = new Map<string, { link: NetworkLink; lines: number; boxes: number }>();
+    const entry = (link: NetworkLink) => found.get(link.name) ?? found.set(link.name, { link, lines: 0, boxes: 0 }).get(link.name)!;
+    for (const e of edges) {
+      const name = (e.data as { network?: string } | undefined)?.network;
+      const link = name ? networkLink(name) : null;
+      if (link) entry(link).lines++;
+    }
+    for (const id of Object.keys(diagram.nodes)) {
+      const link = objectNetwork(ws.objects[id]);
+      if (link) entry(link).boxes++;
+    }
+    return [...found.values()].sort((a, b) => b.lines + b.boxes - (a.lines + a.boxes) || a.link.name.localeCompare(b.link.name));
+  }, [edges, ws, diagram.nodes]);
 
   const onNodesChange = useCallback((changes: NodeChange[]) => {
     // Selection and removal are decided by the page, not by React Flow.
@@ -504,6 +563,11 @@ function Inner({
       >
         <Background variant={BackgroundVariant.Dots} gap={24} size={1.2} color="var(--color-dots)" />
         <Controls showInteractive={false} position="bottom-left" />
+        {networks.length > 0 && (
+          <Panel position="bottom-left" style={{ marginLeft: 56 }}>
+            <NetworkLegend networks={networks} />
+          </Panel>
+        )}
         {minimap && <MiniMap pannable zoomable position="bottom-right" nodeColor={(n) => (n.id === BOUNDARY_ID ? "transparent" : "var(--color-dots)")} maskColor="color-mix(in srgb, var(--color-canvas) 72%, transparent)" />}
       </ReactFlow>
     </div>

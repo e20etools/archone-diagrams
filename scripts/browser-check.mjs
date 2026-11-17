@@ -172,6 +172,21 @@ try {
       movingBefore > 0 && rel.flow === "both" && rel.protocols?.map((p) => `${p.name}:${p.port}`).join(",") === "LDAPS:636,HTTP:80" && drawn.both && drawn.markers && labelText.includes("LDAPS 636/TCP") && warning,
       JSON.stringify({ movingBefore, flow: rel.flow, protocols: rel.protocols, drawn, warning }),
     );
+    // The network it runs over gives the line its colour, explained in a legend on the canvas.
+    const runsOver = '[data-connection-properties] input[aria-label="Runs over"]';
+    await page.click(runsOver);
+    await page.type(runsOver, "mpls vpn");
+    await page.keyboard.press("Tab");
+    await page.waitForSelector(`.react-flow__edge.network-edge[data-id="${edgeId}"]`);
+    const stroke = await page.$eval(`.react-flow__edge[data-id="${edgeId}"] .react-flow__edge-path`, (p) => getComputedStyle(p).stroke);
+    const legend = await page.$$eval("[data-network-kind]", (items) => items.map((i) => i.getAttribute("data-network-kind")));
+    const said = await page.$eval("[data-network-shown]", (e) => e.getAttribute("data-network-shown"));
+    await shot(page, "02c-network-colour");
+    check("a line takes the colour of the network it runs over, named in a legend", stroke === "rgb(14, 116, 144)" && legend.join() === "MPLS" && said === "MPLS", `${stroke}; ${legend.join()}; ${said}`);
+    await page.click(runsOver, { clickCount: 3 });
+    await page.keyboard.press("Backspace");
+    await page.keyboard.press("Tab");
+    await page.waitForFunction(() => !document.querySelector("[data-network-legend]"));
     await page.$eval('[data-connection-properties] [data-flow="out"]', (b) => b.click());
     await page.evaluate(() => document.querySelectorAll('[data-connection-properties] [aria-label^="Remove "]').forEach((b) => b.click()));
     await page.evaluate(() => document.querySelector('[data-connection-properties] [aria-label^="Remove "]')?.click());

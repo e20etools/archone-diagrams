@@ -46,7 +46,7 @@ export const DiagramThumbnail = memo(function DiagramThumbnail({ ws, diagram }: 
         <rect x={picture.boundary.x} y={picture.boundary.y} width={picture.boundary.w} height={picture.boundary.h} rx={16} fill="none" className="stroke-ink-faint" strokeWidth={1} strokeDasharray="4 3" vectorEffect="non-scaling-stroke" />
       )}
       {picture.edges.map((e) => (
-        <line key={e.id} x1={e.x1} y1={e.y1} x2={e.x2} y2={e.y2} className="stroke-ink-faint" strokeWidth={1.1} strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+        <line key={e.id} x1={e.x1} y1={e.y1} x2={e.x2} y2={e.y2} className={e.color ? undefined : "stroke-ink-faint"} stroke={e.color} strokeWidth={e.color ? 1.5 : 1.1} strokeLinecap="round" vectorEffect="non-scaling-stroke" />
       ))}
       {picture.nodes.map((n) => {
         const o = objects[n.id];
