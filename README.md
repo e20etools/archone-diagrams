@@ -1199,7 +1199,10 @@ the cloud and cannot reach a directory inside a private network. The same goes f
 private network: it has to be reachable from the internet over https.
 
 To deploy the function with the Supabase CLI: `supabase functions deploy integrations --no-verify-jwt`
-(it checks each person's sign-in itself). It needs no secrets of its own. The live discovery settings
+(it checks each person's sign-in itself). It needs no secrets of its own. The hosted copy was
+deployed with a one-line index.ts that imports handler.js of one commit of this repository
+through jsDelivr (`https://cdn.jsdelivr.net/gh/e20etools/archone-diagrams@<commit>/supabase/functions/integrations/handler.js`);
+after a change under src/lib/integrations, deploy it again with the new commit. The live discovery settings
 on the server (DISCOVERY_*, below) still work, and a source connected in the workspace is used first.
 
 ### Flows: a use case, step by step
