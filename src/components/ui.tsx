@@ -203,7 +203,7 @@ export function Modal({
     };
   }, [opener]);
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center p-4 bg-ink/35" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+    <div className="fixed inset-0 z-50 grid place-items-center p-4 bg-black/40" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div
         ref={panel}
         role="dialog"
@@ -275,7 +275,7 @@ export function useNotice() {
     return () => clearTimeout(timer);
   }, [notice]);
   const view = notice ? (
-    <div role="status" className="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 rounded-md bg-ink text-white text-sm px-3.5 py-2 shadow-lg">
+    <div role="status" className="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 rounded-md bg-nav text-nav-ink text-sm px-3.5 py-2 shadow-lg">
       {notice}
     </div>
   ) : null;

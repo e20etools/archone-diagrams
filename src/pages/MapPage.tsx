@@ -566,9 +566,9 @@ function DiagramMapView() {
                 fitView
                 fitViewOptions={{ padding: 0.12, maxZoom: 1 }}
               >
-                <Background variant={BackgroundVariant.Dots} gap={24} size={1.2} color="#c3cbd8" />
+                <Background variant={BackgroundVariant.Dots} gap={24} size={1.2} color="var(--color-dots)" />
                 <Controls showInteractive={false} position="bottom-left" />
-                <MiniMap pannable zoomable position="bottom-right" nodeColor={(n) => categoryColor[(n.data as MapNodeData).node.category]} maskColor="rgba(243,245,248,0.7)" />
+                <MiniMap pannable zoomable position="bottom-right" nodeColor={(n) => categoryColor[(n.data as MapNodeData).node.category]} maskColor="color-mix(in srgb, var(--color-canvas) 72%, transparent)" />
               </ReactFlow>
             </MapActions.Provider>
           )}

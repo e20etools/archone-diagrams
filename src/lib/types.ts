@@ -372,6 +372,22 @@ export const customReportSchema = z.object({
 });
 export type CustomReport = z.infer<typeof customReportSchema>;
 
+/** A workspace's branding, set by an owner: its name in the menu, logo, accent colour and default theme. */
+export const brandingSchema = z.object({
+  id: z.literal("workspace"),
+  /** Shown in the menu and the browser tab. */
+  appName: z.string().trim().max(40).default(""),
+  /** A small image as a data URL. */
+  logo: z.string().max(300_000).default(""),
+  /** Overrides the theme's accent colour, as #rrggbb. */
+  accent: z.string().regex(/^#[0-9a-fA-F]{6}$/).or(z.literal("")).default(""),
+  /** The theme for members who have not chosen one. */
+  theme: z.string().max(40).default("blueprint"),
+  font: z.string().max(40).default(""),
+  updatedAt: z.string(),
+});
+export type Branding = z.infer<typeof brandingSchema>;
+
 export const savedTemplateSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -408,6 +424,8 @@ export const workspaceSchema = z.object({
   wizards: z.record(wizardConfigSchema).default({}),
   /** The workspace's own reports. Missing in workspaces saved before they existed. */
   reports: z.record(customReportSchema).default({}),
+  /** The workspace's branding, one record keyed "workspace". Missing in workspaces saved before it existed. */
+  branding: z.record(brandingSchema).default({}),
   updatedAt: z.string(),
 });
 export type Workspace = z.infer<typeof workspaceSchema>;

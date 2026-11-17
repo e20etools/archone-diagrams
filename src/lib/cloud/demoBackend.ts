@@ -197,7 +197,7 @@ export function createDemoBackend(): Backend {
       diagrams: Object.keys(tables.diagrams).length,
       createdBy: me().id,
       createdAt: new Date().toISOString(),
-      tables: { ...(JSON.parse(JSON.stringify(tables)) as Tables), proposals: {}, adrs: {}, rules: {}, templates: {}, wizards: {}, reports: {} },
+      tables: { ...(JSON.parse(JSON.stringify(tables)) as Tables), proposals: {}, adrs: {}, rules: {}, templates: {}, wizards: {}, reports: {}, branding: {} },
     };
     versionsOf(db, workspaceId).unshift(version);
     return version.id;
@@ -440,6 +440,7 @@ export function createDemoBackend(): Backend {
       refuseOutsideCategories(db, workspaceId, change);
       if (Object.keys(change.rules ?? {}).length && roleOf(db, workspaceId, me().id) !== "owner") throw new BackendError("forbidden", "Only an owner can change the workspace's rules.");
       if (Object.keys(change.wizards ?? {}).length && roleOf(db, workspaceId, me().id) !== "owner") throw new BackendError("forbidden", "Only an owner can change the wizard's questions.");
+      if (Object.keys(change.branding ?? {}).length && roleOf(db, workspaceId, me().id) !== "owner") throw new BackendError("forbidden", "Only an owner can change the workspace's branding.");
       logChanges(db, workspaceId, db.rows[workspaceId] ?? emptyTables(), change);
       db.rows[workspaceId] = patchTables(db.rows[workspaceId] ?? emptyTables(), change);
       write(db);
@@ -751,7 +752,7 @@ export function createDemoBackend(): Backend {
       for (const m of db.members.filter((x) => x.workspaceId === workspaceId && canEditRole(x.role))) db.members.push({ workspaceId: scenarioId, userId: m.userId, role: m.role });
       const source = db.rows[workspaceId] ?? emptyTables();
       // A scenario is judged by the same rules as the model it came from.
-      db.rows[scenarioId] = { ...(JSON.parse(JSON.stringify(source)) as Tables), proposals: {}, adrs: {}, rules: JSON.parse(JSON.stringify(source.rules ?? {})) as Tables["rules"], templates: {}, wizards: JSON.parse(JSON.stringify(source.wizards ?? {})) as Tables["wizards"], reports: {} };
+      db.rows[scenarioId] = { ...(JSON.parse(JSON.stringify(source)) as Tables), proposals: {}, adrs: {}, rules: JSON.parse(JSON.stringify(source.rules ?? {})) as Tables["rules"], templates: {}, wizards: JSON.parse(JSON.stringify(source.wizards ?? {})) as Tables["wizards"], reports: {}, branding: JSON.parse(JSON.stringify(source.branding ?? {})) as Tables["branding"] };
       log(db, workspaceId, "scenario", scenarioId, name.trim(), "created");
       log(db, scenarioId, "scenario", scenarioId, name.trim(), "created", { "copied from": db.workspaces[workspaceId].name });
       write(db);

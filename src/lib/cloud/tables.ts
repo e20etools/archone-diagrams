@@ -1,4 +1,4 @@
-import type { Adr, CustomReport, CustomRule, Diagram, SavedTemplate, ModelObject, NodePlacement, Proposal, Relationship, Workspace , WizardConfig } from "../types";
+import type { Adr, Branding, CustomReport, CustomRule, Diagram, SavedTemplate, ModelObject, NodePlacement, Proposal, Relationship, Workspace , WizardConfig } from "../types";
 
 /**
  * The model as flat tables, one entry per database row. The hosted backend stores and syncs
@@ -19,9 +19,10 @@ export interface Tables {
   templates: Record<string, SavedTemplate>;
   wizards: Record<string, WizardConfig>;
   reports: Record<string, CustomReport>;
+  branding: Record<string, Branding>;
 }
 
-export const TABLE_NAMES = ["objects", "relationships", "diagrams", "nodes", "proposals", "adrs", "rules", "templates", "wizards", "reports"] as const;
+export const TABLE_NAMES = ["objects", "relationships", "diagrams", "nodes", "proposals", "adrs", "rules", "templates", "wizards", "reports", "branding"] as const;
 export type TableName = (typeof TABLE_NAMES)[number];
 
 /** A set of row changes. null means the row was deleted. */
@@ -34,12 +35,12 @@ export const splitNodeKey = (key: string): [string, string] => {
   return [key.slice(0, at), key.slice(at + 1)];
 };
 
-export const emptyTables = (): Tables => ({ objects: {}, relationships: {}, diagrams: {}, nodes: {}, proposals: {}, adrs: {}, rules: {}, templates: {}, wizards: {}, reports: {} });
+export const emptyTables = (): Tables => ({ objects: {}, relationships: {}, diagrams: {}, nodes: {}, proposals: {}, adrs: {}, rules: {}, templates: {}, wizards: {}, reports: {}, branding: {} });
 
 // A diagram that did not change keeps the same meta and node objects, so comparing stays cheap.
 const split = new WeakMap<Diagram, { meta: DiagramMeta; nodes: [string, NodePlacement][] }>();
 
-export function toTables(ws: Pick<Workspace, "objects" | "relationships" | "diagrams" | "proposals" | "adrs" | "rules"> & { templates?: Workspace["templates"]; wizards?: Workspace["wizards"]; reports?: Workspace["reports"] }): Tables {
+export function toTables(ws: Pick<Workspace, "objects" | "relationships" | "diagrams" | "proposals" | "adrs" | "rules"> & { templates?: Workspace["templates"]; wizards?: Workspace["wizards"]; reports?: Workspace["reports"]; branding?: Workspace["branding"] }): Tables {
   const diagrams: Record<string, DiagramMeta> = {};
   const nodes: Record<string, NodePlacement> = {};
   for (const diagram of Object.values(ws.diagrams)) {
@@ -52,18 +53,18 @@ export function toTables(ws: Pick<Workspace, "objects" | "relationships" | "diag
     diagrams[diagram.id] = parts.meta;
     for (const [key, placement] of parts.nodes) nodes[key] = placement;
   }
-  return { objects: ws.objects, relationships: ws.relationships, diagrams, nodes, proposals: ws.proposals, adrs: ws.adrs, rules: ws.rules, templates: ws.templates ?? {}, wizards: ws.wizards ?? {}, reports: ws.reports ?? {} };
+  return { objects: ws.objects, relationships: ws.relationships, diagrams, nodes, proposals: ws.proposals, adrs: ws.adrs, rules: ws.rules, templates: ws.templates ?? {}, wizards: ws.wizards ?? {}, reports: ws.reports ?? {}, branding: ws.branding ?? {} };
 }
 
 /** Rebuilds the nested collections. A box whose diagram is missing is dropped. */
-export function fromTables(tables: Tables): Pick<Workspace, "objects" | "relationships" | "diagrams" | "proposals" | "adrs" | "rules" | "templates" | "wizards" | "reports"> {
+export function fromTables(tables: Tables): Pick<Workspace, "objects" | "relationships" | "diagrams" | "proposals" | "adrs" | "rules" | "templates" | "wizards" | "reports" | "branding"> {
   const diagrams: Record<string, Diagram> = {};
   for (const meta of Object.values(tables.diagrams)) diagrams[meta.id] = { ...meta, nodes: {} };
   for (const [key, placement] of Object.entries(tables.nodes)) {
     const [diagramId, objectId] = splitNodeKey(key);
     if (diagrams[diagramId]) diagrams[diagramId].nodes[objectId] = placement;
   }
-  return { objects: tables.objects, relationships: tables.relationships, diagrams, proposals: tables.proposals, adrs: tables.adrs ?? {}, rules: tables.rules ?? {}, templates: tables.templates ?? {}, wizards: tables.wizards ?? {}, reports: tables.reports ?? {} };
+  return { objects: tables.objects, relationships: tables.relationships, diagrams, proposals: tables.proposals, adrs: tables.adrs ?? {}, rules: tables.rules ?? {}, templates: tables.templates ?? {}, wizards: tables.wizards ?? {}, reports: tables.reports ?? {}, branding: tables.branding ?? {} };
 }
 
 /** Deep equality that ignores key order and treats a missing key like undefined (the database reorders JSON keys). */

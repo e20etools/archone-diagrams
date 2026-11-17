@@ -6,7 +6,8 @@ import { MembersCard } from "@/components/cloud/MembersCard";
 import { TrustPageCard } from "@/components/cloud/TrustPageCard";
 import { ReviewSettingsCard } from "@/components/cloud/ReviewSettingsCard";
 import { WizardSettingsCard } from "@/components/WizardSettings";
-import { Badge, Button, CommitInput, Field, Input, Modal, countOf, useNotice } from "@/components/ui";
+import { AppearanceSection, BrandingSection, MonitoringSection, PermissionsMatrix } from "@/components/SettingsSections";
+import { Badge, Button, CommitInput, Field, Input, Modal, countOf, cx, useNotice } from "@/components/ui";
 import { cloudEnabled } from "@/lib/cloud/config";
 import { deleteCurrentWorkspace, errorText, renameCurrentWorkspace, updateMyName, useCanEdit, useSession } from "@/lib/cloud/session";
 import { fetchAiStatus, getAccessCode, setAccessCode, type AiStatus } from "@/lib/ai/client";
@@ -18,10 +19,25 @@ import { parseWorkspace } from "@/lib/repository";
 import { apply, useStore, useWorkspace } from "@/lib/store";
 import type { Workspace } from "@/lib/types";
 
-function Card({ title, text, children }: { title: string; text?: string; children: ReactNode }) {
+/** A group of settings with its own place in the index. */
+function Group({ id, title, text, children }: { id: string; title: string; text?: string; children: ReactNode }) {
+  return (
+    <section id={`settings-${id}`} className="scroll-mt-6 space-y-3" aria-labelledby={`settings-${id}-title`} data-settings-group={id}>
+      <div>
+        <h2 id={`settings-${id}-title`} className="text-lg font-semibold">
+          {title}
+        </h2>
+        {text && <p className="text-[13px] text-ink-soft">{text}</p>}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function Card({ title, text, children }: { title?: string; text?: string; children: ReactNode }) {
   return (
     <section className="rounded-lg border border-line bg-surface px-5 py-4">
-      <h2 className="text-base font-semibold">{title}</h2>
+      {title && <h2 className="text-base font-semibold">{title}</h2>}
       {text && <p className="text-ink-soft mt-0.5">{text}</p>}
       <div className="mt-3.5">{children}</div>
     </section>
@@ -102,35 +118,113 @@ export function SettingsPage() {
     navigate("/");
   };
 
+  const sections: { id: string; label: string; show: boolean }[] = [
+    { id: "general", label: "You and this workspace", show: true },
+    { id: "appearance", label: "Appearance", show: true },
+    { id: "branding", label: "Branding", show: true },
+    { id: "people", label: "People and permissions", show: cloudEnabled },
+    { id: "review", label: "Review and approval", show: cloudEnabled },
+    { id: "integrations", label: "Integrations", show: cloudEnabled },
+    { id: "ai", label: "AI", show: true },
+    { id: "wizard", label: "Diagram wizard", show: true },
+    { id: "monitoring", label: "Monitoring and logs", show: true },
+    { id: "data", label: "Data, backup and reset", show: true },
+  ];
+  const shown = sections.filter((x) => x.show);
+  const [active, setActive] = useState("general");
+  useEffect(() => {
+    const seen = new IntersectionObserver(
+      (entries) => {
+        const top = entries.filter((e) => e.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
+        if (top) setActive(top.target.id.replace("settings-", ""));
+      },
+      { rootMargin: "-10% 0px -70% 0px" },
+    );
+    for (const x of shown) {
+      const el = document.getElementById(`settings-${x.id}`);
+      if (el) seen.observe(el);
+    }
+    return () => seen.disconnect();
+  }, [shown.length]);
+
   return (
-    <div className="max-w-3xl mx-auto px-6 py-7 space-y-4">
-      <div>
-        <h1 className="text-xl font-semibold">Settings</h1>
-        <p className="text-ink-soft mt-0.5">
+    <div className="mx-auto flex max-w-6xl gap-8 px-6 py-7">
+      <nav aria-label="Settings sections" className="sticky top-4 hidden h-fit w-56 shrink-0 lg:block" data-settings-index>
+        <h1 className="mb-3 text-xl font-semibold">Settings</h1>
+        <ul className="space-y-0.5">
+          {shown.map((x) => (
+            <li key={x.id}>
+              <a
+                href={`#settings-${x.id}`}
+                onClick={(e) => {
+                  e.preventDefault();
+                  document.getElementById(`settings-${x.id}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+                  setActive(x.id);
+                }}
+                className={cx("block rounded-md px-2.5 py-1.5 text-[13px]", active === x.id ? "bg-blueprint-soft font-medium text-blueprint-deep" : "text-ink-soft hover:bg-surface hover:text-ink")}
+              >
+                {x.label}
+              </a>
+            </li>
+          ))}
+        </ul>
+      </nav>
+      <div className="min-w-0 flex-1 space-y-8">
+        <div className="lg:hidden">
+          <h1 className="text-xl font-semibold">Settings</h1>
+        </div>
+        <p className="text-ink-soft -mt-4 lg:mt-0">
           {cloudEnabled
             ? "This workspace is saved to your account as you work, and its members see each other's changes as they happen."
             : "This workspace lives in this browser on this device. Download a backup to move it or keep it safe."}
         </p>
-      </div>
 
-      <Card title="You and this workspace">
-        <div className="grid sm:grid-cols-2 gap-3">
-          <Field label="Your name" hint="Recorded as the approver when you accept an AI draft, and shown on shared links.">
-            <CommitInput value={ws.userName} onCommit={saveName} placeholder="For example: Sara Ahmed" maxLength={80} />
-          </Field>
-          <Field label="Workspace name" hint={isOwner ? undefined : "Only an owner can rename the workspace."}>
-            <CommitInput value={ws.name} onCommit={saveWorkspaceName} disabled={!isOwner} maxLength={120} />
-          </Field>
-        </div>
-      </Card>
+        <Group id="general" title="You and this workspace">
+          <Card>
+            <div className="grid sm:grid-cols-2 gap-3">
+              <Field label="Your name" hint="Recorded as the approver when you accept an AI draft, and shown on shared links.">
+                <CommitInput value={ws.userName} onCommit={saveName} placeholder="For example: Sara Ahmed" maxLength={80} />
+              </Field>
+              <Field label="Workspace name" hint={isOwner ? undefined : "Only an owner can rename the workspace."}>
+                <CommitInput value={ws.name} onCommit={saveWorkspaceName} disabled={!isOwner} maxLength={120} />
+              </Field>
+            </div>
+          </Card>
+        </Group>
 
-      {cloudEnabled && <MembersCard />}
-      {cloudEnabled && <ReviewSettingsCard />}
-      {cloudEnabled && <IntegrationsCard />}
-      {cloudEnabled && <TrustPageCard />}
+        <Group id="appearance" title="Appearance" text="Ten themes, each with its own colours, font and moving background. What you choose here is yours; it does not change what others see.">
+          <Card>
+            <AppearanceSection branding={ws.branding?.workspace} />
+          </Card>
+        </Group>
 
-      <WizardSettingsCard />
+        <Group id="branding" title="Branding" text="The workspace's name in the menu, its logo, accent colour, and the theme members start with.">
+          <Card>
+            <BrandingSection canChange={isOwner} />
+          </Card>
+        </Group>
 
+        {cloudEnabled && (
+          <Group id="people" title="People and permissions" text="Who is in this workspace, their role, and what each role may do.">
+            <MembersCard />
+            <Card title="What each role may do">
+              <PermissionsMatrix />
+            </Card>
+          </Group>
+        )}
+        {cloudEnabled && (
+          <Group id="review" title="Review and approval">
+            <ReviewSettingsCard />
+          </Group>
+        )}
+        {cloudEnabled && (
+          <Group id="integrations" title="Integrations" text="Connect other tools through the API, webhooks and MCP, and publish the trust page.">
+            <IntegrationsCard />
+            <TrustPageCard />
+          </Group>
+        )}
+
+        <Group id="ai" title="AI">
       <Card title="AI drafting" text="AI drafts always wait for your review. The key stays on the server and is never sent to the browser.">
         {ai === null ? (
           <p className="text-ink-soft">Checking the server.</p>
@@ -167,8 +261,34 @@ export function SettingsPage() {
             </p>
           </div>
         )}
+        <ul className="mt-4 grid gap-2 text-[13px] sm:grid-cols-2" data-ai-features>
+          {[
+            ["Draft a diagram from text, a picture or your voice", "/ai"],
+            ["Ask questions about the architecture", "/ask"],
+            ["Review what AI proposed before it enters the model", "/ai"],
+            ["Write the architecture document", "/document"],
+          ].map(([label, to]) => (
+            <li key={label} className="rounded-md border border-line px-3 py-2">
+              <a href={to} onClick={(e) => { e.preventDefault(); navigate(to); }} className="text-blueprint hover:underline">
+                {label}
+              </a>
+            </li>
+          ))}
+        </ul>
       </Card>
+        </Group>
 
+        <Group id="wizard" title="Diagram wizard">
+          <WizardSettingsCard />
+        </Group>
+
+        <Group id="monitoring" title="Monitoring and logs" text="How big the workspace is, whether everything is saved, what the checks find, and the latest changes.">
+          <Card>
+            <MonitoringSection />
+          </Card>
+        </Group>
+
+        <Group id="data" title="Data, backup and reset">
       <Card title="Backup" text={`This workspace holds ${size(ws)}.`}>
         <div className="flex flex-wrap gap-2">
           <Button
@@ -229,6 +349,8 @@ export function SettingsPage() {
           </Button>
         </Card>
       )}
+        </Group>
+      </div>
 
       {removing && (
         <Modal

@@ -282,7 +282,8 @@ try {
   await clickText(ben, "Comment", `${panel} button`);
   await inPanel(ben, "1 open");
   check("typing @ offers the members and writes the chosen name into the comment", typed.endsWith("@Vera Viewer ") && (await ben.$eval(`${panel} li[data-thread] span.bg-blueprint-soft`, (e) => e.textContent)) === "@Vera Viewer");
-  check("a box with an open comment is marked on the canvas while comments are open", (await count(ben, ".object-node__comments")) === 1);
+  await ben.waitForSelector(".object-node__comments", { timeout: 3000 }).catch(() => undefined);
+  check("a box with an open comment is marked on the canvas while comments are open", (await count(ben, ".object-node__comments")) === 1, `${await count(ben, ".object-node__comments")} marked`);
   await vera.bringToFront();
   await vera.waitForSelector('button[aria-label="Mentions, 1 new"]', { timeout: 6000 });
   check("a mention reaches the person without a reload", true);

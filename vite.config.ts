@@ -92,6 +92,7 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [react(), tailwindcss(), localAiEndpoint(env)],
     resolve: { alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) } },
+    define: { __BUILD_TIME__: JSON.stringify(new Date().toISOString().slice(0, 16).replace("T", " ") + " UTC") },
     server: { host: "::", port: 8080 },
     preview: { host: "::", port: 8080 },
     build: { chunkSizeWarningLimit: 900 },

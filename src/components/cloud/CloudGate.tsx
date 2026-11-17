@@ -338,7 +338,7 @@ export function CloudGate({ children }: { children: ReactNode }) {
     <>
       {screen}
       {notice && (
-        <div role="status" className="fixed bottom-5 left-1/2 -translate-x-1/2 z-[60] max-w-md rounded-md bg-ink text-white text-sm px-3.5 py-2 shadow-lg">
+        <div role="status" className="fixed bottom-5 left-1/2 -translate-x-1/2 z-[60] max-w-md rounded-md bg-nav text-nav-ink text-sm px-3.5 py-2 shadow-lg">
           {notice}
         </div>
       )}

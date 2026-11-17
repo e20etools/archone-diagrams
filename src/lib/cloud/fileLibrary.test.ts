@@ -138,4 +138,14 @@ describe("the file library", () => {
     const log = (await db.query<{ action: string }>("select action from public.audit_log where workspace_id = $1 and entity = 'report'", [ws])).rows;
     expect(log.map((e) => e.action)).toEqual(["created"]);
   });
+
+  it("keeps the workspace's branding: owners set it, every member reads it", async () => {
+    const brand = { id: "workspace", appName: "Bank EA", logo: "", accent: "#0f766e", theme: "oasis", font: "", updatedAt: "2026-11-17" };
+    expect(await attempt("ivan", "insert into public.workspace_branding (workspace_id, id, data) values ($1, 'workspace', $2) returning id", [ws, brand])).toBe("denied");
+    expect(await attempt("olivia", "insert into public.workspace_branding (workspace_id, id, data) values ($1, 'workspace', $2) returning id", [ws, brand])).toBe("allowed");
+    expect((await as("vera", (q) => q("select data ->> 'appName' as name from public.workspace_branding"))).map((r) => r.name)).toEqual(["Bank EA"]);
+    await expect(as("olivia", (q) => q("update public.workspace_branding set data = $2 where workspace_id = $1", [ws, { ...brand, accent: "teal" }]))).rejects.toThrow(/check constraint/);
+    await expect(as("olivia", (q) => q("update public.workspace_branding set data = $2 where workspace_id = $1", [ws, { ...brand, logo: "javascript:alert(1)" }]))).rejects.toThrow(/check constraint/);
+    expect((await db.query<{ action: string }>("select action from public.audit_log where workspace_id = $1 and action = 'branding changed'", [ws])).rows).toHaveLength(1);
+  });
 });

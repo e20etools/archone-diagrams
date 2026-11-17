@@ -23,6 +23,14 @@
   --color-danger-soft: #fbeae7;
   --color-ok: #1f8a4c;
   --color-ok-soft: #e4f4ea;
+
+  /* The menu, the canvas behind diagrams, its dots, and text on the accent colour. */
+  --color-nav: #16233a;
+  --color-nav-ink: #ffffff;
+  --color-canvas: #f3f5f8;
+  --color-dots: #c3cbd8;
+  --color-on-accent: #ffffff;
+  --color-backdrop: #f3f5f8;
 }
 
 /* In the base layer, so utility classes on a button or input still win. */
@@ -35,7 +43,7 @@
 
   body {
     margin: 0;
-    background: var(--color-paper);
+    background: var(--color-backdrop);
     color: var(--color-ink);
     font-family: var(--font-sans);
     font-size: 14px;
@@ -64,7 +72,7 @@
 /* ---------- canvas ---------- */
 
 .react-flow {
-  background: var(--color-paper);
+  background: var(--color-canvas);
 }
 
 .object-node {
@@ -468,4 +476,517 @@
 .archone-still .react-flow__edge.traffic .react-flow__edge-path {
   animation: none;
   stroke-dasharray: none;
+}
+
+/* ===================================================================================
+ * Themes. Each person picks one in Settings, Appearance; an owner sets the workspace's
+ * default. A theme sets the colours above, and the layer that moves behind the app.
+ * =================================================================================== */
+
+html[data-theme="circuit"] {
+  --color-backdrop: #0b1220;
+  --color-paper: rgb(11 18 32 / 0.74);
+  --color-surface: rgb(17 26 46 / 0.94);
+  --color-ink: #e6edf7;
+  --color-ink-soft: #a9b6cc;
+  --color-ink-faint: #6f7d96;
+  --color-line: #253350;
+  --color-line-soft: #1b2742;
+  --color-blueprint: #22d3ee;
+  --color-blueprint-deep: #0ea5c6;
+  --color-blueprint-soft: rgb(34 211 238 / 0.14);
+  --color-signal: #fbbf24;
+  --color-signal-soft: rgb(251 191 36 / 0.14);
+  --color-danger: #f87171;
+  --color-danger-soft: rgb(248 113 113 / 0.14);
+  --color-ok: #4ade80;
+  --color-ok-soft: rgb(74 222 128 / 0.14);
+  --color-nav: #070d18;
+  --color-nav-ink: #e6edf7;
+  --color-canvas: #0d1526;
+  --color-dots: #22314f;
+  --color-on-accent: #04121a;
+}
+html[data-theme="aurora"] {
+  --color-backdrop: #0d1022;
+  --color-paper: rgb(13 16 34 / 0.62);
+  --color-surface: rgb(21 26 51 / 0.9);
+  --color-ink: #ecebff;
+  --color-ink-soft: #b3b0d6;
+  --color-ink-faint: #7a77a0;
+  --color-line: #2c2f55;
+  --color-line-soft: #212446;
+  --color-blueprint: #a78bfa;
+  --color-blueprint-deep: #8b5cf6;
+  --color-blueprint-soft: rgb(167 139 250 / 0.16);
+  --color-signal: #2dd4bf;
+  --color-signal-soft: rgb(45 212 191 / 0.14);
+  --color-danger: #fb7185;
+  --color-danger-soft: rgb(251 113 133 / 0.14);
+  --color-ok: #34d399;
+  --color-ok-soft: rgb(52 211 153 / 0.14);
+  --color-nav: rgb(9 11 25 / 0.86);
+  --color-nav-ink: #ecebff;
+  --color-canvas: #11152b;
+  --color-dots: #2a2e52;
+  --color-on-accent: #140b2e;
+}
+html[data-theme="quantum"] {
+  --color-backdrop: #120a1f;
+  --color-paper: rgb(18 10 31 / 0.7);
+  --color-surface: rgb(27 16 48 / 0.92);
+  --color-ink: #f5e9ff;
+  --color-ink-soft: #c4a9db;
+  --color-ink-faint: #8a6fa3;
+  --color-line: #3a2459;
+  --color-line-soft: #2a1844;
+  --color-blueprint: #e879f9;
+  --color-blueprint-deep: #c026d3;
+  --color-blueprint-soft: rgb(232 121 249 / 0.15);
+  --color-signal: #38bdf8;
+  --color-signal-soft: rgb(56 189 248 / 0.14);
+  --color-danger: #fb7185;
+  --color-danger-soft: rgb(251 113 133 / 0.14);
+  --color-ok: #4ade80;
+  --color-ok-soft: rgb(74 222 128 / 0.14);
+  --color-nav: #0c0616;
+  --color-nav-ink: #f5e9ff;
+  --color-canvas: #160c26;
+  --color-dots: #35204f;
+  --color-on-accent: #1b0624;
+}
+html[data-theme="terminal"] {
+  --color-backdrop: #050a06;
+  --color-paper: rgb(5 10 6 / 0.82);
+  --color-surface: rgb(11 19 13 / 0.95);
+  --color-ink: #c8f7d4;
+  --color-ink-soft: #86c79a;
+  --color-ink-faint: #4f7a5c;
+  --color-line: #1d3a26;
+  --color-line-soft: #142a1b;
+  --color-blueprint: #22c55e;
+  --color-blueprint-deep: #16a34a;
+  --color-blueprint-soft: rgb(34 197 94 / 0.14);
+  --color-signal: #facc15;
+  --color-signal-soft: rgb(250 204 21 / 0.12);
+  --color-danger: #f87171;
+  --color-danger-soft: rgb(248 113 113 / 0.12);
+  --color-ok: #4ade80;
+  --color-ok-soft: rgb(74 222 128 / 0.12);
+  --color-nav: #030604;
+  --color-nav-ink: #c8f7d4;
+  --color-canvas: #070d08;
+  --color-dots: #173420;
+  --color-on-accent: #021007;
+}
+html[data-theme="oasis"] {
+  --color-backdrop: #f7f1e6;
+  --color-paper: rgb(247 241 230 / 0.84);
+  --color-surface: #fffaf2;
+  --color-ink: #1d2b2a;
+  --color-ink-soft: #4e5f5c;
+  --color-ink-faint: #8a9693;
+  --color-line: #e2d5bf;
+  --color-line-soft: #eee4d3;
+  --color-blueprint: #0f766e;
+  --color-blueprint-deep: #0b5a54;
+  --color-blueprint-soft: #d8eee9;
+  --color-signal: #c2410c;
+  --color-signal-soft: #fbe6d8;
+  --color-nav: #123b3a;
+  --color-nav-ink: #f7f1e6;
+  --color-canvas: #faf6ee;
+  --color-dots: #dccfb8;
+}
+html[data-theme="glass"] {
+  --color-backdrop: #e9eefb;
+  --color-paper: rgb(238 242 251 / 0.5);
+  --color-surface: rgb(255 255 255 / 0.68);
+  --color-ink: #1e1b4b;
+  --color-ink-soft: #4a4878;
+  --color-ink-faint: #8583ad;
+  --color-line: rgb(99 102 241 / 0.22);
+  --color-line-soft: rgb(99 102 241 / 0.12);
+  --color-blueprint: #4f46e5;
+  --color-blueprint-deep: #4338ca;
+  --color-blueprint-soft: rgb(79 70 229 / 0.12);
+  --color-signal: #db2777;
+  --color-signal-soft: rgb(219 39 119 / 0.12);
+  --color-nav: rgb(30 27 75 / 0.82);
+  --color-nav-ink: #ffffff;
+  --color-canvas: rgb(245 247 253 / 0.86);
+  --color-dots: #c7cbf0;
+}
+html[data-theme="glass"] .bg-surface,
+html[data-theme="glass"] .object-node,
+html[data-theme="glass"] .map-node,
+html[data-theme="glass"] nav[aria-label="Main"] {
+  backdrop-filter: blur(16px) saturate(150%);
+  -webkit-backdrop-filter: blur(16px) saturate(150%);
+}
+html[data-theme="synthwave"] {
+  --color-backdrop: #140b24;
+  --color-paper: rgb(20 11 36 / 0.66);
+  --color-surface: rgb(29 16 51 / 0.92);
+  --color-ink: #fbe9ff;
+  --color-ink-soft: #d0a9e4;
+  --color-ink-faint: #9673ad;
+  --color-line: #44285f;
+  --color-line-soft: #311b48;
+  --color-blueprint: #ff3ea5;
+  --color-blueprint-deep: #e11d84;
+  --color-blueprint-soft: rgb(255 62 165 / 0.15);
+  --color-signal: #22e4ff;
+  --color-signal-soft: rgb(34 228 255 / 0.14);
+  --color-danger: #ff6b6b;
+  --color-danger-soft: rgb(255 107 107 / 0.14);
+  --color-ok: #5cf2a3;
+  --color-ok-soft: rgb(92 242 163 / 0.14);
+  --color-nav: #0d0618;
+  --color-nav-ink: #fbe9ff;
+  --color-canvas: #180d2b;
+  --color-dots: #3b2257;
+  --color-on-accent: #22030f;
+}
+html[data-theme="stream"] {
+  --color-backdrop: #f6f9fc;
+  --color-paper: rgb(246 249 252 / 0.84);
+  --color-surface: #ffffff;
+  --color-ink: #0f2a3d;
+  --color-ink-soft: #46606f;
+  --color-ink-faint: #8297a5;
+  --color-line: #d6e2ea;
+  --color-line-soft: #e7eef3;
+  --color-blueprint: #0b7a75;
+  --color-blueprint-deep: #075e5a;
+  --color-blueprint-soft: #dcf1ef;
+  --color-signal: #2563eb;
+  --color-signal-soft: #e0e9fd;
+  --color-nav: #0f2a3d;
+  --color-nav-ink: #ffffff;
+  --color-canvas: #f9fbfd;
+  --color-dots: #c9d8e2;
+}
+html[data-theme="carbon"] {
+  --color-backdrop: #151618;
+  --color-paper: rgb(21 22 24 / 0.9);
+  --color-surface: #1e2023;
+  --color-ink: #f2f2f0;
+  --color-ink-soft: #b4b6b9;
+  --color-ink-faint: #7c7f84;
+  --color-line: #33363b;
+  --color-line-soft: #282a2e;
+  --color-blueprint: #ff7a1a;
+  --color-blueprint-deep: #e8620a;
+  --color-blueprint-soft: rgb(255 122 26 / 0.14);
+  --color-signal: #facc15;
+  --color-signal-soft: rgb(250 204 21 / 0.12);
+  --color-danger: #f87171;
+  --color-danger-soft: rgb(248 113 113 / 0.14);
+  --color-ok: #4ade80;
+  --color-ok-soft: rgb(74 222 128 / 0.14);
+  --color-nav: #0e0f10;
+  --color-nav-ink: #f2f2f0;
+  --color-canvas: #18191b;
+  --color-dots: #2c2f33;
+  --color-on-accent: #1a0b00;
+}
+
+/* Text on the accent colour stays readable on bright accents. */
+.bg-blueprint.text-white,
+.bg-blueprint .text-white {
+  color: var(--color-on-accent);
+}
+
+/* Dark themes: the canvas's own controls, labels and lines follow the theme. */
+html[data-theme="circuit"],
+html[data-theme="aurora"],
+html[data-theme="quantum"],
+html[data-theme="terminal"],
+html[data-theme="synthwave"],
+html[data-theme="carbon"] {
+  --xy-controls-button-background-color: var(--color-surface);
+  --xy-controls-button-background-color-hover: var(--color-line-soft);
+  --xy-controls-button-color: var(--color-ink);
+  --xy-controls-button-border-color: var(--color-line);
+  --xy-minimap-background-color: var(--color-surface);
+  --xy-edge-label-background-color: var(--color-surface);
+  --xy-edge-label-color: var(--color-ink-soft);
+  --xy-attribution-background-color: transparent;
+}
+html[data-theme="circuit"] .react-flow__edge-textbg,
+html[data-theme="aurora"] .react-flow__edge-textbg,
+html[data-theme="quantum"] .react-flow__edge-textbg,
+html[data-theme="terminal"] .react-flow__edge-textbg,
+html[data-theme="synthwave"] .react-flow__edge-textbg,
+html[data-theme="carbon"] .react-flow__edge-textbg {
+  fill: var(--color-surface) !important;
+}
+html[data-theme="circuit"] .react-flow__edge-text,
+html[data-theme="aurora"] .react-flow__edge-text,
+html[data-theme="quantum"] .react-flow__edge-text,
+html[data-theme="terminal"] .react-flow__edge-text,
+html[data-theme="synthwave"] .react-flow__edge-text,
+html[data-theme="carbon"] .react-flow__edge-text {
+  fill: var(--color-ink-soft) !important;
+}
+html[data-theme="terminal"] body {
+  text-shadow: 0 0 6px rgb(34 197 94 / 0.18);
+}
+
+/* Density and corners. */
+html[data-density="compact"] {
+  font-size: 15px;
+}
+html[data-density="compact"] body {
+  font-size: 13px;
+}
+html[data-radius="sharp"] {
+  --radius-sm: 2px;
+  --radius-md: 3px;
+  --radius-lg: 4px;
+  --radius-xl: 6px;
+}
+html[data-radius="round"] {
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+}
+
+/* ---------- the layer that moves behind the app ---------- */
+
+#root {
+  position: relative;
+  z-index: 1;
+}
+.ambient {
+  --speed: 1;
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+}
+html[data-motion="calm"] .ambient {
+  --speed: 3;
+}
+html[data-motion="off"] .ambient,
+html[data-motion="off"] .ambient * {
+  animation: none !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ambient,
+  .ambient * {
+    animation: none !important;
+  }
+}
+.ambient span {
+  position: absolute;
+  display: block;
+}
+
+/* Blueprint: a faint drafting grid that drifts. */
+.ambient[data-ambient="grid"] {
+  background-image:
+    linear-gradient(rgb(36 71 214 / 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(36 71 214 / 0.05) 1px, transparent 1px),
+    linear-gradient(rgb(36 71 214 / 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(36 71 214 / 0.025) 1px, transparent 1px);
+  background-size: 120px 120px, 120px 120px, 24px 24px, 24px 24px;
+  animation: ambient-pan calc(80s * var(--speed)) linear infinite;
+}
+@keyframes ambient-pan {
+  to {
+    background-position: 120px 120px, 120px 120px, 24px 24px, 24px 24px;
+  }
+}
+
+/* Midnight circuit: traces, and signals running along them. */
+.ambient[data-ambient="circuit"] {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160' fill='none' stroke='%2322d3ee' stroke-opacity='0.13' stroke-width='1.2'%3E%3Cpath d='M0 40h40l20 20h60l20-20h20M0 120h30l20-20h40l20 20h50M40 0v30l20 20v40M120 160v-30l-20-20V70'/%3E%3Ccircle cx='60' cy='60' r='3'/%3E%3Ccircle cx='120' cy='60' r='3'/%3E%3Ccircle cx='50' cy='100' r='3'/%3E%3Ccircle cx='100' cy='110' r='3'/%3E%3C/svg%3E");
+  background-size: 160px 160px;
+}
+.ambient[data-ambient="circuit"] span {
+  height: 2px;
+  width: 140px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, transparent, #22d3ee, transparent);
+  box-shadow: 0 0 12px #22d3ee;
+  opacity: 0.55;
+  animation: ambient-signal calc(7s * var(--speed)) linear infinite;
+}
+.ambient[data-ambient="circuit"] span:nth-child(1) { top: 25%; animation-delay: -1s; }
+.ambient[data-ambient="circuit"] span:nth-child(2) { top: 50%; animation-delay: -4s; animation-duration: calc(9s * var(--speed)); }
+.ambient[data-ambient="circuit"] span:nth-child(3) { top: 75%; animation-delay: -2.5s; background: linear-gradient(90deg, transparent, #a3e635, transparent); box-shadow: 0 0 12px #a3e635; }
+.ambient[data-ambient="circuit"] span:nth-child(4) { top: 12.5%; animation-delay: -6s; animation-duration: calc(11s * var(--speed)); }
+@keyframes ambient-signal {
+  from { transform: translateX(-160px); }
+  to { transform: translateX(110vw); }
+}
+
+/* Aurora: wide coloured veils that drift and breathe. */
+.ambient[data-ambient="aurora"] span {
+  width: 70vmax;
+  height: 70vmax;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.45;
+  mix-blend-mode: screen;
+  animation: ambient-drift calc(26s * var(--speed)) ease-in-out infinite alternate;
+}
+.ambient[data-ambient="aurora"] span:nth-child(1) { background: radial-gradient(circle, #8b5cf6, transparent 65%); top: -30%; left: -15%; }
+.ambient[data-ambient="aurora"] span:nth-child(2) { background: radial-gradient(circle, #2dd4bf, transparent 65%); top: 10%; right: -25%; animation-delay: -8s; }
+.ambient[data-ambient="aurora"] span:nth-child(3) { background: radial-gradient(circle, #3b82f6, transparent 65%); bottom: -40%; left: 20%; animation-delay: -15s; }
+.ambient[data-ambient="aurora"] span:nth-child(4) { display: none; }
+@keyframes ambient-drift {
+  0% { transform: translate(0, 0) scale(1) rotate(0deg); }
+  50% { transform: translate(8vw, 6vh) scale(1.15) rotate(25deg); }
+  100% { transform: translate(-6vw, -4vh) scale(0.95) rotate(-15deg); }
+}
+
+/* Quantum field: two layers of particles at different depths. */
+.ambient[data-ambient="particles"] {
+  background-image:
+    radial-gradient(1.5px 1.5px at 20px 30px, #e879f9 50%, transparent 51%),
+    radial-gradient(1px 1px at 90px 120px, #38bdf8 50%, transparent 51%),
+    radial-gradient(1.5px 1.5px at 160px 70px, #f5e9ff 50%, transparent 51%),
+    radial-gradient(1px 1px at 230px 180px, #e879f9 50%, transparent 51%);
+  background-size: 260px 220px;
+  opacity: 0.55;
+  animation: ambient-float calc(60s * var(--speed)) linear infinite;
+}
+.ambient[data-ambient="particles"] span {
+  inset: 0;
+  background-image:
+    radial-gradient(2.5px 2.5px at 50px 60px, #38bdf8 50%, transparent 51%),
+    radial-gradient(2px 2px at 300px 200px, #e879f9 50%, transparent 51%),
+    radial-gradient(2.5px 2.5px at 180px 330px, #f5e9ff 50%, transparent 51%);
+  background-size: 420px 400px;
+  opacity: 0.7;
+  animation: ambient-float calc(35s * var(--speed)) linear infinite reverse;
+}
+.ambient[data-ambient="particles"] span:nth-child(n + 2) { display: none; }
+@keyframes ambient-float {
+  to { background-position: 520px 440px, 520px 440px, 520px 440px, 520px 440px; }
+}
+
+/* Command line: scan lines and a slow sweep. */
+.ambient[data-ambient="scanlines"] {
+  background: repeating-linear-gradient(to bottom, rgb(34 197 94 / 0.045) 0 1px, transparent 1px 3px);
+}
+.ambient[data-ambient="scanlines"] span {
+  left: 0;
+  right: 0;
+  height: 30vh;
+  background: linear-gradient(to bottom, transparent, rgb(34 197 94 / 0.07), transparent);
+  animation: ambient-sweep calc(9s * var(--speed)) linear infinite;
+}
+.ambient[data-ambient="scanlines"] span:nth-child(n + 2) { display: none; }
+@keyframes ambient-sweep {
+  from { transform: translateY(-30vh); }
+  to { transform: translateY(110vh); }
+}
+
+/* Digital oasis: an eight-pointed star pattern turning slowly. */
+.ambient[data-ambient="girih"] span {
+  width: 200vmax;
+  height: 200vmax;
+  top: 50%;
+  left: 50%;
+  margin: -100vmax 0 0 -100vmax;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='96' height='96' viewBox='0 0 96 96' fill='none' stroke='%230f766e' stroke-opacity='0.11' stroke-width='1.2'%3E%3Cpath d='M48 14l9 21 21-9-9 22 21 8-21 9 9 21-21-9-9 21-8-21-22 9 9-21-21-9 21-8-9-22 22 9z'/%3E%3Crect x='30' y='30' width='36' height='36' transform='rotate(45 48 48)'/%3E%3Crect x='30' y='30' width='36' height='36'/%3E%3C/svg%3E");
+  background-size: 96px 96px;
+  animation: ambient-turn calc(240s * var(--speed)) linear infinite;
+}
+.ambient[data-ambient="girih"] span:nth-child(n + 2) { display: none; }
+@keyframes ambient-turn {
+  to { transform: rotate(360deg); }
+}
+
+/* Glass: soft colour drifting behind frosted panels. */
+.ambient[data-ambient="blobs"] span {
+  width: 46vmax;
+  height: 46vmax;
+  border-radius: 50%;
+  filter: blur(70px);
+  opacity: 0.55;
+  animation: ambient-drift calc(22s * var(--speed)) ease-in-out infinite alternate;
+}
+.ambient[data-ambient="blobs"] span:nth-child(1) { background: #a5b4fc; top: -10%; left: 5%; }
+.ambient[data-ambient="blobs"] span:nth-child(2) { background: #f9a8d4; top: 30%; right: -5%; animation-delay: -7s; }
+.ambient[data-ambient="blobs"] span:nth-child(3) { background: #99f6e4; bottom: -15%; left: 30%; animation-delay: -13s; }
+.ambient[data-ambient="blobs"] span:nth-child(4) { background: #fde68a; top: 55%; left: -10%; animation-delay: -18s; opacity: 0.4; }
+
+/* Neon grid: a horizon and lines rolling towards you. */
+.ambient[data-ambient="synthwave"] span:nth-child(1) {
+  left: -50%;
+  right: -50%;
+  bottom: -10%;
+  height: 60%;
+  background-image: linear-gradient(rgb(255 62 165 / 0.35) 1.5px, transparent 1.5px), linear-gradient(90deg, rgb(34 228 255 / 0.28) 1.5px, transparent 1.5px);
+  background-size: 64px 64px;
+  transform: perspective(420px) rotateX(62deg);
+  transform-origin: 50% 0;
+  mask-image: linear-gradient(to bottom, transparent, black 30%);
+  animation: ambient-roll calc(3.5s * var(--speed)) linear infinite;
+}
+.ambient[data-ambient="synthwave"] span:nth-child(2) {
+  left: 50%;
+  bottom: 44%;
+  width: 34vmin;
+  height: 34vmin;
+  margin-left: -17vmin;
+  border-radius: 50%;
+  background: linear-gradient(#ffd166, #ff3ea5 70%);
+  opacity: 0.12;
+  filter: blur(2px);
+  mask-image: repeating-linear-gradient(to bottom, black 0 9px, transparent 9px 13px);
+}
+.ambient[data-ambient="synthwave"] span:nth-child(n + 3) { display: none; }
+@keyframes ambient-roll {
+  to { background-position: 0 64px, 0 0; }
+}
+
+/* Data stream: thin lines of data flowing across. */
+.ambient[data-ambient="stream"] span {
+  left: 0;
+  width: 200%;
+  height: 1px;
+  background: repeating-linear-gradient(90deg, rgb(11 122 117 / 0.35) 0 22px, transparent 22px 60px, rgb(37 99 235 / 0.25) 60px 70px, transparent 70px 140px);
+  animation: ambient-flow calc(18s * var(--speed)) linear infinite;
+}
+.ambient[data-ambient="stream"] span:nth-child(1) { top: 18%; }
+.ambient[data-ambient="stream"] span:nth-child(2) { top: 41%; animation-duration: calc(26s * var(--speed)); animation-direction: reverse; }
+.ambient[data-ambient="stream"] span:nth-child(3) { top: 64%; animation-duration: calc(14s * var(--speed)); }
+.ambient[data-ambient="stream"] span:nth-child(4) { top: 87%; animation-duration: calc(30s * var(--speed)); animation-direction: reverse; }
+@keyframes ambient-flow {
+  from { transform: translateX(-50%); }
+  to { transform: translateX(0); }
+}
+
+/* Carbon: a fine grain, almost still. */
+.ambient[data-ambient="noise"] {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='0.06'/%3E%3C/svg%3E");
+}
+.ambient[data-ambient="noise"] span:nth-child(1) {
+  inset: -20%;
+  background: radial-gradient(circle at 70% 20%, rgb(255 122 26 / 0.09), transparent 45%);
+  animation: ambient-drift calc(40s * var(--speed)) ease-in-out infinite alternate;
+}
+.ambient[data-ambient="noise"] span:nth-child(n + 2) { display: none; }
+
+/* The home page: the insights rise in one after the other, once. */
+.insight {
+  animation: home-rise 520ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+.insight:nth-child(2) { animation-delay: 70ms; }
+.insight:nth-child(3) { animation-delay: 140ms; }
+.insight:nth-child(4) { animation-delay: 210ms; }
+@keyframes home-rise {
+  from { opacity: 0; transform: translateY(10px); }
+}
+html[data-motion="off"] .insight { animation: none; }
+@media (prefers-reduced-motion: reduce) {
+  .insight { animation: none; }
 }

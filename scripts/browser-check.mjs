@@ -1794,6 +1794,50 @@ try {
     await rm(uploads, { recursive: true, force: true });
   }
 
+  // Appearance: ten themes, each person's own; branding by the workspace.
+  {
+    await page.goto(`${base}/settings`, { waitUntil: "networkidle0" });
+    await page.waitForSelector("[data-theme-pick]");
+    const themeCount = await count(page, "[data-theme-pick]");
+    await page.click('[data-theme-pick="circuit"]');
+    await sleep(300);
+    const dark = await page.evaluate(() => ({ theme: document.documentElement.dataset.theme, ambient: document.querySelector(".ambient")?.getAttribute("data-ambient"), base: getComputedStyle(document.body).backgroundColor }));
+    check("ten themes to choose from, and choosing one changes the colours and the moving background", themeCount === 10 && dark.theme === "circuit" && dark.ambient === "circuit" && dark.base === "rgb(11, 18, 32)", JSON.stringify(dark));
+    await shot(page, "10f-theme-circuit");
+    await page.select("[data-pref-motion]", "off");
+    const still = await page.evaluate(() => getComputedStyle(document.querySelector('.ambient[data-ambient="circuit"] span')).animationName);
+    check("the background can be kept still", still === "none", still);
+    await page.reload({ waitUntil: "networkidle0" });
+    check("the theme chosen is remembered in this browser", (await page.evaluate(() => document.documentElement.dataset.theme)) === "circuit");
+    for (const t of ["aurora", "quantum", "terminal", "oasis", "glass", "synthwave", "stream", "carbon"]) {
+      await page.click(`[data-theme-pick="${t}"]`);
+      await sleep(120);
+    }
+    await page.click('[data-theme-pick="synthwave"]');
+    await sleep(300);
+    await shot(page, "10g-theme-synthwave");
+    await page.click('[data-theme-pick="oasis"]');
+    await sleep(300);
+    await shot(page, "10h-theme-oasis");
+    await page.click("[data-theme-follow]");
+    await page.select("[data-pref-motion]", "full");
+    await page.evaluate(() => document.querySelector("[data-brand-input]").scrollIntoView());
+    await page.type("[data-brand-input]", "Bank EA");
+    await page.click('[data-brand-accent="#0f766e"]');
+    await page.select("[data-brand-theme]", "stream");
+    await page.click("[data-brand-save]");
+    await page.waitForFunction(() => document.querySelector("[data-brand-name]")?.textContent === "Bank EA");
+    const branded = await page.evaluate(() => ({ theme: document.documentElement.dataset.theme, accent: getComputedStyle(document.documentElement).getPropertyValue("--color-blueprint").trim(), title: document.title }));
+    check("the workspace's branding names the menu and the tab, sets the accent, and the theme members start with", branded.theme === "stream" && branded.accent === "#0f766e" && branded.title === "Bank EA", JSON.stringify(branded));
+    await shot(page, "10i-branding");
+    // Back to the defaults, so the rest of the run looks as before.
+    await page.click("[data-brand-input]", { clickCount: 3 });
+    await page.keyboard.press("Backspace");
+    await page.evaluate(() => [...document.querySelectorAll("button")].find((b) => b.textContent.trim() === "Back to the defaults")?.click());
+    await page.click("[data-brand-save]");
+    await page.waitForFunction(() => document.documentElement.dataset.theme === "blueprint");
+  }
+
   // The bank sample: ten connected diagrams added to what is there.
   await page.goto(`${base}/settings`, { waitUntil: "networkidle0" });
   const beforeSample = Object.values((await stored()).diagrams).filter((d) => !d.archive?.archived).length;

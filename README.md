@@ -873,6 +873,38 @@ and the protocols on them.
 - Export what the map shows as PNG, SVG, PDF, an animated GIF, draw.io, Mermaid, CSV (every link
   with the components behind it) or JSON.
 
+### Home, menu, themes and settings
+
+The home page greets you with the workspace's name and the four things to look at first, each a
+link to where it is acted on: the component most depended on (to its impact analysis), the
+components without an owner and the connections in clear text (to their reports), and the AI
+drafts waiting. Below them, the diagrams changed last, shortcuts to the map, impact, reports, files
+and library, and the list of diagrams with a filter by area.
+
+The menu is grouped in the order work happens: Home; Build (Model, Library, Files, Drafts);
+Analyse (All diagrams, Impact, Dependencies, Health, Checks); Govern (Decisions, Reports, Document,
+Ask); Work together (Versions, Reviews, Scenarios, Audit log, when signed in); and Settings.
+
+Ten themes, each with its own colours, font and a background that moves behind the work:
+Blueprint (a drifting drafting grid), Midnight circuit (signals running along board traces),
+Aurora (veils of teal and violet), Quantum field (particles at two depths), Command line (green on
+black with scan lines), Digital oasis (sand and teal under a turning eight-pointed star pattern),
+Glass (frosted panels over drifting colour), Neon grid (a horizon of lines rolling towards you),
+Data stream (data flowing across white) and Carbon (graphite and signal orange). Each person
+picks their theme, font (IBM Plex Sans, Inter, Sora, Space Grotesk, JetBrains Mono, IBM Plex Sans
+Arabic, Cairo, Tajawal), density, corners and how much moves (full, calm or still; a computer set
+to reduce motion keeps it still). That choice is kept in the browser and changes nothing for
+others.
+
+Settings is one page with an index: You and this workspace; Appearance; Branding (owners: the
+name in the menu and the browser tab, a logo, an accent colour, and the theme and font members
+start with, kept with the workspace in `workspace_branding` and recorded in the audit log);
+People and permissions (members, roles per kind of diagram, domains, and a table of what each
+role may do); Review and approval; Integrations (API, webhooks, MCP, trust page); AI; Diagram
+wizard; Monitoring and logs (the size of the workspace, files, saving and live connection,
+findings of the checks, storage in the browser, and for owners the latest audit entries); and
+Data, backup and reset.
+
 ### Reports
 
 Reports (menu: Reports) lists twenty-one built-in reports by area, each a table worked out from

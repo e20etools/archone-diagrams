@@ -82,7 +82,8 @@ describe("rows and tables", () => {
   it("survives the trip to database columns and back for every table", () => {
     const demo = demoWorkspace("Sara");
     const firstDiagram = Object.keys(demo.diagrams)[0];
-    const withReport = saveReport(demo, { id: newReportId(), name: "Owners", description: "", subject: "components", columns: ["name", "owner"], filters: [{ field: "owner", op: "is empty", value: "" }], groupBy: "type", sortBy: null, sortDesc: false, createdBy: "Sara", createdAt: "2026-11-17T00:00:00.000Z", updatedAt: "2026-11-17T00:00:00.000Z" });
+    const branded = { ...demo, branding: { workspace: { id: "workspace" as const, appName: "Bank", logo: "", accent: "#0f766e", theme: "oasis", font: "", updatedAt: "2026-11-17T00:00:00.000Z" } } };
+    const withReport = saveReport(branded, { id: newReportId(), name: "Owners", description: "", subject: "components", columns: ["name", "owner"], filters: [{ field: "owner", op: "is empty", value: "" }], groupBy: "type", sortBy: null, sortDesc: false, createdBy: "Sara", createdAt: "2026-11-17T00:00:00.000Z", updatedAt: "2026-11-17T00:00:00.000Z" });
     const tables = toTables(saveWizard(saveTemplate(withReport, templateFromDiagram(withReport, firstDiagram, { name: "Mine", perspective: "data", about: "" }, "Sara")!.template), "container", BUILT_IN_STEPS.container, "Sara"));
     for (const table of TABLE_NAMES) {
       const entries = Object.entries(tables[table]);

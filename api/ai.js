@@ -4230,6 +4230,20 @@ var customReportSchema = objectType({
 	createdAt: stringType(),
 	updatedAt: stringType()
 });
+/** A workspace's branding, set by an owner: its name in the menu, logo, accent colour and default theme. */
+var brandingSchema = objectType({
+	id: literalType("workspace"),
+	/** Shown in the menu and the browser tab. */
+	appName: stringType().trim().max(40).default(""),
+	/** A small image as a data URL. */
+	logo: stringType().max(3e5).default(""),
+	/** Overrides the theme's accent colour, as #rrggbb. */
+	accent: stringType().regex(/^#[0-9a-fA-F]{6}$/).or(literalType("")).default(""),
+	/** The theme for members who have not chosen one. */
+	theme: stringType().max(40).default("blueprint"),
+	font: stringType().max(40).default(""),
+	updatedAt: stringType()
+});
 var savedTemplateSchema = objectType({
 	id: stringType(),
 	name: stringType(),
@@ -4278,6 +4292,8 @@ objectType({
 	wizards: recordType(wizardConfigSchema).default({}),
 	/** The workspace's own reports. Missing in workspaces saved before they existed. */
 	reports: recordType(customReportSchema).default({}),
+	/** The workspace's branding, one record keyed "workspace". Missing in workspaces saved before it existed. */
+	branding: recordType(brandingSchema).default({}),
 	updatedAt: stringType()
 });
 // src/lib/ai/prompt.ts

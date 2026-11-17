@@ -499,9 +499,9 @@ function Inner({
         fitViewOptions={{ padding: 0.08, maxZoom: 1.1 }}
         proOptions={{ hideAttribution: false }}
       >
-        <Background variant={BackgroundVariant.Dots} gap={24} size={1.2} color="#c3cbd8" />
+        <Background variant={BackgroundVariant.Dots} gap={24} size={1.2} color="var(--color-dots)" />
         <Controls showInteractive={false} position="bottom-left" />
-        {minimap && <MiniMap pannable zoomable position="bottom-right" nodeColor={(n) => (n.id === BOUNDARY_ID ? "transparent" : "#c3cbd8")} maskColor="rgba(243,245,248,0.7)" />}
+        {minimap && <MiniMap pannable zoomable position="bottom-right" nodeColor={(n) => (n.id === BOUNDARY_ID ? "transparent" : "var(--color-dots)")} maskColor="color-mix(in srgb, var(--color-canvas) 72%, transparent)" />}
       </ReactFlow>
     </div>
   );

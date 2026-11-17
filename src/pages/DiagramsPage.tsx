@@ -4,7 +4,9 @@ import { Link, useNavigate } from "react-router-dom";
 import { AiDraftDialog } from "@/components/dialogs";
 import { ArchiveDialog, ArchivedDialog, NewArchitectureDialog } from "@/components/NewArchitecture";
 import { ImportDialog } from "@/components/ImportDialog";
-import { Button, EmptyState, IconButton, Modal, formatDate } from "@/components/ui";
+import { HomeOverview } from "@/components/HomeOverview";
+import { Button, EmptyState, IconButton, Modal, cx, formatDate } from "@/components/ui";
+import { CATEGORIES, CATEGORY_INFO, viewCategory, type Category } from "@/lib/categories";
 import { VIEW_TYPE_INFO } from "@/lib/catalog";
 import { addEnterpriseSample } from "@/lib/enterpriseSample";
 import { demoWorkspace } from "@/lib/demo";
@@ -15,6 +17,14 @@ import { TemplatePicker } from "@/components/TemplatePicker";
 import { SaveAsTemplateDialog } from "@/components/SaveAsTemplate";
 import { useCanEdit } from "@/lib/cloud/session";
 import type { Diagram } from "@/lib/types";
+
+/** A greeting by the time of day, with the person's first name when known. */
+function greeting(name: string): string {
+  const h = new Date().getHours();
+  const part = h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening";
+  const first = name.trim().split(/\s+/)[0];
+  return first ? `${part}, ${first}` : part;
+}
 
 export function DiagramsPage() {
   const ws = useWorkspace();
@@ -28,12 +38,14 @@ export function DiagramsPage() {
   const canEdit = useCanEdit();
   const diagrams = sortedDiagrams(ws);
   const blank = diagrams.length === 0 && Object.keys(ws.objects).length === 0;
+  const [area, setArea] = useState<"all" | Category>("all");
 
   return (
-    <div className="max-w-5xl mx-auto px-6 py-7">
-      <div className="flex items-end justify-between gap-4">
+    <div className="max-w-6xl mx-auto px-6 py-7">
+      <div className="home-hero flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-xl font-semibold">Diagrams</h1>
+          {!blank && <p className="text-[13px] font-medium text-blueprint">{greeting(ws.userName)}</p>}
+          <h1 className={blank ? "text-xl font-semibold" : "text-3xl font-semibold tracking-tight"}>{blank ? "Diagrams" : ws.name}</h1>
           <p className="text-ink-soft mt-0.5">Each diagram is a view of one shared model. Change a component once and every diagram follows.</p>
         </div>
         {!blank && (
@@ -105,7 +117,24 @@ export function DiagramsPage() {
           </EmptyState>
         </div>
       ) : (
-        <div className="mt-6 rounded-lg border border-line bg-surface overflow-hidden">
+        <>
+        <HomeOverview ws={ws} diagrams={diagrams} />
+        <div className="mt-8 flex flex-wrap items-center gap-2">
+          <h2 className="mr-2 text-sm font-semibold">Diagrams</h2>
+          {(["all", ...CATEGORIES] as const).map((c) => (
+            <button
+              key={c}
+              type="button"
+              aria-pressed={area === c}
+              data-home-area={c}
+              onClick={() => setArea(c)}
+              className={cx("h-7 rounded-full border px-2.5 text-xs", area === c ? "border-blueprint bg-blueprint-soft text-blueprint-deep" : "border-line text-ink-soft hover:border-ink-faint")}
+            >
+              {c === "all" ? `All ${diagrams.length}` : `${CATEGORY_INFO[c].label} ${diagrams.filter((d) => viewCategory(d.viewType) === c).length}`}
+            </button>
+          ))}
+        </div>
+        <div className="mt-2 rounded-lg border border-line bg-surface overflow-hidden">
           <table className="w-full text-left">
             <thead className="text-[13px] text-ink-soft bg-paper border-b border-line">
               <tr>
@@ -119,7 +148,7 @@ export function DiagramsPage() {
               </tr>
             </thead>
             <tbody>
-              {diagrams.map((d) => (
+              {diagrams.filter((d) => area === "all" || viewCategory(d.viewType) === area).map((d) => (
                 <tr key={d.id} className="border-b border-line-soft last:border-b-0 hover:bg-paper/60">
                   <td className="px-4 py-3">
                     <Link to={`/diagram/${d.id}`} className="font-medium text-blueprint hover:underline">
@@ -156,6 +185,7 @@ export function DiagramsPage() {
             </tbody>
           </table>
         </div>
+        </>
       )}
       {archivedCount > 0 && (
         <p className="mt-3 text-[13px] text-ink-soft">

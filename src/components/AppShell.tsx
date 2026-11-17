@@ -9,34 +9,63 @@ import { currentStage } from "@/lib/cloud/collab";
 import { cloudEnabled } from "@/lib/cloud/config";
 import { useSession } from "@/lib/cloud/session";
 import { searchWorkspace } from "@/lib/search";
+import { useApplyAppearance } from "@/lib/appearance";
 import { useStore, useWorkspace } from "@/lib/store";
 
-const NAV = [
-  { to: "/", label: "Diagrams", icon: LayoutGrid, end: true },
-  { to: "/model", label: "Model", icon: Boxes },
-  { to: "/library", label: "Library", icon: Shapes },
-  { to: "/files", label: "Files", icon: FolderOpen },
-  { to: "/map", label: "All diagrams", icon: Network },
-  { to: "/impact", label: "Impact", icon: Zap },
-  { to: "/analysis", label: "Dependencies", icon: Waypoints },
-  { to: "/health", label: "Health", icon: HeartPulse },
-  { to: "/checks", label: "Checks", icon: ShieldCheck },
-  { to: "/decisions", label: "Decisions", icon: Scale },
-  { to: "/reports", label: "Reports", icon: FileBarChart },
-  { to: "/document", label: "Document", icon: FileText },
-  { to: "/ask", label: "Ask", icon: MessageCircleQuestion },
-  { to: "/ai", label: "Drafts", icon: Sparkles },
+interface NavItem {
+  to: string;
+  label: string;
+  icon: typeof LayoutGrid;
+  end?: boolean;
+  ownerOnly?: boolean;
+}
+/** The menu in groups, in the order work happens: build the model, analyse it, govern it, work together. */
+const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
+  { label: "", items: [{ to: "/", label: "Home", icon: LayoutGrid, end: true }] },
+  {
+    label: "Build",
+    items: [
+      { to: "/model", label: "Model", icon: Boxes },
+      { to: "/library", label: "Library", icon: Shapes },
+      { to: "/files", label: "Files", icon: FolderOpen },
+      { to: "/ai", label: "Drafts", icon: Sparkles },
+    ],
+  },
+  {
+    label: "Analyse",
+    items: [
+      { to: "/map", label: "All diagrams", icon: Network },
+      { to: "/impact", label: "Impact", icon: Zap },
+      { to: "/analysis", label: "Dependencies", icon: Waypoints },
+      { to: "/health", label: "Health", icon: HeartPulse },
+      { to: "/checks", label: "Checks", icon: ShieldCheck },
+    ],
+  },
+  {
+    label: "Govern",
+    items: [
+      { to: "/decisions", label: "Decisions", icon: Scale },
+      { to: "/reports", label: "Reports", icon: FileBarChart },
+      { to: "/document", label: "Document", icon: FileText },
+      { to: "/ask", label: "Ask", icon: MessageCircleQuestion },
+    ],
+  },
   // Versions and reviews need the hosted backend.
   ...(cloudEnabled
     ? [
-        { to: "/versions", label: "Versions", icon: History },
-        { to: "/reviews", label: "Reviews", icon: ClipboardCheck },
-        { to: "/scenarios", label: "Scenarios", icon: GitBranch },
-        { to: "/audit", label: "Audit log", icon: ScrollText, ownerOnly: true },
+        {
+          label: "Work together",
+          items: [
+            { to: "/versions", label: "Versions", icon: History },
+            { to: "/reviews", label: "Reviews", icon: ClipboardCheck },
+            { to: "/scenarios", label: "Scenarios", icon: GitBranch },
+            { to: "/audit", label: "Audit log", icon: ScrollText, ownerOnly: true },
+          ],
+        },
       ]
     : []),
-  { to: "/settings", label: "Settings", icon: Settings },
 ];
+const SETTINGS: NavItem = { to: "/settings", label: "Settings", icon: Settings };
 
 function Mark() {
   return (
@@ -145,6 +174,33 @@ function GlobalSearch() {
   );
 }
 
+function NavItemLink({ item, compact, badge, badgeTitle }: { item: NavItem; compact: boolean; badge: number; badgeTitle: string }) {
+  const Icon = item.icon;
+  return (
+    <NavLink
+      to={item.to}
+      end={item.end}
+      title={compact ? item.label : undefined}
+      className={({ isActive }) =>
+        cx(
+          "nav-link relative flex items-center gap-2.5 h-9 rounded-md text-sm",
+          compact ? "justify-center" : "px-2.5",
+          isActive ? "bg-nav-ink/12 text-nav-ink font-medium" : "hover:bg-nav-ink/8 hover:text-nav-ink",
+        )
+      }
+    >
+      <Icon size={17} strokeWidth={1.75} aria-hidden />
+      {!compact && <span>{item.label}</span>}
+      {compact && <span className="sr-only">{item.label}</span>}
+      {badge > 0 && (
+        <span title={badgeTitle} className={cx("grid place-items-center rounded-full bg-[#f2b93b] text-[#16233a] text-[11px] font-semibold min-w-[18px] h-[18px] px-1", compact ? "absolute -top-0.5 right-1" : "ml-auto")}>
+          {badge}
+        </span>
+      )}
+    </NavLink>
+  );
+}
+
 export function AppShell({ children }: { children: ReactNode }) {
   const ws = useWorkspace();
   const canUndo = useStore((s) => s.past.length > 0);
@@ -158,6 +214,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const isOwner = useSession((s) => s.role) === "owner";
   const myId = useSession((s) => s.user?.id);
   const waitingForMe = useSession((s) => s.reviews).filter((r) => !!myId && currentStage(r)?.reviewerId === myId).length;
+  const look = useApplyAppearance(ws.branding?.workspace);
 
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
@@ -174,59 +231,50 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="h-full flex">
-      <nav aria-label="Main" className={cx("shrink-0 flex flex-col bg-ink text-white/80", compact ? "w-[60px]" : "w-[212px]")}>
-        <Link to="/" className={cx("flex items-center gap-2.5 h-14 text-white", compact ? "justify-center" : "px-4")} aria-label="ArchONE Diagrams home">
-          <Mark />
+      <div className="ambient" data-ambient={look.theme.ambient} aria-hidden>
+        <span />
+        <span />
+        <span />
+        <span />
+      </div>
+      <nav aria-label="Main" className={cx("shrink-0 flex flex-col bg-nav text-nav-ink/80", compact ? "w-[60px]" : "w-[212px]")}>
+        <Link to="/" className={cx("flex items-center gap-2.5 h-14 text-nav-ink", compact ? "justify-center" : "px-4")} aria-label={`${look.appName} home`} data-brand>
+          {look.logo ? <img src={look.logo} alt="" className="size-7 rounded object-contain" data-brand-logo /> : <Mark />}
           {!compact && (
-            <span className="leading-tight">
-              <span className="block font-semibold tracking-tight">ArchONE</span>
-              <span className="block text-xs text-white/60">Diagrams</span>
+            <span className="min-w-0 leading-tight">
+              <span className="block truncate font-semibold tracking-tight" data-brand-name>
+                {look.appName}
+              </span>
+              <span className="block text-xs text-nav-ink/60">Diagrams</span>
             </span>
           )}
         </Link>
-        <ul className="mt-2 px-2 space-y-0.5">
-          {NAV.filter((item) => !("ownerOnly" in item && item.ownerOnly) || isOwner).map(({ to, label, icon: Icon, end }) => (
-            <li key={to}>
-              <NavLink
-                to={to}
-                end={end}
-                title={compact ? label : undefined}
-                className={({ isActive }) =>
-                  cx(
-                    "relative flex items-center gap-2.5 h-9 rounded-md text-sm",
-                    compact ? "justify-center" : "px-2.5",
-                    isActive ? "bg-white/12 text-white font-medium" : "hover:bg-white/8 hover:text-white",
-                  )
-                }
-              >
-                <Icon size={17} strokeWidth={1.75} aria-hidden />
-                {!compact && <span>{label}</span>}
-                {compact && <span className="sr-only">{label}</span>}
-                {to === "/reviews" && waitingForMe > 0 && (
-                  <span
-                    title={`${waitingForMe} waiting for your decision`}
-                    className={cx("grid place-items-center rounded-full bg-[#f2b93b] text-ink text-[11px] font-semibold min-w-[18px] h-[18px] px-1", compact ? "absolute -top-0.5 right-1" : "ml-auto")}
-                  >
-                    {waitingForMe}
-                  </span>
-                )}
-                {to === "/ai" && pending > 0 && (
-                  <span
-                    title={`${pending} waiting for review`}
-                    className={cx("grid place-items-center rounded-full bg-[#f2b93b] text-ink text-[11px] font-semibold min-w-[18px] h-[18px] px-1", compact ? "absolute -top-0.5 right-1" : "ml-auto")}
-                  >
-                    {pending}
-                  </span>
-                )}
-              </NavLink>
-            </li>
-          ))}
-        </ul>
-        {!compact && (
-          <p className="mt-auto px-4 pb-4 text-xs text-white/45 leading-snug">
-            {countOf(Object.keys(ws.objects).length, "object")} and {countOf(Object.keys(ws.relationships).length, "relationship")} in this model
-          </p>
-        )}
+        <div className="mt-1 min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+          {NAV_GROUPS.map((group) => {
+            const items = group.items.filter((item) => !item.ownerOnly || isOwner);
+            if (!items.length) return null;
+            return (
+              <div key={group.label || "home"} className={group.label ? (compact ? "mt-2 border-t border-nav-ink/10 pt-2" : "mt-3") : ""} role="group" aria-label={group.label || "Home"} data-nav-group={group.label || "home"}>
+                {group.label && !compact && <p className="mb-0.5 px-2.5 text-[11px] font-medium text-nav-ink/45">{group.label}</p>}
+                <ul className="space-y-0.5">
+                  {items.map((item) => (
+                    <li key={item.to}>
+                      <NavItemLink item={item} compact={compact} badge={item.to === "/reviews" ? waitingForMe : item.to === "/ai" ? pending : 0} badgeTitle={item.to === "/reviews" ? `${waitingForMe} waiting for your decision` : `${pending} waiting for review`} />
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            );
+          })}
+        </div>
+        <div className="border-t border-nav-ink/10 px-2 py-2">
+          <NavItemLink item={SETTINGS} compact={compact} badge={0} badgeTitle="" />
+          {!compact && (
+            <p className="mt-2 px-2.5 text-xs text-nav-ink/45 leading-snug">
+              {countOf(Object.keys(ws.objects).length, "object")} and {countOf(Object.keys(ws.relationships).length, "relationship")} in this model
+            </p>
+          )}
+        </div>
       </nav>
       <div className="min-w-0 flex-1 flex flex-col">
         <header className="shrink-0 h-14 flex items-center gap-3 px-4 bg-surface border-b border-line">
