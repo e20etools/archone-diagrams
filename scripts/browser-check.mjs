@@ -377,7 +377,7 @@ try {
   await page.keyboard.press("Enter");
   await page.waitForSelector("[data-new-ways]");
   const ways = await page.$$eval("[data-new-ways] [data-way]", (els) => els.map((e) => e.dataset.way));
-  check("after the kind, eight ways to build the diagram are offered", ways.join(",") === "manual,wizard,existing,template,text,voice,import,archived", ways.join(","));
+  check("after the kind, nine ways to build the diagram are offered", ways.join(",") === "manual,wizard,existing,template,text,voice,image,import,archived", ways.join(","));
   await shot(page, "30-new-diagram-ways");
   await page.click('[data-way="manual"]');
   await page.waitForSelector(".object-node");
@@ -1197,7 +1197,7 @@ try {
     await page.waitForSelector('textarea[aria-label="What you said"]');
     await page.type('textarea[aria-label="What you said"]', "The portal calls the billing service");
     await page.click("[data-voice-continue]");
-    await waitText(page, "Voice to architecture");
+    await waitText(page, "Voice to Architecture");
     check("voice to architecture hands what was said to a draft for review", await page.evaluate(() => [...document.querySelectorAll("[role=dialog] textarea")].some((t) => t.value.includes("billing service"))));
     await page.keyboard.press("Escape");
   }

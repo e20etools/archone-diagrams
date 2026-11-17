@@ -231,7 +231,12 @@ export function SettingsPage() {
         ) : ai.configured ? (
           <div className="space-y-3">
             <p>
-              <Badge tone="green">Connected</Badge> <span className="ml-1">Drafts from text and from images use {ai.engine ?? "the configured model"}.</span>
+              <Badge tone="green">Connected</Badge>{" "}
+              <span className="ml-1" data-ai-engine>
+                {ai.visionEngine
+                  ? `Text drafts and answers use ${ai.engine}. Pictures are read by ${ai.visionEngine}.`
+                  : `Drafts from text and from images use ${ai.engine ?? "the configured model"}.`}
+              </span>
             </p>
             {ai.needsCode && (
               <Field label="AI access code" hint="This server only drafts for people who have the code. Ask whoever set it up. It is kept in this browser.">
@@ -258,6 +263,13 @@ export function SettingsPage() {
               Text drafts still work using built-in rules that read plainly stated components and connections. Drafting from an image needs a model. To connect one, set{" "}
               <code className="text-[13px] bg-paper border border-line rounded px-1">AI_PROVIDER</code> and{" "}
               <code className="text-[13px] bg-paper border border-line rounded px-1">AI_API_KEY</code> in the hosting settings and redeploy. The README lists every option.
+            </p>
+            <p className="text-ink-soft" data-ai-free>
+              For training at no cost, create a key at{" "}
+              <a href="https://console.groq.com/keys" target="_blank" rel="noreferrer" className="text-blueprint hover:underline">
+                console.groq.com
+              </a>{" "}
+              and set <code className="text-[13px] bg-paper border border-line rounded px-1">AI_PROVIDER=groq</code>. The default models need no other setting.
             </p>
           </div>
         )}

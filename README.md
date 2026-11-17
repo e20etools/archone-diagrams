@@ -1280,10 +1280,22 @@ The dev server already uses the host and port Lovable's preview expects (`::`, 8
 | --- | --- | --- |
 | `anthropic` | `AI_API_KEY` | `AI_MODEL` optional |
 | `openai` | `AI_API_KEY`, `AI_MODEL` | |
+| `groq` | `AI_API_KEY` (or `GROQ_API_KEY`) | Free plan for training. Defaults: `llama-3.3-70b-versatile` for text, `qwen/qwen3.8-27b` for pictures (`AI_MODEL`, `AI_VISION_MODEL` to change) |
 | `lovable` | `AI_API_KEY` (or `LOVABLE_API_KEY`), `AI_MODEL` | Lovable AI gateway |
 | `openai-compatible` | `AI_API_KEY`, `AI_MODEL`, `AI_BASE_URL` | any endpoint that speaks `/chat/completions` |
 
-Drafting from a picture needs a model that accepts images.
+Drafting from a picture needs a model that accepts images. `AI_VISION_MODEL` names a second
+model for pictures when the main one reads text only (groq, openai and openai-compatible).
+
+### Free AI for training (Groq)
+
+1. Sign in at https://console.groq.com and create a key under API Keys.
+2. In Vercel: Project → Settings → Environment Variables, add `AI_API_KEY` with the key
+   (and `AI_PROVIDER` = `groq`, unless it is already there), then redeploy.
+3. Settings → AI in the app shows "Connected" and the two models.
+
+The free plan allows a few requests a minute and a daily token budget per model. When it is
+used up the app says so and asks to wait a minute; text drafts fall back to the built-in rules.
 The same model answers questions on the Ask page that the built-in reader cannot.
 The key is read on the server only and is never sent to the browser.
 

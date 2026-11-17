@@ -64,7 +64,7 @@ function localAiEndpoint(env: Env): Plugin {
     configurePreviewServer(server) {
       // The bundled function reads process.env, as it does on the host.
       for (const [name, value] of Object.entries(env)) {
-        if (/^(AI_|ANTHROPIC_|OPENAI_|LOVABLE_|APM_)/.test(name) && process.env[name] === undefined) process.env[name] = value;
+        if (/^(AI_|ANTHROPIC_|OPENAI_|GROQ_|LOVABLE_|APM_)/.test(name) && process.env[name] === undefined) process.env[name] = value;
       }
       const bundle = pathToFileURL(fileURLToPath(new URL("./api/ai.js", import.meta.url))).href;
       server.middlewares.use(

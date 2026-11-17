@@ -54,6 +54,8 @@ export const authToken = async (): Promise<string | null> => (tokenProvider ? to
 export interface AiStatus {
   configured: boolean;
   engine: string | null;
+  /** The model that reads pictures, when it is not the main one. */
+  visionEngine?: string | null;
   /** The server asks for a shared access code before it drafts. */
   needsCode: boolean;
 }
@@ -164,7 +166,12 @@ export async function fetchAiStatus(): Promise<AiStatus> {
     const response = await fetch(ENDPOINT);
     if (!response.ok) return none;
     const data = (await response.json()) as Partial<AiStatus>;
-    return { configured: !!data.configured, engine: data.engine ?? null, needsCode: !!data.needsCode };
+    return {
+      configured: !!data.configured,
+      engine: data.engine ?? null,
+      visionEngine: typeof data.visionEngine === "string" ? data.visionEngine : null,
+      needsCode: !!data.needsCode,
+    };
   } catch {
     return none;
   }

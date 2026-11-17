@@ -107,7 +107,7 @@ export function AiDraftDialog({ ws, targetDiagram, onClose, start }: { ws: Works
   const ready = tab === "text" ? text.trim().length >= 3 : tab === "meeting" ? transcript.trim().length >= 20 : !!file;
   return (
     <Modal
-      title={start?.voice ? "Voice to architecture" : start ? (start.tab === "image" ? "Image to architecture" : "Text to architecture") : "Draft with AI"}
+      title={start?.voice ? "Voice to Architecture" : start ? (start.tab === "image" ? "Image to Architecture" : "Text to Architecture") : "Draft with AI"}
       width={620}
       onClose={onClose}
       footer={

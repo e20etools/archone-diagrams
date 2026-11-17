@@ -13,6 +13,7 @@ import {
   Search,
   Server,
   Shapes,
+  ShieldCheck,
   Copy,
   FileUp,
   ImageUp,
@@ -49,41 +50,60 @@ import { componentFor, stepComponents, wizardProblem, wizardSteps, wizardTemplat
  * (AI, voice, files) go through a draft that is reviewed before anything is saved.
  */
 
-type Way = "manual" | "wizard" | "existing" | "template" | "text" | "voice" | "import" | "archived";
+type Way = "manual" | "wizard" | "existing" | "template" | "text" | "voice" | "image" | "import" | "archived";
 
-const WAYS: { group: string; items: { id: Way; n: string; title: string; text: string; icon: ReactNode }[] }[] = [
+interface WayItem {
+  id: Way;
+  title: string;
+  text: string;
+  icon: ReactNode;
+  /** Short facts under the description. */
+  tags: string[];
+}
+
+/** The build methods, grouped by where the content comes from. */
+const WAYS: { group: string; caption: string; columns: 2 | 3; items: WayItem[] }[] = [
   {
-    group: "Start from scratch",
+    group: "Start from Scratch",
+    caption: "Build it yourself.",
+    columns: 2,
     items: [
-      { id: "manual", n: "01", title: "Create manually", text: "Open the diagram and place library components yourself.", icon: <PencilLine size={18} /> },
-      { id: "wizard", n: "02", title: "Wizard steps", text: "Answer a few questions for this kind of diagram and get it connected.", icon: <ListOrdered size={18} /> },
+      { id: "manual", title: "Create Manually", text: "Open a blank canvas and add components from the library.", icon: <PencilLine size={18} />, tags: ["Blank canvas"] },
+      { id: "wizard", title: "Guided Wizard", text: "Answer a few questions to generate a connected diagram of this type.", icon: <ListOrdered size={18} />, tags: ["Step by step"] },
     ],
   },
   {
-    group: "Reuse existing work",
+    group: "Reuse Existing Work",
+    caption: "Begin from what you already have.",
+    columns: 2,
     items: [
-      { id: "existing", n: "03", title: "From an existing diagram", text: "Copy a diagram into a new one. The original stays as it is.", icon: <Copy size={18} /> },
-      { id: "template", n: "04", title: "From a template", text: "Start from a template of this category, built in or saved here.", icon: <LayoutTemplate size={18} /> },
+      { id: "existing", title: "Duplicate a Diagram", text: "Copy an existing diagram as your starting point. The original stays unchanged.", icon: <Copy size={18} />, tags: ["Original kept"] },
+      { id: "template", title: "Use a Template", text: "Start from a built-in or saved template for this category.", icon: <LayoutTemplate size={18} />, tags: ["Built-in & saved"] },
     ],
   },
   {
     group: "Generate with AI",
+    caption: "Get a draft, then review it.",
+    columns: 3,
     items: [
-      { id: "text", n: "05", title: "Text to architecture", text: "Describe the system and review the draft before it is saved.", icon: <Sparkles size={18} /> },
-      { id: "voice", n: "06", title: "Voice to architecture", text: "Speak in Arabic or English; component names are written in English.", icon: <Mic size={18} /> },
+      { id: "text", title: "Text to Architecture", text: "Describe the system in plain language and get a draft to review.", icon: <Sparkles size={18} />, tags: ["AI", "Draft for review"] },
+      { id: "voice", title: "Voice to Architecture", text: "Speak in Arabic or English. Component names are written in English.", icon: <Mic size={18} />, tags: ["AI", "Draft for review"] },
+      { id: "image", title: "Image to Architecture", text: "Upload a screenshot or whiteboard photo and get a draft to review.", icon: <ImageUp size={18} />, tags: ["AI", "Draft for review"] },
     ],
   },
   {
-    group: "Import and archive",
+    group: "Import & Restore",
+    caption: "Bring in existing models.",
+    columns: 2,
     items: [
       {
         id: "import",
-        n: "07",
-        title: "Import architecture",
-        text: "draw.io, Visio, Excel, Mermaid, Structurizr or ArchiMate. Shapes that are exactly a library component become it; no AI.",
+        title: "Import Architecture",
+        text: "Import draw.io, Visio, Excel, Mermaid, Structurizr or ArchiMate files. Shapes that match a library component are mapped to it.",
         icon: <FileUp size={18} />,
+        tags: ["No AI", "Draft for review"],
       },
-      { id: "archived", n: "08", title: "Archived diagrams", text: "See archived diagrams and restore one, with a reason.", icon: <Archive size={18} /> },
+      { id: "archived", title: "Restore an Archived Diagram", text: "Browse archived diagrams and bring one back, with a reason.", icon: <ArchiveRestore size={18} />, tags: [] },
     ],
   },
 ];
@@ -94,7 +114,7 @@ export function NewArchitectureDialog({ ws, onClose }: { ws: Workspace; onClose:
   const navigate = useNavigate();
   const rankIn = useCategoryRank();
   const [stage, setStage] = useState<"kind" | "ways">("kind");
-  const [way, setWay] = useState<Way | "image" | null>(null);
+  const [way, setWay] = useState<Way | null>(null);
   const [viewType, setViewTypeState] = useState<ViewType>(() => {
     const offered = AREAS.filter((a) => rankIn(a) >= 3).flatMap((a) => VIEWS_BY_CATEGORY[a]);
     // The kind chosen last time comes first, when the person may still create it.
@@ -183,14 +203,14 @@ export function NewArchitectureDialog({ ws, onClose }: { ws: Workspace; onClose:
     };
     return (
       <Modal
-        title="New diagram"
+        title="New Diagram"
         width={760}
         onClose={onClose}
         footer={
           <>
             <Button onClick={onClose}>Cancel</Button>
             <Button variant="primary" disabled={!ready} data-new-next onClick={next}>
-              Next: how to build it
+              Next: Build Method
             </Button>
           </>
         }
@@ -371,10 +391,12 @@ export function NewArchitectureDialog({ ws, onClose }: { ws: Workspace; onClose:
 
   const archivedCount = archivedDiagrams(ws).length;
   const others = Object.values(ws.diagrams).filter((d) => !d.archive?.archived).length;
+  const chosenArea = viewCategory(viewType);
+  const AreaIcon = AREA_ICON[chosenArea];
   return (
     <Modal
-      title="How do you want to build it?"
-      width={700}
+      title="Choose a Build Method"
+      width={860}
       onClose={onClose}
       footer={
         <>
@@ -387,18 +409,37 @@ export function NewArchitectureDialog({ ws, onClose }: { ws: Workspace; onClose:
       }
     >
       <Steps at={2} />
-      <p className="text-ink-soft mt-3 mb-3">
-        <span className="font-medium text-ink">{named.name}</span>, a {AREA_INFO[viewCategory(viewType)].label} diagram ({VIEW_TYPE_INFO[viewType].label}). The ways that bring in something new
-        make a draft you review before anything is saved.
-      </p>
-      <div className="space-y-4" data-new-ways>
+      <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-lg border border-line bg-paper px-3 py-2.5" data-new-summary>
+        <span className="grid size-8 shrink-0 place-items-center rounded-md bg-blueprint-soft text-blueprint">
+          <AreaIcon size={16} />
+        </span>
+        <span className="min-w-0">
+          <span className="block text-xs text-ink-soft">New diagram</span>
+          <span className="block truncate font-semibold">{named.name}</span>
+        </span>
+        <span className="ml-auto flex flex-wrap items-center gap-1.5 text-xs">
+          <span className="rounded-full border border-line bg-surface px-2.5 py-0.5">
+            <span className="text-ink-soft">Category:</span> {AREA_INFO[chosenArea].label}
+          </span>
+          <span className="rounded-full border border-line bg-surface px-2.5 py-0.5">
+            <span className="text-ink-soft">Type:</span> {KIND_TITLE[viewType]}
+          </span>
+          <button type="button" className="ml-1 font-medium text-blueprint hover:underline" onClick={() => setStage("kind")}>
+            Change
+          </button>
+        </span>
+      </div>
+      <div className="mt-4 divide-y divide-line-soft" data-new-ways>
         {WAYS.map((group) => (
-          <section key={group.group}>
-            <h3 className="text-[13px] font-semibold text-ink-soft mb-1.5">{group.group}</h3>
-            <div className="grid gap-2 sm:grid-cols-2">
+          <section key={group.group} className="grid gap-x-5 gap-y-2 py-3.5 first:pt-0 last:pb-0 sm:grid-cols-[150px_minmax(0,1fr)]" aria-label={group.group}>
+            <div>
+              <h3 className="text-[13px] font-semibold">{group.group}</h3>
+              <p className="text-xs text-ink-soft">{group.caption}</p>
+            </div>
+            <div className={cx("grid gap-2", group.columns === 3 ? "sm:grid-cols-3" : "sm:grid-cols-2")}>
               {group.items.map((item) => {
                 const unavailable = item.id === "existing" && others === 0;
-                const note = item.id === "archived" ? `${archivedCount} archived` : unavailable ? "No diagrams yet" : null;
+                const tags = item.id === "archived" ? [archivedCount === 1 ? "1 archived" : `${archivedCount} archived`] : unavailable ? ["No diagrams yet"] : item.tags;
                 return (
                   <button
                     key={item.id}
@@ -409,20 +450,24 @@ export function NewArchitectureDialog({ ws, onClose }: { ws: Workspace; onClose:
                       if (item.id === "manual") {
                         const diagram = addView({ name: named.name, viewType, scopeId: needsScope ? scopeId : null, direction });
                         open(diagram.id);
-                      } else if (item.id === "import") setWay("import");
-                      else setWay(item.id);
+                      } else setWay(item.id);
                     }}
-                    className="group flex items-start gap-3 rounded-md border border-line bg-surface px-3 py-2.5 text-left hover:border-blueprint hover:bg-blueprint-soft disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:border-line disabled:hover:bg-surface"
+                    className="group flex flex-col rounded-lg border border-line bg-surface p-3 text-left transition-colors hover:border-blueprint hover:bg-blueprint-soft focus-visible:border-blueprint disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-line disabled:hover:bg-surface"
                   >
-                    <span className="mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-md bg-blueprint-soft text-blueprint group-hover:bg-blueprint group-hover:text-white">{item.icon}</span>
-                    <span className="min-w-0">
-                      <span className="block font-medium">
-                        <span className="mr-1.5 tabular-nums text-ink-faint">{item.n}</span>
-                        {item.title}
-                      </span>
-                      <span className="block text-[13px] text-ink-soft">{item.text}</span>
-                      {note && <span className="mt-0.5 block text-xs text-ink-faint">{note}</span>}
+                    <span className="flex items-center gap-2.5">
+                      <span className="grid size-9 shrink-0 place-items-center rounded-md bg-blueprint-soft text-blueprint transition-colors group-hover:bg-blueprint group-hover:text-white">{item.icon}</span>
+                      <span className="text-sm font-semibold leading-snug">{item.title}</span>
                     </span>
+                    <span className="mt-2 block flex-1 text-[13px] leading-snug text-ink-soft">{item.text}</span>
+                    {tags.length > 0 && (
+                      <span className="mt-2 flex flex-wrap gap-1">
+                        {tags.map((t) => (
+                          <span key={t} className={cx("rounded px-1.5 py-0.5 text-[11px] font-medium", t === "AI" ? "bg-blueprint-soft text-blueprint" : "bg-paper text-ink-soft")}>
+                            {t}
+                          </span>
+                        ))}
+                      </span>
+                    )}
                   </button>
                 );
               })}
@@ -430,12 +475,9 @@ export function NewArchitectureDialog({ ws, onClose }: { ws: Workspace; onClose:
           </section>
         ))}
       </div>
-      <p className="mt-3 text-xs text-ink-faint">
-        A picture instead of a file?{" "}
-        <button type="button" className="text-blueprint hover:underline" data-way="image" onClick={() => setWay("image")}>
-          <ImageUp size={12} className="inline -mt-0.5 mr-0.5" />
-          Turn a screenshot or whiteboard photo into a draft
-        </button>
+      <p className="mt-4 flex items-start gap-1.5 text-xs text-ink-soft">
+        <ShieldCheck size={14} className="mt-px shrink-0 text-ok" />
+        Methods marked Draft for review open a draft first. Nothing is added to the model until you accept it.
       </p>
     </Modal>
   );
@@ -445,13 +487,13 @@ const AREA_ICON: Record<Category, typeof AppWindow> = { applications: AppWindow,
 
 /** Titles on the cards: the category names the C4 views, so the card can be short. */
 const KIND_TITLE: Record<ViewType, string> = {
-  landscape: "System landscape",
-  context: "Level 1: System context",
+  landscape: "System Landscape",
+  context: "Level 1: System Context",
   container: "Level 2: Containers",
-  dataflow: "Data flows",
-  deployment: "Infrastructure and hosting",
-  business: "Business process",
-  custom: "Free canvas",
+  dataflow: "Data Flows",
+  deployment: "Infrastructure & Hosting",
+  business: "Business Process",
+  custom: "Free Canvas",
 };
 
 export function suggestName(viewType: ViewType, scopeName?: string): string {
@@ -480,7 +522,7 @@ function rememberKind(v: ViewType) {
 function Steps({ at }: { at: 1 | 2 }) {
   return (
     <ol className="flex items-center gap-2 text-xs" aria-label="Steps" data-new-steps={at}>
-      {["What it shows", "How to build it"].map((label, i) => (
+      {["Diagram Type", "Build Method"].map((label, i) => (
         <li key={label} className={cx("flex items-center gap-1.5 rounded-full px-2.5 py-1", i + 1 === at ? "bg-blueprint-soft text-blueprint font-medium" : "text-ink-faint")} aria-current={i + 1 === at ? "step" : undefined}>
           <span className={cx("grid h-4 w-4 place-items-center rounded-full text-[10px]", i + 1 === at ? "bg-blueprint text-white" : i + 1 < at ? "bg-blueprint-soft text-blueprint" : "border border-line")}>
             {i + 1 < at ? <Check size={10} /> : i + 1}
@@ -751,7 +793,7 @@ function CopyFromDiagram({ ws, start, onBack, onDone }: { ws: Workspace; start: 
     .sort((a, b) => a.name.localeCompare(b.name));
   return (
     <Modal
-      title="From an existing diagram"
+      title="Duplicate a Diagram"
       width={620}
       onClose={onBack}
       footer={
@@ -887,7 +929,7 @@ function VoiceDialog({ ws, start, onBack, onClose }: { ws: Workspace; start: Dia
 
   return (
     <Modal
-      title="Voice to architecture"
+      title="Voice to Architecture"
       width={600}
       onClose={onBack}
       footer={
@@ -995,7 +1037,7 @@ export function ArchivedDialog({ ws, onClose, onRestored }: { ws: Workspace; onC
       </Modal>
     );
   return (
-    <Modal title="Archived diagrams" width={640} onClose={onClose} footer={<Button onClick={onClose}>Close</Button>}>
+    <Modal title="Archived Diagrams" width={640} onClose={onClose} footer={<Button onClick={onClose}>Close</Button>}>
       {list.length === 0 ? (
         <p className="text-ink-soft" data-archived-empty>
           No diagram is archived. Archive one from its row in the list or from its settings; it leaves the lists but nothing is deleted.

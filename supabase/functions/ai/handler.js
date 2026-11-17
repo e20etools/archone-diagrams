@@ -4465,6 +4465,9 @@ var requestSchema = discriminatedUnionType("mode", [
 	})
 ]);
 var DEFAULT_ANTHROPIC_MODEL = "claude-sonnet-5-5";
+/** Groq's free plan: a capable text model, and one that reads pictures. */
+var DEFAULT_GROQ_MODEL = "llama-3.3-70b-versatile";
+var DEFAULT_GROQ_VISION_MODEL = "qwen/qwen3.8-27b";
 function resolveProvider(env) {
 	const wanted = env.AI_PROVIDER?.trim().toLowerCase();
 	const pick = (id) => {
@@ -4484,7 +4487,19 @@ function resolveProvider(env) {
 					id,
 					key,
 					model: env.AI_MODEL,
+					visionModel: env.AI_VISION_MODEL,
 					baseUrl: env.AI_BASE_URL || "https://api.openai.com/v1"
+				} : null;
+			}
+			case "groq": {
+				const key = env.GROQ_API_KEY || env.AI_API_KEY;
+				return key ? {
+					id,
+					key,
+					model: env.AI_MODEL || DEFAULT_GROQ_MODEL,
+					visionModel: env.AI_VISION_MODEL || DEFAULT_GROQ_VISION_MODEL,
+					baseUrl: env.AI_BASE_URL || "https://api.groq.com/openai/v1",
+					maxTokens: 4096
 				} : null;
 			}
 			case "lovable": {
@@ -4500,13 +4515,15 @@ function resolveProvider(env) {
 				id,
 				key: env.AI_API_KEY,
 				model: env.AI_MODEL,
+				visionModel: env.AI_VISION_MODEL,
 				baseUrl: env.AI_BASE_URL
 			} : null;
 		}
 	};
-	if (wanted === "anthropic" || wanted === "openai" || wanted === "lovable" || wanted === "openai-compatible") return pick(wanted);
+	if (wanted === "anthropic" || wanted === "openai" || wanted === "groq" || wanted === "lovable" || wanted === "openai-compatible") return pick(wanted);
 	if (env.ANTHROPIC_API_KEY) return pick("anthropic");
 	if (env.OPENAI_API_KEY) return pick("openai");
+	if (env.GROQ_API_KEY) return pick("groq");
 	if (env.LOVABLE_API_KEY) return pick("lovable");
 	if (env.AI_API_KEY && env.AI_BASE_URL) return pick("openai-compatible");
 	return null;
@@ -4514,10 +4531,18 @@ function resolveProvider(env) {
 /** Safe to show in the browser: says whether AI is set up, never the key. */
 function aiStatus(env) {
 	const provider = resolveProvider(env);
-	return {
-		configured: !!provider,
-		engine: provider ? `${provider.id}:${provider.model}` : null
+	if (!provider) return {
+		configured: false,
+		engine: null
 	};
+	const status = {
+		configured: true,
+		engine: `${provider.id}:${provider.model}`
+	};
+	return provider.visionModel && provider.visionModel !== provider.model ? {
+		...status,
+		visionEngine: `${provider.id}:${provider.visionModel}`
+	} : status;
 }
 /** Pulls the JSON object out of a model answer, with or without a code fence around it. */
 function extractJson(text) {
@@ -4577,15 +4602,14 @@ async function callAnthropic(p, request, fetchImpl) {
 	});
 }
 async function callOpenAiStyle(p, request, fetchImpl) {
-	const { system, text } = messageFor(request);
-	const content = [{
+	const { system, text, maxTokens } = messageFor(request);
+	const content = request.mode === "image" ? [{
 		type: "text",
 		text
-	}];
-	if (request.mode === "image") content.push({
+	}, {
 		type: "image_url",
 		image_url: { url: `data:${request.image.mime};base64,${request.image.data}` }
-	});
+	}] : text;
 	return fetchImpl(`${p.baseUrl.replace(/\/$/, "")}/chat/completions`, {
 		method: "POST",
 		headers: {
@@ -4593,24 +4617,25 @@ async function callOpenAiStyle(p, request, fetchImpl) {
 			authorization: `Bearer ${p.key}`
 		},
 		body: JSON.stringify({
-			model: p.model,
+			model: modelFor(p, request),
 			messages: [{
 				role: "system",
 				content: system
 			}, {
 				role: "user",
 				content
-			}]
+			}],
+			...p.maxTokens ? { max_tokens: Math.min(p.maxTokens, maxTokens) } : {}
 		})
 	});
 }
+/** The model for this request: the vision model for a picture, when one is set. */
+var modelFor = (p, request) => request.mode === "image" && p.visionModel ? p.visionModel : p.model;
 function answerText(provider, payload) {
 	const data = payload;
 	if (provider.id === "anthropic") return (Array.isArray(data?.content) ? data.content : []).filter((b) => b?.type === "text").map((b) => String(b.text ?? "")).join("\n");
 	const message = data?.choices?.[0]?.message?.content;
-	if (typeof message === "string") return message;
-	if (Array.isArray(message)) return message.map((part) => String(part?.text ?? "")).join("\n");
-	return "";
+	return (typeof message === "string" ? message : Array.isArray(message) ? message.map((part) => String(part?.text ?? "")).join("\n") : "").replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
 }
 async function handleAiRequest(body, env, fetchImpl = fetch) {
 	const parsed = requestSchema.safeParse(body);
@@ -4641,14 +4666,32 @@ async function handleAiRequest(body, env, fetchImpl = fetch) {
 			}
 		};
 	}
-	if (!response.ok) return {
-		status: 502,
-		body: {
-			error: "provider_error",
-			message: `The AI provider answered with status ${response.status}.`,
-			providerStatus: response.status
-		}
-	};
+	if (!response.ok) {
+		if (response.status === 429) return {
+			status: 502,
+			body: {
+				error: "rate_limited",
+				message: "The AI provider's free allowance is used up for the moment. Wait a minute and try again.",
+				providerStatus: 429
+			}
+		};
+		if (response.status === 401 || response.status === 403) return {
+			status: 502,
+			body: {
+				error: "provider_error",
+				message: "The AI provider refused the key. Check AI_API_KEY on the server.",
+				providerStatus: response.status
+			}
+		};
+		return {
+			status: 502,
+			body: {
+				error: "provider_error",
+				message: `The AI provider answered with status ${response.status}.`,
+				providerStatus: response.status
+			}
+		};
+	}
 	let payload;
 	try {
 		payload = await response.json();
@@ -4674,7 +4717,7 @@ async function handleAiRequest(body, env, fetchImpl = fetch) {
 			status: 200,
 			body: {
 				answer,
-				engine: `${provider.id}:${provider.model}`
+				engine: `${provider.id}:${modelFor(provider, parsed.data)}`
 			}
 		};
 	}
@@ -4690,7 +4733,7 @@ async function handleAiRequest(body, env, fetchImpl = fetch) {
 		status: 200,
 		body: {
 			draft,
-			engine: `${provider.id}:${provider.model}`
+			engine: `${provider.id}:${modelFor(provider, parsed.data)}`
 		}
 	};
 }

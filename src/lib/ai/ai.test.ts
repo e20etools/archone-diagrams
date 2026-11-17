@@ -165,6 +165,54 @@ describe("AI endpoint (AI-01, AI-02)", () => {
     expect((await handleAiRequest({ mode: "prompt", text: "mobile app calls core api" }, env, garbage)).body.error).toBe("bad_response");
   });
 
+  it("uses Groq's free models with only a key, and a picture model for images", async () => {
+    const env = { AI_PROVIDER: "groq", AI_API_KEY: "gsk_test" };
+    const provider = resolveProvider(env);
+    expect(provider?.baseUrl).toBe("https://api.groq.com/openai/v1");
+    expect(aiStatus(env)).toEqual({ configured: true, engine: "groq:llama-3.3-70b-versatile", visionEngine: "groq:qwen/qwen3.8-27b" });
+    // A GROQ_API_KEY alone is enough too.
+    expect(resolveProvider({ GROQ_API_KEY: "gsk_test" })?.id).toBe("groq");
+
+    const seen: any[] = [];
+    const fake = (async (url: string, init: RequestInit) => {
+      seen.push({ url, headers: init.headers, body: JSON.parse(String(init.body)) });
+      return new Response(JSON.stringify({ choices: [{ message: { content: "<think>working it out</think>\n" + draftJson } }] }), { status: 200 });
+    }) as unknown as typeof fetch;
+
+    const text = await handleAiRequest({ mode: "prompt", text: "mobile app calls core api" }, env, fake);
+    expect(text.status).toBe(200);
+    expect(text.body.engine).toBe("groq:llama-3.3-70b-versatile");
+    expect(seen[0].url).toBe("https://api.groq.com/openai/v1/chat/completions");
+    expect(seen[0].headers.authorization).toBe("Bearer gsk_test");
+    expect(seen[0].body.model).toBe("llama-3.3-70b-versatile");
+    expect(typeof seen[0].body.messages[1].content).toBe("string");
+    expect(seen[0].body.max_tokens).toBe(4096);
+
+    const image = await handleAiRequest({ mode: "image", text: "sketch", image: { mime: "image/png", data: "A".repeat(200) } }, env, fake);
+    expect(image.status).toBe(200);
+    expect(image.body.engine).toBe("groq:qwen/qwen3.8-27b");
+    expect(seen[1].body.model).toBe("qwen/qwen3.8-27b");
+    expect(seen[1].body.messages[1].content[1].type).toBe("image_url");
+
+    const ask = await handleAiRequest({ mode: "ask", question: "What does the core API need?", context: "Core API depends on DB" }, env, fake);
+    expect(ask.status).toBe(200);
+    expect(String(ask.body.answer)).not.toContain("<think>");
+    expect(seen[2].body.max_tokens).toBe(1500);
+
+    // Chosen models win over the defaults.
+    expect(aiStatus({ ...env, AI_MODEL: "openai/gpt-oss-120b" }).engine).toBe("groq:openai/gpt-oss-120b");
+  });
+
+  it("explains a used-up free allowance and a refused key", async () => {
+    const env = { AI_PROVIDER: "groq", AI_API_KEY: "gsk_test" };
+    const limited = (async () => new Response("rate limit for org_abc", { status: 429 })) as unknown as typeof fetch;
+    const r = await handleAiRequest({ mode: "prompt", text: "mobile app calls core api" }, env, limited);
+    expect(r.body.error).toBe("rate_limited");
+    expect(JSON.stringify(r.body)).not.toContain("org_abc");
+    const refused = (async () => new Response("bad key", { status: 401 })) as unknown as typeof fetch;
+    expect(String((await handleAiRequest({ mode: "prompt", text: "mobile app calls core api" }, env, refused)).body.message)).toContain("AI_API_KEY");
+  });
+
   it("finds the JSON object inside surrounding text", () => {
     expect(extractJson('Here you go: {"a": 1} hope it helps')).toEqual({ a: 1 });
     expect(extractJson("no json")).toBeNull();
