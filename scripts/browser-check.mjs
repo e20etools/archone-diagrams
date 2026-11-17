@@ -1682,6 +1682,66 @@ try {
   await clickText(page, "Cancel");
   await shot(page, "10-settings");
 
+  // The file library: upload, link to diagrams, open from a diagram, change links, delete.
+  {
+    const uploads = await mkdtemp(join(tmpdir(), "archone-up-"));
+    await writeFile(join(uploads, "Vendor install guide.pdf"), "%PDF-1.4\n% a stand-in for a vendor guide\n");
+    await writeFile(join(uploads, "Base design.drawio"), "<mxfile><diagram name='Base'/></mxfile>");
+    await writeFile(join(uploads, "Meeting notes.txt"), "Agreed the failover test for next quarter.");
+    const firstDiagram = Object.values((await stored()).diagrams).find((d) => !d.archive?.archived);
+    await page.goto(`${base}/files`, { waitUntil: "networkidle0" });
+    await page.waitForSelector("[data-file-input]");
+    await (await page.$("[data-file-input]")).uploadFile(join(uploads, "Vendor install guide.pdf"), join(uploads, "Base design.drawio"));
+    await page.waitForSelector("[data-file-chosen]");
+    await page.select("[data-file-kind]", "vendor");
+    await page.click(`[data-link-diagram="${firstDiagram.id}"]`);
+    await page.click("[data-file-upload-go]");
+    await page.waitForFunction(() => document.querySelector("[data-file-rows]")?.getAttribute("data-file-rows") === "2");
+    check("files are uploaded to the library, with their kind and the diagram they belong to", (await page.$$eval("[data-file-links]", (els) => els.every((e) => e.getAttribute("data-file-links") === "1"))) && (await hasText(page, "Vendor document")), firstDiagram.name);
+    await shot(page, "10c-file-library");
+    await page.goto(`${base}/diagram/${firstDiagram.id}`, { waitUntil: "networkidle0" });
+    await page.waitForSelector("[data-diagram-files-count]");
+    check("a diagram shows how many files go with it", (await page.$eval("[data-diagram-files-count]", (e) => e.getAttribute("data-diagram-files-count"))) === "2");
+    await page.click("[data-diagram-files-open]");
+    await page.waitForSelector("[data-diagram-files] [data-file-rows]");
+    await (await page.$("[data-diagram-files] [data-file-input]")).uploadFile(join(uploads, "Meeting notes.txt"));
+    await page.click("[data-diagram-files] [data-file-upload-go]");
+    await page.waitForFunction(() => document.querySelector("[data-diagram-files] [data-file-rows]")?.getAttribute("data-file-rows") === "3");
+    check("a file uploaded from a diagram is linked to it", true);
+    await shot(page, "10d-diagram-files");
+    const tabs = (await browser.pages()).length;
+    await page.click('[data-file-open="Meeting notes.txt"]');
+    let opened = false;
+    for (let i = 0; i < 20 && !opened; i++) {
+      await sleep(150);
+      opened = (await browser.pages()).length > tabs;
+    }
+    check("a file opens in a new tab from the diagram", opened);
+    for (const extra of (await browser.pages()).slice(tabs)) await extra.close();
+    await page.bringToFront();
+    await page.goto(`${base}/files`, { waitUntil: "networkidle0" });
+    await page.waitForSelector('[data-file-edit="Base design.drawio"]');
+    await page.click('[data-file-edit="Base design.drawio"]');
+    await page.waitForSelector("[data-file-edit-dialog]");
+    await page.click(`[data-file-edit-dialog] [data-link-diagram="${firstDiagram.id}"]`);
+    await page.click("[data-file-save]");
+    await page.waitForFunction(() => document.querySelector('[data-file-row="Base design.drawio"] [data-file-links]')?.getAttribute("data-file-links") === "0");
+    check("a file's links are changed from the library", await hasText(page, "Not linked: only you see it"));
+    await page.click('[data-file-delete="Meeting notes.txt"]');
+    await page.click("[data-file-delete-confirm]");
+    await page.waitForFunction(() => document.querySelector("[data-file-rows]")?.getAttribute("data-file-rows") === "2");
+    check("a file is deleted from the library once confirmed", !(await page.$('[data-file-row="Meeting notes.txt"]')));
+    await page.click('[aria-label="Download Vendor install guide.pdf"]');
+    let fetched = "";
+    for (let i = 0; i < 25 && !fetched; i++) {
+      await sleep(200);
+      fetched = (await readdir(downloads)).find((f) => f === "Vendor install guide.pdf") ?? "";
+    }
+    check("a file downloads under its own name", !!fetched && (await readFile(join(downloads, fetched), "utf8")).startsWith("%PDF"));
+    if (fetched) await rm(join(downloads, fetched));
+    await rm(uploads, { recursive: true, force: true });
+  }
+
   // The bank sample: ten connected diagrams added to what is there.
   await page.goto(`${base}/settings`, { waitUntil: "networkidle0" });
   const beforeSample = Object.values((await stored()).diagrams).filter((d) => !d.archive?.archived).length;

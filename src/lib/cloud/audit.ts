@@ -59,7 +59,7 @@ export function parseAnchor(text: string): { id: number; hash: string } | null {
 }
 
 export const AUDIT_PAGE_SIZE = 100;
-export const AUDIT_ENTITIES = ["object", "relationship", "diagram", "member", "invitation", "workspace", "version", "review", "scenario", "proposal", "decision", "API key", "webhook", "live link"] as const;
+export const AUDIT_ENTITIES = ["object", "relationship", "diagram", "member", "invitation", "workspace", "version", "review", "scenario", "proposal", "decision", "API key", "webhook", "live link", "file"] as const;
 
 const FIELD_LABELS: Record<string, string> = {
   type_id: "Type",

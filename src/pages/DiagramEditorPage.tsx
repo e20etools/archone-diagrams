@@ -1,3 +1,4 @@
+import { DiagramFilesButton } from "@/components/DiagramFiles";
 import { NOTATION_INFO } from "@/lib/notation";
 import { NOTATIONS, type Notation } from "@/lib/types";
 import { Zap, Archive, BookmarkPlus, AlignCenterHorizontal, AlignCenterVertical, AlignEndHorizontal, AlignEndVertical, AlignHorizontalSpaceAround, AlignStartHorizontal, AlignStartVertical, AlignVerticalSpaceAround, ChevronRight, EyeOff, LayoutDashboard, Presentation, ListOrdered, MessageSquare, PanelLeftClose, PanelLeftOpen, Search, Share2, ShieldCheck, Shuffle, SlidersHorizontal, Sparkles, Trash2, Waypoints, X, ZoomIn } from "lucide-react";
@@ -929,6 +930,7 @@ function Editor({ ws, diagram }: { ws: Workspace; diagram: Diagram }) {
             Flows
             {flowsOf(diagram).length > 0 && <span className="tabular-nums text-ink-soft">{flowsOf(diagram).length}</span>}
           </Button>
+          <DiagramFilesButton ws={ws} diagram={diagram} />
           {cloudEnabled && (
             <Button
               icon={<MessageSquare size={15} />}

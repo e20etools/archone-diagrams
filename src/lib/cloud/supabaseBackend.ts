@@ -2,7 +2,7 @@ import type { CategoryRoles } from "../categories";
 import type { TrustPage } from "../trust";
 import { AUDIT_PAGE_SIZE, cleanSearch, dayBounds, type AuditEntry } from "./audit";
 import { createClient, type PostgrestError, type RealtimeChannel, type SupabaseClient } from "@supabase/supabase-js";
-import { BackendError, type ApiKeyInfo, type Backend, type CloudUser, type LiveLink, type WebhookInfo, type Invite, type LiveHandlers, type Member, type Peer, type PendingInvite, type Role, type WorkspaceSummary } from "./backend";
+import { BackendError, type ApiKeyInfo, type Backend, type FileKind, type StoredFile, type CloudUser, type LiveLink, type WebhookInfo, type Invite, type LiveHandlers, type Member, type Peer, type PendingInvite, type Role, type WorkspaceSummary } from "./backend";
 import { snapshotToTables, type Comment, type Review, type ReviewDecision, type ReviewStage, type VersionInfo } from "./collab";
 import { KEY_COLUMNS, SQL_TABLE, fromRow, toRow, type Row } from "./rows";
 import { TABLE_NAMES, emptyTables, splitNodeKey, type ChangeSet, type TableName, type Tables } from "./tables";
@@ -25,6 +25,23 @@ function fail(error: PostgrestError | { message: string; status?: number; code?:
   }
   throw new BackendError(code ? "invalid" : "unknown", message);
 }
+
+const FILE_BUCKET = "diagram-files";
+/** A name safe to keep in storage: letters, digits, dots, dashes and underscores. */
+const storageName = (name: string) => (name.normalize("NFKD").replace(/[^\w.-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 120) || "file");
+const FILE_KINDS_KNOWN = new Set(["vendor", "supporting", "design", "other"]);
+const fileRow = (r: Row, diagramIds: string[]): StoredFile => ({
+  id: String(r.id),
+  name: String(r.name ?? ""),
+  kind: (FILE_KINDS_KNOWN.has(String(r.kind)) ? String(r.kind) : "other") as FileKind,
+  description: String(r.description ?? ""),
+  mime: String(r.mime ?? ""),
+  size: Number(r.size ?? 0),
+  uploadedBy: typeof r.uploaded_by === "string" ? r.uploaded_by : null,
+  uploadedAt: stamp(r.uploaded_at),
+  updatedAt: stamp(r.updated_at),
+  diagramIds,
+});
 
 const trustRow = (r: Row): TrustPage => ({
   token: String(r.token ?? ""),
@@ -519,6 +536,96 @@ export function createSupabaseBackend(url: string, key: string): Backend {
         }),
       );
       return { entries: rows.slice(0, limit), more: rows.length > limit };
+    },
+
+    async listFiles(workspaceId) {
+      const [files, links] = await Promise.all([
+        supabase.from("diagram_files").select("id, name, kind, description, mime, size, uploaded_by, uploaded_at, updated_at").eq("workspace_id", workspaceId).order("uploaded_at", { ascending: false }),
+        supabase.from("diagram_file_links").select("file_id, diagram_id").eq("workspace_id", workspaceId),
+      ]);
+      // A database that has not had the file library yet has no files.
+      if (files.error) {
+        if (/diagram_files|does not exist|schema cache/i.test(files.error.message)) return [];
+        fail(files.error, "The files could not be listed.");
+      }
+      if (links.error) fail(links.error, "The files could not be listed.");
+      const byFile = new Map<string, string[]>();
+      for (const l of (links.data ?? []) as Row[]) (byFile.get(String(l.file_id)) ?? byFile.set(String(l.file_id), []).get(String(l.file_id))!).push(String(l.diagram_id));
+      return ((files.data ?? []) as Row[]).map((r) => fileRow(r, byFile.get(String(r.id)) ?? []));
+    },
+    async uploadFile(workspaceId, body, upload) {
+      const fileId = crypto.randomUUID();
+      const path = `${workspaceId}/${fileId}/${storageName(upload.name)}`;
+      const user = (await supabase.auth.getUser()).data.user;
+      if (!user) throw new BackendError("forbidden", "Sign in again to upload.");
+      const { error } = await supabase.from("diagram_files").insert({
+        id: fileId,
+        workspace_id: workspaceId,
+        name: upload.name.trim().slice(0, 200) || "Untitled file",
+        kind: upload.kind,
+        description: upload.description.slice(0, 2000),
+        mime: (body.type || "application/octet-stream").slice(0, 200),
+        size: body.size,
+        storage_path: path,
+        uploaded_by: user.id,
+      });
+      if (error) fail(error, "The file could not be added.");
+      const stored = await supabase.storage.from(FILE_BUCKET).upload(path, body, { contentType: body.type || "application/octet-stream", upsert: false });
+      if (stored.error) {
+        // Nothing half-kept: without the file, its record goes too.
+        await supabase.from("diagram_files").delete().eq("id", fileId);
+        fail({ message: stored.error.message }, "The file could not be uploaded.");
+      }
+      if (upload.diagramIds.length) {
+        const linked = await supabase.from("diagram_file_links").insert(upload.diagramIds.map((d) => ({ workspace_id: workspaceId, file_id: fileId, diagram_id: d, linked_by: user.id })));
+        if (linked.error) fail(linked.error, "The file was uploaded, but could not be linked to every diagram chosen.");
+      }
+      const { data, error: readError } = await supabase.from("diagram_files").select("id, name, kind, description, mime, size, uploaded_by, uploaded_at, updated_at").eq("id", fileId).single();
+      if (readError) fail(readError, "The file was uploaded but could not be read back.");
+      return fileRow(data as Row, upload.diagramIds);
+    },
+    async fileUrl(_workspaceId, fileId, download) {
+      const { data, error } = await supabase.from("diagram_files").select("storage_path, name").eq("id", fileId).single();
+      if (error || !data) fail(error, "That file is not there, or you may not open it.");
+      const signed = await supabase.storage.from(FILE_BUCKET).createSignedUrl(String((data as Row).storage_path), 120, download ? { download: String((data as Row).name) } : undefined);
+      if (signed.error || !signed.data) fail({ message: signed.error?.message ?? "" }, "The file could not be opened.");
+      return signed.data.signedUrl;
+    },
+    async updateFile(_workspaceId, fileId, patch) {
+      const row: Row = {};
+      if (patch.name !== undefined) row.name = patch.name.trim().slice(0, 200);
+      if (patch.kind !== undefined) row.kind = patch.kind;
+      if (patch.description !== undefined) row.description = patch.description.slice(0, 2000);
+      const { data, error } = await supabase.from("diagram_files").update(row).eq("id", fileId).select("id");
+      if (error) fail(error, "The file could not be changed.");
+      if (!data?.length) throw new BackendError("forbidden", "Only the person who uploaded a file, or an owner, can change it.");
+    },
+    async setFileLinks(workspaceId, fileId, diagramIds) {
+      const { data, error } = await supabase.from("diagram_file_links").select("diagram_id").eq("file_id", fileId);
+      if (error) fail(error, "The links could not be read.");
+      const now = new Set(((data ?? []) as Row[]).map((r) => String(r.diagram_id)));
+      const want = new Set(diagramIds);
+      const drop = [...now].filter((d) => !want.has(d));
+      const add = [...want].filter((d) => !now.has(d));
+      if (drop.length) {
+        const removed = await supabase.from("diagram_file_links").delete().eq("file_id", fileId).in("diagram_id", drop).select("diagram_id");
+        if (removed.error) fail(removed.error, "The links could not be changed.");
+        if ((removed.data ?? []).length < drop.length) throw new BackendError("forbidden", "Only the person who uploaded a file, an owner, or an editor of the diagram can remove a link.");
+      }
+      if (add.length) {
+        const user = (await supabase.auth.getUser()).data.user;
+        const linked = await supabase.from("diagram_file_links").insert(add.map((d) => ({ workspace_id: workspaceId, file_id: fileId, diagram_id: d, linked_by: user?.id })));
+        if (linked.error) fail(linked.error, "The file could not be linked to every diagram chosen: you can link only your own files, to diagrams you can edit.");
+      }
+    },
+    async deleteFile(_workspaceId, fileId) {
+      const { data, error } = await supabase.from("diagram_files").select("storage_path").eq("id", fileId).single();
+      if (error || !data) fail(error, "That file is not there, or you may not delete it.");
+      const removed = await supabase.storage.from(FILE_BUCKET).remove([String((data as Row).storage_path)]);
+      if (removed.error) fail({ message: removed.error.message }, "The file could not be deleted.");
+      const gone = await supabase.from("diagram_files").delete().eq("id", fileId).select("id");
+      if (gone.error) fail(gone.error, "The file could not be deleted.");
+      if (!gone.data?.length) throw new BackendError("forbidden", "Only the person who uploaded a file, or an owner, can delete it.");
     },
 
     async listLiveLinks(workspaceId, diagramId) {

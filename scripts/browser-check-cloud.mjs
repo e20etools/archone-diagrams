@@ -4,7 +4,8 @@
 // Supabase adapter itself; the database rules are covered by src/lib/cloud/database.test.ts.
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import puppeteer from "puppeteer-core";
@@ -212,6 +213,32 @@ try {
   await visit(vera, `${base}/settings`);
   await waitText(vera, "Only an owner can invite people or change roles.");
   check("a viewer can see the member list but not manage it", (await count(vera, 'select[aria-label^="Role of"]')) === 0 && !(await hasText(vera, "Invite by email")));
+
+  /* ---------- the file library: your own files, and those of diagrams you can see ---------- */
+  {
+    const uploads = await mkdtemp(join(tmpdir(), "archone-cloud-up-"));
+    await writeFile(join(uploads, "Ben vendor quote.txt"), "Quote for two firewalls.");
+    await visit(ben, `${base}/files`, "[data-file-input]");
+    await (await ben.$("[data-file-input]")).uploadFile(join(uploads, "Ben vendor quote.txt"));
+    await ben.waitForSelector("[data-file-upload-go]");
+    await ben.click("[data-file-upload-go]");
+    await until(ben, () => document.querySelector("[data-file-rows]")?.getAttribute("data-file-rows") === "1", 6000);
+    await visit(vera, `${base}/files`, "[data-files-page]");
+    await waitText(vera, "No files yet");
+    check("a file linked to no diagram is seen only by the person who uploaded it", !(await hasText(vera, "Ben vendor quote.txt")) && !(await vera.$("[data-file-input]")));
+    await visit(ben, `${base}/files`, '[data-file-edit="Ben vendor quote.txt"]');
+    await ben.click('[data-file-edit="Ben vendor quote.txt"]');
+    await ben.waitForSelector("[data-file-edit-dialog] [data-link-diagram]");
+    await ben.click("[data-file-edit-dialog] [data-link-diagram]");
+    await ben.click("[data-file-save]");
+    await until(ben, () => document.querySelector('[data-file-row="Ben vendor quote.txt"] [data-file-links]')?.getAttribute("data-file-links") === "1", 6000);
+    await visit(vera, `${base}/files`, '[data-file-row="Ben vendor quote.txt"]');
+    check("linked to a diagram, the file is seen by those who can see the diagram; a viewer cannot delete it", !(await vera.$('[data-file-delete="Ben vendor quote.txt"]')));
+    await visit(ana, `${base}/files`, '[data-file-row="Ben vendor quote.txt"]');
+    check("an owner may delete someone else's file", !!(await ana.$('[data-file-delete="Ben vendor quote.txt"]')));
+    await shot(vera, "24b-viewer-files");
+    await rm(uploads, { recursive: true, force: true });
+  }
 
   /* ---------- the owner promotes the viewer; it takes effect at once ---------- */
   await visit(ana, `${base}/settings`, 'select[aria-label="Role of Vera Viewer"]');

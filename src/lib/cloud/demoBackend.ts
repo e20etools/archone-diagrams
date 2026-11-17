@@ -4,7 +4,7 @@ import { scopeRefusal } from "./scope";
 import type { TrustPage } from "../trust";
 import type { Workspace } from "../types";
 import { AUDIT_PAGE_SIZE, matchesQuery, type AuditEntry } from "./audit";
-import { BackendError, LIVE_LINK_MIN_PASSWORD, canCommentRole, canEditRole, type ApiKeyInfo, type Backend, type LiveLink, type WebhookInfo, type CloudUser, type LiveHandlers, type Peer, type Role } from "./backend";
+import { BackendError, LIVE_LINK_MIN_PASSWORD, canCommentRole, canEditRole, type ApiKeyInfo, type Backend, type StoredFile, type LiveLink, type WebhookInfo, type CloudUser, type LiveHandlers, type Peer, type Role } from "./backend";
 import type { Comment, Review, ReviewSettings, VersionInfo } from "./collab";
 import { DEMO_DB_KEY } from "./config";
 import { emptyTables, fromTables, patchTables, sameValue, splitNodeKey, type ChangeSet, type Tables } from "./tables";
@@ -33,11 +33,14 @@ interface Db {
   /** The demo keeps a link's password as written; the real database stores a salted hash. */
   liveLinks?: (LiveLink & { workspaceId: string; password?: string; failed?: number; lockedUntil?: string })[];
   trustPages?: Record<string, TrustPage>;
+  /** The file library: each file's record, its links, and its content as a data URL (the demo keeps files small). */
+  files?: Record<string, (Omit<StoredFile, "diagramIds"> & { links: string[]; data: string })[]>;
   /** A stand-in for the audit log the real database writes with triggers. It covers the model, members and invitations. */
   audit?: Record<string, AuditEntry[]>;
 }
 
 const DB_KEY = DEMO_DB_KEY;
+const DEMO_FILE_LIMIT = 2 * 1024 * 1024;
 const SESSION_KEY = "archone.demoSession";
 const id = (prefix: string) => `${prefix}_${Math.random().toString(36).slice(2, 10)}`;
 
@@ -216,6 +219,31 @@ export function createDemoBackend(): Backend {
     return review;
   };
   const collabChanged = (workspaceId: string) => bus.postMessage({ type: "collab", workspaceId } satisfies Message);
+
+  /* The file library, by the database's rules. */
+  const filesOf = (db: Db, workspaceId: string) => ((db.files ??= {})[workspaceId] ??= []);
+  const diagramVisible = (db: Db, workspaceId: string, diagramId: string, userId = me().id) => {
+    const member = db.members.find((m) => m.workspaceId === workspaceId && m.userId === userId);
+    const diagram = db.rows[workspaceId]?.diagrams[diagramId];
+    return !!member && !!diagram && categoryRank(member.role, member.categoryRoles ?? {}, viewCategory(diagram.viewType)) >= 1;
+  };
+  const diagramEditable = (db: Db, workspaceId: string, diagramId: string) => {
+    const member = db.members.find((m) => m.workspaceId === workspaceId && m.userId === me().id);
+    const diagram = db.rows[workspaceId]?.diagrams[diagramId];
+    return !!member && !!diagram && canEditRole(member.role) && categoryRank(member.role, member.categoryRoles ?? {}, viewCategory(diagram.viewType)) >= 3;
+  };
+  type DemoFile = NonNullable<Db["files"]>[string][number];
+  const fileVisible = (db: Db, workspaceId: string, f: DemoFile) => roleOf(db, workspaceId, me().id) !== null && (f.uploadedBy === me().id || f.links.some((d) => diagramVisible(db, workspaceId, d)));
+  const fileManageable = (db: Db, workspaceId: string, f: DemoFile) => {
+    const role = roleOf(db, workspaceId, me().id);
+    return role === "owner" || (f.uploadedBy === me().id && canEditRole(role));
+  };
+  const findFile = (db: Db, workspaceId: string, fileId: string) => {
+    const f = filesOf(db, workspaceId).find((x) => x.id === fileId);
+    if (!f || !fileVisible(db, workspaceId, f)) throw new BackendError("forbidden", "That file is not there, or you may not open it.");
+    return f;
+  };
+  const shownFile = (db: Db, workspaceId: string, { links, data: _data, ...f }: DemoFile): StoredFile => ({ ...f, diagramIds: links.filter((d) => diagramVisible(db, workspaceId, d)) });
 
   return {
     onAuth(callback) {
@@ -757,6 +785,70 @@ export function createDemoBackend(): Backend {
       return { entries: rows.slice(0, limit), more: rows.length > limit };
     },
 
+    async listFiles(workspaceId) {
+      const db = read();
+      return filesOf(db, workspaceId)
+        .filter((f) => fileVisible(db, workspaceId, f))
+        .map((f) => shownFile(db, workspaceId, f))
+        .sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt));
+    },
+    async uploadFile(workspaceId, body, upload) {
+      const db = read();
+      if (!canEditRole(roleOf(db, workspaceId, me().id))) throw new BackendError("forbidden", "Only owners and editors can upload files.");
+      if (body.size > DEMO_FILE_LIMIT) throw new BackendError("invalid", "The demo keeps files up to 2 MB. The hosted app takes up to 50 MB.");
+      for (const d of upload.diagramIds) if (!diagramEditable(db, workspaceId, d)) throw new BackendError("forbidden", "You can link files only to diagrams you can edit.");
+      const data = await new Promise<string>((done, failed) => {
+        const reader = new FileReader();
+        reader.onload = () => done(String(reader.result));
+        reader.onerror = () => failed(new BackendError("invalid", "The file could not be read."));
+        reader.readAsDataURL(body);
+      });
+      const at = new Date().toISOString();
+      const file: DemoFile = { id: id("file"), name: upload.name.trim().slice(0, 200) || "Untitled file", kind: upload.kind, description: upload.description.slice(0, 2000), mime: body.type, size: body.size, uploadedBy: me().id, uploadedAt: at, updatedAt: at, links: [...new Set(upload.diagramIds)], data };
+      filesOf(db, workspaceId).push(file);
+      log(db, workspaceId, "file", file.id, file.name, "created");
+      for (const d of file.links) log(db, workspaceId, "file", file.id, file.name, `linked to ${db.rows[workspaceId]?.diagrams[d]?.name ?? d}`);
+      write(db);
+      return shownFile(db, workspaceId, file);
+    },
+    async fileUrl(workspaceId, fileId) {
+      const f = findFile(read(), workspaceId, fileId);
+      return URL.createObjectURL(await (await fetch(f.data)).blob());
+    },
+    async updateFile(workspaceId, fileId, patch) {
+      const db = read();
+      const f = findFile(db, workspaceId, fileId);
+      if (!fileManageable(db, workspaceId, f)) throw new BackendError("forbidden", "Only the person who uploaded a file, or an owner, can change it.");
+      if (patch.name !== undefined) f.name = patch.name.trim().slice(0, 200) || f.name;
+      if (patch.kind !== undefined) f.kind = patch.kind;
+      if (patch.description !== undefined) f.description = patch.description.slice(0, 2000);
+      f.updatedAt = new Date().toISOString();
+      log(db, workspaceId, "file", f.id, f.name, "updated");
+      write(db);
+    },
+    async setFileLinks(workspaceId, fileId, diagramIds) {
+      const db = read();
+      const f = findFile(db, workspaceId, fileId);
+      const want = new Set(diagramIds);
+      // Links to diagrams this person cannot see are kept as they are.
+      const mine = f.links.filter((d) => diagramVisible(db, workspaceId, d));
+      const drop = mine.filter((d) => !want.has(d));
+      const add = [...want].filter((d) => !f.links.includes(d));
+      if (drop.some((d) => !fileManageable(db, workspaceId, f) && !diagramEditable(db, workspaceId, d))) throw new BackendError("forbidden", "Only the person who uploaded a file, an owner, or an editor of the diagram can remove a link.");
+      if (add.length && (!fileManageable(db, workspaceId, f) || add.some((d) => !diagramEditable(db, workspaceId, d)))) throw new BackendError("forbidden", "The file could not be linked to every diagram chosen: you can link only your own files, to diagrams you can edit.");
+      f.links = [...f.links.filter((d) => !drop.includes(d)), ...add];
+      for (const d of drop) log(db, workspaceId, "file", f.id, f.name, `unlinked from ${db.rows[workspaceId]?.diagrams[d]?.name ?? d}`);
+      for (const d of add) log(db, workspaceId, "file", f.id, f.name, `linked to ${db.rows[workspaceId]?.diagrams[d]?.name ?? d}`);
+      write(db);
+    },
+    async deleteFile(workspaceId, fileId) {
+      const db = read();
+      const f = findFile(db, workspaceId, fileId);
+      if (!fileManageable(db, workspaceId, f)) throw new BackendError("forbidden", "Only the person who uploaded a file, or an owner, can delete it.");
+      db.files![workspaceId] = filesOf(db, workspaceId).filter((x) => x.id !== fileId);
+      log(db, workspaceId, "file", f.id, f.name, "deleted");
+      write(db);
+    },
     async listLiveLinks(workspaceId, diagramId) {
       const db = read();
       if (!canEditRole(roleOf(db, workspaceId, me().id))) return [];

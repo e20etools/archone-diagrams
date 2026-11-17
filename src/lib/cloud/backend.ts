@@ -99,6 +99,29 @@ export interface LiveLink {
   expiresAt: string | null;
 }
 /** What may be asked of a new live link. Both are optional. */
+/** A file in the library: a vendor document, a supporting file or a design, linked to diagrams. */
+export type FileKind = "vendor" | "supporting" | "design" | "other";
+export interface StoredFile {
+  id: string;
+  name: string;
+  kind: FileKind;
+  description: string;
+  mime: string;
+  size: number;
+  uploadedBy: string | null;
+  uploadedAt: string;
+  updatedAt: string;
+  /** The diagrams it is linked to that this person can see. */
+  diagramIds: string[];
+}
+export interface FileUpload {
+  name: string;
+  kind: FileKind;
+  description: string;
+  diagramIds: string[];
+}
+export type FilePatch = Partial<Pick<StoredFile, "name" | "kind" | "description">>;
+
 export interface LiveLinkOptions {
   password?: string;
   expiresAt?: string | null;
@@ -185,6 +208,17 @@ export interface Backend {
   createWebhook(workspaceId: string, url: string): Promise<{ id: string; secret: string }>;
   deleteWebhook(workspaceId: string, webhookId: string): Promise<void>;
   testWebhook(workspaceId: string, webhookId: string): Promise<void>;
+
+  /** The files this person may see: those they uploaded, and those linked to a diagram they can see. */
+  listFiles(workspaceId: string): Promise<StoredFile[]>;
+  /** Keeps the file and links it to the diagrams given. Owners and editors. */
+  uploadFile(workspaceId: string, body: Blob, upload: FileUpload): Promise<StoredFile>;
+  /** A short-lived address to open or download the file. */
+  fileUrl(workspaceId: string, fileId: string, download?: boolean): Promise<string>;
+  updateFile(workspaceId: string, fileId: string, patch: FilePatch): Promise<void>;
+  /** Makes the file's links exactly these diagrams (among those this person can see). */
+  setFileLinks(workspaceId: string, fileId: string, diagramIds: string[]): Promise<void>;
+  deleteFile(workspaceId: string, fileId: string): Promise<void>;
 
   listLiveLinks(workspaceId: string, diagramId: string): Promise<LiveLink[]>;
   createLiveLink(workspaceId: string, diagramId: string, options?: LiveLinkOptions): Promise<void>;

@@ -873,6 +873,25 @@ and the protocols on them.
 - Export what the map shows as PNG, SVG, PDF, an animated GIF, draw.io, Mermaid, CSV (every link
   with the components behind it) or JSON.
 
+### File library
+
+Files (menu: Files) keeps the documents that go with diagrams: vendor documents (datasheets,
+guides, contracts), supporting files, designs and anything else, up to 50 MB each. Upload several
+at once by dropping them or choosing them, say what they are, add a note, and link them to one or
+more diagrams. A diagram's toolbar has a Files button with the count: it lists the diagram's files
+to open or download, uploads more linked to that diagram, and links a file already in the
+library. In the library, filter by name, kind, diagram or "Uploaded by me"; edit a file's name,
+kind, note and links; delete it once confirmed.
+
+Who sees what: each person sees the files they uploaded and the files linked to a diagram they
+can see (their role for that kind of diagram is above No access); nobody else's, owners
+included. Owners and editors upload. A file's uploader, or an owner, renames, links and deletes
+it; an editor of a diagram can take a file off that diagram. A file is linked only to diagrams the
+person can edit. The rules are in the database (`diagram_files`, `diagram_file_links`, row-level
+security) and on the private storage bucket `diagram-files`, where each file sits under its
+workspace and its own id; uploads, changes, links and deletions are written to the audit log.
+Without an account, files are kept in the browser.
+
 ### The bank sample: ten connected diagrams
 
 Settings, Sample model, "Add the bank sample (10 diagrams)" adds a bank's estate to what is in
