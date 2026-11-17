@@ -1,7 +1,7 @@
 import { DiagramFilesButton } from "@/components/DiagramFiles";
 import { NOTATION_INFO } from "@/lib/notation";
 import { NOTATIONS, type Notation } from "@/lib/types";
-import { Zap, Archive, BookmarkPlus, AlignCenterHorizontal, AlignCenterVertical, AlignEndHorizontal, AlignEndVertical, AlignHorizontalSpaceAround, AlignStartHorizontal, AlignStartVertical, AlignVerticalSpaceAround, ChevronRight, EyeOff, LayoutDashboard, Presentation, ListOrdered, MessageSquare, PanelLeftClose, PanelLeftOpen, Search, Share2, ShieldCheck, Shuffle, SlidersHorizontal, Sparkles, Trash2, Waypoints, X, ZoomIn } from "lucide-react";
+import { Zap, ListTree, Archive, BookmarkPlus, AlignCenterHorizontal, AlignCenterVertical, AlignEndHorizontal, AlignEndVertical, AlignHorizontalSpaceAround, AlignStartHorizontal, AlignStartVertical, AlignVerticalSpaceAround, ChevronRight, EyeOff, LayoutDashboard, Presentation, ListOrdered, MessageSquare, PanelLeftClose, PanelLeftOpen, Search, Share2, ShieldCheck, Shuffle, SlidersHorizontal, Sparkles, Trash2, Waypoints, X, ZoomIn } from "lucide-react";
 import { checkCopy } from "@/lib/freshness";
 import { alignNodes, distributeNodes, type AlignMode } from "@/lib/arrange";
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from "react";
@@ -452,6 +452,9 @@ function ObjectInspector({
             {children.length ? `Open inside (${children.length})` : "Open inside"}
           </Button>
         )}
+        <Button size="sm" icon={<ListTree size={14} />} title="Everything related to it, up to five levels (or double-click the box)" onClick={() => navigate(`/component/${objectId}?from=${diagram.id}`)} data-object-tree>
+          Relationship tree
+        </Button>
         <Button size="sm" icon={<Waypoints size={14} />} onClick={() => navigate(`/analysis?object=${objectId}`)}>
           Dependencies
         </Button>
@@ -831,6 +834,17 @@ function Editor({ ws, diagram }: { ws: Workspace; diagram: Diagram }) {
     [navigate, notify],
   );
 
+  // A double-click opens the box's relationship tree; a box standing for a diagram opens that diagram.
+  const onExplore = useCallback(
+    (id: string) => {
+      const object = useStore.getState().ws.objects[id];
+      if (!object) return;
+      if (object.typeId === "diagram") onOpen(id);
+      else navigate(`/component/${id}?from=${diagramId}`);
+    },
+    [navigate, onOpen, diagramId],
+  );
+
   const onRemove = useCallback(
     (ids: string[]) => {
       if (!ids.length) return;
@@ -1019,6 +1033,7 @@ function Editor({ ws, diagram }: { ws: Workspace; diagram: Diagram }) {
             onConnect={onConnect}
             onDropItem={onDropItem}
             onOpen={onOpen}
+            onExplore={onExplore}
             onRemove={onRemove}
             canvasRef={canvas}
           />

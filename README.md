@@ -878,12 +878,37 @@ and the protocols on them.
 The home page greets you with the workspace's name and the four things to look at first, each a
 link to where it is acted on: the component most depended on (to its impact analysis), the
 components without an owner and the connections in clear text (to their reports), and the AI
-drafts waiting. Below them, the diagrams changed last, shortcuts to the map, impact, reports, files
-and library, and the list of diagrams with a filter by area.
+drafts waiting. Below them, the diagrams changed last, each with a small picture, and shortcuts
+to the Diagrams page, the map, impact, reports, files and library.
 
 The menu is grouped in the order work happens: Home; Build (Model, Library, Files, Drafts);
-Analyse (All diagrams, Impact, Dependencies, Health, Checks); Govern (Decisions, Reports, Document,
-Ask); Work together (Versions, Reviews, Scenarios, Audit log, when signed in); and Settings.
+Analyse (All diagrams, Diagrams, Impact, Dependencies, Health, Checks); Govern (Decisions, Reports,
+Document, Ask); Work together (Versions, Reviews, Scenarios, Audit log, when signed in); and
+Settings.
+
+### The Diagrams page
+
+`/diagrams` shows every diagram as a card with a small picture of what it holds: its boxes in
+their places, coloured by category, with the lines, zones and boundary between them; names are
+written in when they are large enough to read. Under the picture: the name, the kind of diagram,
+how many boxes and lines, when it last changed, and buttons to save it as a template, archive,
+duplicate or delete it. A card opens its diagram for editing. Search by name, kind or system;
+narrow by area; sort by last change, name or size; or switch to a list. The build buttons
+(Import, Template, Draft with AI, New diagram) and a New diagram card start a new one, and
+archived diagrams are a click away. The editor's "Diagrams" link comes back here.
+
+### The relationship tree of a component
+
+Double-click a box in a diagram (or "Relationship tree" in its panel) to open
+`/component/<id>`: the component and everything related to it as two trees, what it relies on
+(following its arrows) and what relies on it (against them), one to five levels deep. Each
+row shows its level, the relationship and its protocols, and the diagrams that object is on; an
+object reached by more than one way is listed once at its nearest level, and the other ways are
+kept as "listed above" references, so every relationship within reach appears and the tree
+stays finite. Follow every kind of relationship or dependencies only; fold and open branches; a
+name opens that object's own tree. Below the trees, the diagrams these objects are on, nearest
+first; pointing at one lights its objects in the trees. A double-click on a diagram box still
+opens that diagram, and "Open inside" still opens the inside view.
 
 Ten themes, each with its own colours, font and a background that moves behind the work:
 Blueprint (a drifting drafting grid), Midnight circuit (signals running along board traces),

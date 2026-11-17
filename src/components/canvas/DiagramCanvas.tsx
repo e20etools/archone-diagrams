@@ -79,6 +79,8 @@ interface Props {
   onConnect?: (sourceId: string, targetId: string) => void;
   onDropItem?: (item: DragItem, position: { x: number; y: number }) => void;
   onOpen?: (objectId: string) => void;
+  /** A double-click on a box; falls back to onOpen when not given. */
+  onExplore?: (objectId: string) => void;
   onRemove?: (objectIds: string[]) => void;
   canvasRef?: Ref<CanvasHandle>;
 }
@@ -269,6 +271,7 @@ function Inner({
   onConnect,
   onDropItem,
   onOpen,
+  onExplore,
   onRemove,
   canvasRef,
 }: Props) {
@@ -476,7 +479,7 @@ function Inner({
         }}
         onEdgeClick={(_, edge) => onSelect?.({ objectId: null, edgeId: edge.id })}
         onPaneClick={() => onSelect?.({ objectId: null, edgeId: null })}
-        onNodeDoubleClick={(_, node) => node.id !== BOUNDARY_ID && onOpen?.(node.id)}
+        onNodeDoubleClick={(_, node) => node.id !== BOUNDARY_ID && (onExplore ?? onOpen)?.(node.id)}
         onNodeDragStop={(_, _node, dragged) => {
           const moved: Record<string, { x: number; y: number }> = {};
           for (const n of dragged) if (n.id !== BOUNDARY_ID) moved[n.id] = { x: Math.round(n.position.x), y: Math.round(n.position.y) };

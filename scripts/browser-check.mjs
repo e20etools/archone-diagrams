@@ -1258,6 +1258,71 @@ try {
     check("a card opens its diagram, and the editor's Diagrams link comes back to the cards", page.url().endsWith("/diagrams"));
   }
 
+  // A double-click on a box opens its relationship tree, up to five levels deep.
+  {
+    const model = await stored();
+    const rels = Object.values(model.relationships).filter((r) => model.objects[r.sourceId] && model.objects[r.targetId] && r.sourceId !== r.targetId);
+    const degree = (id) => rels.filter((r) => r.sourceId === id || r.targetId === id).length;
+    const pick = Object.values(model.diagrams)
+      .filter((d) => !d.archive?.archived)
+      .map((d) => ({ d, id: Object.keys(d.nodes).filter((id) => model.objects[id] && model.objects[id].typeId !== "diagram").sort((a, b) => degree(b) - degree(a))[0] }))
+      .filter((x) => x.id)
+      .sort((a, b) => degree(b.id) - degree(a.id))[0];
+    await page.goto(`${base}/diagram/${pick.d.id}`, { waitUntil: "networkidle0" });
+    const node = await page.waitForSelector(`.react-flow__node[data-id="${pick.id}"]`);
+    await sleep(400);
+    const box = await node.boundingBox();
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+    await page.waitForSelector("[data-object-tree]");
+    const offered = !!(await page.$("[data-object-tree]"));
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2, { count: 2 });
+    await page.waitForSelector(`[data-component-tree="${pick.id}"]`);
+    const direct = rels.filter((r) => r.sourceId === pick.id).length + rels.filter((r) => r.targetId === pick.id && r.flow === "both").length;
+    const levelOne = await count(page, '[data-tree-side="out"] [data-tree-level="1"]');
+    check(
+      "double-clicking a box opens its relationship tree, with each direct relationship on the first level",
+      offered && page.url().includes(`/component/${pick.id}?from=${pick.d.id}`) && levelOne === direct,
+      `${model.objects[pick.id].name}: ${levelOne} of ${direct}`,
+    );
+    const deepest = () => page.$$eval("[data-tree-level]", (els) => Math.max(0, ...els.map((e) => Number(e.getAttribute("data-tree-level")))));
+    await page.click('[data-tree-levels="5"]');
+    await sleep(200);
+    const atFive = await deepest();
+    const objectsAtFive = await page.$$eval("[data-tree-total]", (els) => els.map((e) => Number(e.textContent.match(/\d+/)[0])));
+    await shot(page, "37-relationship-tree");
+    await page.click('[data-tree-levels="1"]');
+    await sleep(200);
+    const atOne = await deepest();
+    await page.click('[data-tree-levels="5"]');
+    await page.click('[data-tree-scope="dependencies"]');
+    await sleep(200);
+    const dependencyObjects = await page.$$eval("[data-tree-total]", (els) => els.map((e) => Number(e.textContent.match(/\d+/)[0])));
+    check(
+      "the tree goes to the level chosen, five at most, and can follow dependencies only",
+      atFive >= 2 && atFive <= 5 && atOne === 1 && dependencyObjects.every((n, i) => n <= objectsAtFive[i]) && page.url().includes("scope=dependencies"),
+      `deepest ${atFive}; objects ${objectsAtFive.join("/")} then ${dependencyObjects.join("/")}`,
+    );
+    await page.click('[data-tree-scope="all"]');
+    await page.click("[data-tree-collapse]");
+    await sleep(150);
+    const shownCollapsed = await count(page, "[data-tree-node]");
+    await page.click("[data-tree-expand]");
+    await sleep(150);
+    const shownExpanded = await count(page, "[data-tree-node]");
+    const other = await page.$eval('[data-tree-side="out"] [data-tree-open], [data-tree-side="in"] [data-tree-open]', (b) => b.getAttribute("data-tree-open"));
+    await page.$eval(`[data-tree-open="${other}"]`, (b) => b.click());
+    await page.waitForSelector(`[data-component-tree="${other}"]`);
+    const rerooted = page.url().includes(`/component/${other}`) && page.url().includes(`from=${pick.d.id}`) && page.url().includes("levels=5");
+    const onDiagrams = await count(page, "[data-tree-diagram]");
+    await page.click("[data-tree-back]");
+    await page.waitForSelector(".object-node");
+    check(
+      "branches fold and open, a name opens that object's own tree, and the way back leads to the diagram",
+      shownCollapsed < shownExpanded && rerooted && onDiagrams >= 1 && page.url().endsWith(`/diagram/${pick.d.id}`),
+      `${shownCollapsed} folded, ${shownExpanded} open, ${onDiagrams} diagrams`,
+    );
+  }
+
   // The MCP server's diagram view, opened the way an assistant's client opens it: in a frame, fed over postMessage.
   {
     const { createMcpHandler } = await import(join(root, "supabase/functions/mcp/handler.js"));
