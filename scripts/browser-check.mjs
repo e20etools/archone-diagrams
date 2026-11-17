@@ -69,7 +69,8 @@ function fakeProvider(port) {
       res.setHeader("content-type", "application/json");
       // A question about the model: answer by citing an object found in the model text that came with it.
       if (String(sent.messages?.[0]?.content ?? "").startsWith("You answer questions")) {
-        const text = sent.messages[1].content[0].text;
+        const sentContent = sent.messages[1].content;
+        const text = typeof sentContent === "string" ? sentContent : sentContent[0].text;
         const id = /^(\S+) \| Booking service \|/m.exec(text)?.[1] ?? "missing";
         res.end(JSON.stringify({ choices: [{ message: { content: `Nothing in the model says so.\n- [[${id}]] holds the bookings.\n- [[obj_invented]] is made up.` } }] }));
         return;
@@ -1171,12 +1172,13 @@ try {
       `${copiedIds.length} boxes`,
     );
     // 09 Archiving and restoring, each with a reason.
-    await page.goto(base, { waitUntil: "networkidle0" });
+    await page.goto(`${base}/diagrams`, { waitUntil: "networkidle0" });
+    await page.waitForSelector(`[data-archive="${copy.id}"]`);
     await page.$eval(`[data-archive="${copy.id}"]`, (b) => b.click());
     await page.type('textarea[aria-label="Reason for archiving"]', "Option not chosen");
     await page.click("[data-archive-confirm]");
     await page.waitForSelector("[data-archived-open]");
-    const listedAfter = await page.$$eval("tbody tr td:first-child a", (links) => links.map((a) => a.textContent.trim()));
+    const listedAfter = await page.$$eval("[data-diagram-card] [data-diagram-name]", (links) => links.map((a) => a.textContent.trim()));
     await page.click("[data-archived-open]");
     await page.waitForSelector(`[data-archived="${copy.id}"]`);
     const archivedText = await page.$eval(`[data-archived="${copy.id}"]`, (e) => e.innerText);
@@ -1200,6 +1202,60 @@ try {
     await waitText(page, "Voice to Architecture");
     check("voice to architecture hands what was said to a draft for review", await page.evaluate(() => [...document.querySelectorAll("[role=dialog] textarea")].some((t) => t.value.includes("billing service"))));
     await page.keyboard.press("Escape");
+  }
+
+  // The Diagrams page: every diagram as a card with a small picture of what it holds.
+  {
+    const model = await stored();
+    const live = Object.values(model.diagrams).filter((d) => !d.archive?.archived);
+    await page.goto(base, { waitUntil: "networkidle0" });
+    await page.waitForSelector("[data-home-all-diagrams]");
+    const menu = await page.$$eval('[data-nav-group="Analyse"] a', (links) => links.map((a) => a.textContent.trim()));
+    const homeHasNoTable = !(await page.$("[data-home-overview] table, [data-diagram-grid]"));
+    const recentPictures = await count(page, "[data-home-recent] [data-thumbnail]");
+    check(
+      "the menu lists Diagrams right under All diagrams, and home keeps only the overview and recent pictures",
+      menu.indexOf("Diagrams") === menu.indexOf("All diagrams") + 1 && homeHasNoTable && recentPictures >= 1,
+      `${menu.join(", ")}; ${recentPictures} recent pictures`,
+    );
+    await page.click("[data-home-all-diagrams]");
+    await page.waitForSelector("[data-diagram-card]");
+    const cards = await count(page, "[data-diagram-card]");
+    const drawn = await page.$$eval("[data-diagram-card]", (els) => els.filter((e) => e.querySelector("[data-thumbnail] g rect") || e.querySelector("[data-thumbnail-empty]")).length);
+    const boxesOnCards = await page.$$eval("[data-diagram-card]", (els) => els.map((e) => [e.getAttribute("data-diagram-card"), e.querySelectorAll("[data-thumbnail] > g").length, Number(e.querySelector("[data-diagram-counts]").textContent.match(/\d+/)[0])]));
+    check(
+      "every diagram is a card with a picture of its boxes, and the count under it matches",
+      cards === live.length && drawn === cards && boxesOnCards.every(([, g, n]) => g === n),
+      `${cards} cards for ${live.length} diagrams`,
+    );
+    await shot(page, "36-diagram-cards");
+    const firstName = await page.$eval("[data-diagram-card] [data-diagram-name]", (a) => a.textContent.trim());
+    await page.type("[data-diagrams-search]", firstName);
+    await sleep(200);
+    const found = await page.$$eval("[data-diagram-card] [data-diagram-name]", (links) => links.map((a) => a.textContent.trim()));
+    await page.$eval("[data-diagrams-search]", (e) => e.select());
+    await page.keyboard.type("no diagram is called this");
+    await sleep(200);
+    const none = (await count(page, "[data-diagram-card]")) === 0 && (await hasText(page, "No diagram matches"));
+    await clickText(page, "Show all diagrams");
+    await sleep(200);
+    check("the search box narrows the cards by name, and says so when nothing matches", found.includes(firstName) && found.length < cards && none && (await count(page, "[data-diagram-card]")) === cards, found.join(", "));
+    const areas = await page.$$eval("[data-diagram-area]", (els) => els.map((e) => e.getAttribute("data-diagram-area")));
+    const area = areas.find((a) => a !== "all");
+    await page.click(`[data-diagram-area="${area}"]`);
+    await sleep(200);
+    const inArea = await count(page, "[data-diagram-card]");
+    await page.click('[data-diagram-area="all"]');
+    await page.click('[data-diagrams-layout="list"]');
+    await page.waitForSelector("[data-diagram-row]");
+    const rows = await count(page, "[data-diagram-row]");
+    await page.click('[data-diagrams-layout="grid"]');
+    check("area chips narrow the cards, and the list layout shows the same diagrams as rows", inArea >= 1 && inArea < cards && rows === cards, `${area}: ${inArea}; ${rows} rows`);
+    await page.click("[data-diagram-card] [data-diagram-name]");
+    await page.waitForSelector(".object-node");
+    await page.click("[data-crumb-diagrams]");
+    await page.waitForSelector("[data-diagram-card]");
+    check("a card opens its diagram, and the editor's Diagrams link comes back to the cards", page.url().endsWith("/diagrams"));
   }
 
   // The MCP server's diagram view, opened the way an assistant's client opens it: in a frame, fed over postMessage.
@@ -1977,7 +2033,7 @@ try {
   check("once allowed, the AI model answers and its object tags become links", aiCard.links.join() === "Booking service" && aiCard.text.includes("openai-compatible:stand-in-model") && aiCard.text.includes("It can be wrong"), aiCard.links.join());
   check("a tag for an object that does not exist is not turned into a link", aiCard.text.includes("an object that is not in the model is made up") && !aiCard.text.includes("obj_invented"));
   const askCall = seen.at(-1).body;
-  check("the question travels with the model as text, and one call is made", seen.length === callsBefore + 1 && askCall.messages[1].content[0].text.startsWith("MODEL\nWorkspace:") && askCall.messages[1].content[0].text.endsWith("Question: Is patient data encrypted at rest?"));
+  check("the question travels with the model as text, and one call is made", seen.length === callsBefore + 1 && String(askCall.messages[1].content).startsWith("MODEL\nWorkspace:") && String(askCall.messages[1].content).endsWith("Question: Is patient data encrypted at rest?"));
   await shot(page2, "13-ask-ai");
   await page2.close();
 

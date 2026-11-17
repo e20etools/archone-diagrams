@@ -378,7 +378,7 @@ function DiagramSettings({ ws, diagram, onClose }: { ws: Workspace; diagram: Dia
           <Button size="sm" icon={<Archive size={14} />} data-archive={diagram.id} onClick={() => setArchiving(true)}>
             Archive diagram
           </Button>
-          {archiving && <ArchiveDialog diagram={diagram} onClose={() => setArchiving(false)} onDone={() => navigate("/")} />}
+          {archiving && <ArchiveDialog diagram={diagram} onClose={() => setArchiving(false)} onDone={() => navigate("/diagrams")} />}
         </Section>
       )}
       <Section title="Delete">
@@ -396,7 +396,7 @@ function DiagramSettings({ ws, diagram, onClose }: { ws: Workspace; diagram: Dia
               <Button
                 variant="danger"
                 onClick={() => {
-                  navigate("/");
+                  navigate("/diagrams");
                   apply((w) => deleteDiagram(w, diagram.id));
                 }}
               >
@@ -858,7 +858,7 @@ function Editor({ ws, diagram }: { ws: Workspace; diagram: Diagram }) {
     <div className="h-full flex flex-col">
       <div className="shrink-0 flex items-center gap-2 h-12 px-3 bg-surface border-b border-line">
         <nav aria-label="Location" className="min-w-0 flex items-center gap-1 text-[13px] text-ink-soft">
-          <Link to="/" className="hover:text-ink hover:underline shrink-0">
+          <Link to="/diagrams" className="hover:text-ink hover:underline shrink-0" data-crumb-diagrams>
             Diagrams
           </Link>
           {crumbs.map((id) => (
@@ -1102,7 +1102,7 @@ export function DiagramEditorPage() {
   if (!diagram) {
     return (
       <EmptyState title="This diagram does not exist" text="It may have been deleted, or the link may be wrong.">
-        <Link to="/" className="font-medium text-blueprint hover:underline">
+        <Link to="/diagrams" className="font-medium text-blueprint hover:underline">
           Go to diagrams
         </Link>
       </EmptyState>

@@ -156,7 +156,8 @@ try {
   await shot(ben, "22-invitation");
   await clickText(ben, "Join");
   await waitText(ben, "Each diagram is a view of one shared model");
-  check("the invited person joins and sees the owner's diagrams", (await count(ben, "tbody tr")) === 3);
+  await visit(ben, `${base}/diagrams`, "[data-diagram-card]");
+  check("the invited person joins and sees the owner's diagrams", (await count(ben, "[data-diagram-card]")) === 3);
   await visit(ben, diagramUrl, ".object-node");
   await visit(ana, diagramUrl, ".object-node");
   const seen = async (page) => `${await count(page, ".object-node")} boxes, ${await count(page, ".react-flow__edge")} arrows`;
@@ -739,11 +740,11 @@ try {
   const categorySummary = await ana.$eval('[data-member-categories="Ben Editor"] summary', (e) => e.textContent);
   await shot(ana, "40-category-roles");
   check("an owner sets a member's role per category", categorySummary.includes("Applications: No access") && categorySummary.includes("Infrastructure: View"), categorySummary);
-  await visit(ben, base, "table, [data-template-open]");
+  await visit(ben, `${base}/diagrams`, "[data-diagram-grid], [data-template-open]");
   await until(ben, () => !document.body.innerText.includes("System landscape"), 8000).catch(() => undefined);
-  const benDiagrams = await ben.$$eval("tbody tr td:first-child a", (links) => links.map((a) => a.textContent.trim()));
+  const benDiagrams = await ben.$$eval("[data-diagram-card] [data-diagram-name]", (links) => links.map((a) => a.textContent.trim()));
   check("diagrams of a category with no access are not shown at all", !benDiagrams.includes("System landscape") && !benDiagrams.includes("Inside Online store") && benDiagrams.includes("Deployment"), benDiagrams.join(", "));
-  await ben.evaluate(() => [...document.querySelectorAll("tbody tr td:first-child a")].find((a) => a.textContent.trim() === "Deployment").click());
+  await ben.evaluate(() => [...document.querySelectorAll("[data-diagram-card] [data-diagram-name]")].find((a) => a.textContent.trim() === "Deployment").click());
   await ben.waitForSelector(".object-node");
   const viewOnly = await ben.$("[data-category-view-only=infrastructure]");
   await shot(ben, "41-category-view-only");
@@ -768,7 +769,7 @@ try {
   await ana.click('[data-member-categories="Ben Editor"] summary');
   await setCategory("applications", "");
   await setCategory("infrastructure", "");
-  await visit(ben, base, "tbody tr");
+  await visit(ben, `${base}/diagrams`, "[data-diagram-card]");
   await until(ben, () => document.body.innerText.includes("System landscape"), 8000).catch(() => undefined);
   check("lifting the roles per category brings the diagrams back", await hasText(ben, "System landscape"));
 

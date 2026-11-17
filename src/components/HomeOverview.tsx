@@ -1,4 +1,4 @@
-import { ArrowUpRight, FileBarChart, FolderOpen, Lock, Network, Shapes, Sparkles, UserX, Zap } from "lucide-react";
+import { ArrowUpRight, FileBarChart, FolderOpen, GalleryThumbnails, Lock, Network, Shapes, Sparkles, UserX, Zap } from "lucide-react";
 import { useMemo, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { CATEGORY_INFO, viewCategory } from "@/lib/categories";
@@ -6,7 +6,7 @@ import { RELATION_KIND_INFO, VIEW_TYPE_INFO } from "@/lib/catalog";
 import { protocolByName } from "@/lib/library/protocols";
 import { protocolsOf } from "@/lib/model";
 import type { Diagram, Workspace } from "@/lib/types";
-import { TypeIcon } from "./icons";
+import { DiagramThumbnail } from "./DiagramThumbnail";
 import { cx, formatDate } from "./ui";
 
 /**
@@ -67,6 +67,7 @@ export function HomeOverview({ ws, diagrams }: { ws: Workspace; diagrams: Diagra
   ].filter(Boolean) as { to: string; icon: ReactNode; tone: string; title: string; value: string; hint: string; data: string }[];
 
   const routes = [
+    { to: "/diagrams", label: "Every diagram, as cards", icon: <GalleryThumbnails size={15} /> },
     { to: "/map", label: "All diagrams on one map", icon: <Network size={15} /> },
     { to: "/impact", label: "Impact and what-if", icon: <Zap size={15} /> },
     { to: "/reports", label: "Reports", icon: <FileBarChart size={15} /> },
@@ -90,13 +91,18 @@ export function HomeOverview({ ws, diagrams }: { ws: Workspace; diagrams: Diagra
 
       <div className="grid gap-4 lg:grid-cols-[1fr_300px]">
         <section aria-label="Changed last">
-          <h2 className="mb-2 text-sm font-semibold">Pick up where you left off</h2>
+          <div className="mb-2 flex items-baseline justify-between gap-3">
+            <h2 className="text-sm font-semibold">Pick up where you left off</h2>
+            <Link to="/diagrams" className="text-[13px] text-blueprint hover:underline" data-home-all-diagrams>
+              See all {diagrams.length} diagrams
+            </Link>
+          </div>
           <ul className="grid gap-2 sm:grid-cols-2">
             {recent.map((d) => (
               <li key={d.id}>
-                <Link to={`/diagram/${d.id}`} className="flex items-center gap-3 rounded-lg border border-line bg-surface px-3 py-2.5 transition hover:border-blueprint" data-home-recent={d.id}>
-                  <span className="grid size-9 shrink-0 place-items-center rounded-md bg-blueprint-soft text-blueprint">
-                    <TypeIcon typeId="diagram" size={16} />
+                <Link to={`/diagram/${d.id}`} className="flex items-center gap-3 rounded-lg border border-line bg-surface px-2.5 py-2 transition hover:border-blueprint" data-home-recent={d.id}>
+                  <span className="block h-12 w-16 shrink-0 overflow-hidden rounded-md border border-line-soft bg-paper">
+                    <DiagramThumbnail ws={ws} diagram={d} />
                   </span>
                   <span className="min-w-0">
                     <span className="block truncate text-[13px] font-medium">{d.name}</span>

@@ -1,4 +1,4 @@
-import { FileBarChart, FolderOpen, Network, Zap, Boxes, ClipboardCheck, FileText, GitBranch, HeartPulse, History, LayoutGrid, MessageCircleQuestion, Redo2, Scale, ScrollText, Search, Settings, Shapes, ShieldCheck, Sparkles, Undo2, Waypoints } from "lucide-react";
+import { FileBarChart, FolderOpen, Network, Zap, Boxes, ClipboardCheck, FileText, GitBranch, HeartPulse, History, GalleryThumbnails, LayoutGrid, MessageCircleQuestion, Redo2, Scale, ScrollText, Search, Settings, Shapes, ShieldCheck, Sparkles, Undo2, Waypoints } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { CloudHeader, ReadOnlyBanner } from "@/components/cloud/CloudHeader";
@@ -35,6 +35,7 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
     label: "Analyse",
     items: [
       { to: "/map", label: "All diagrams", icon: Network },
+      { to: "/diagrams", label: "Diagrams", icon: GalleryThumbnails },
       { to: "/impact", label: "Impact", icon: Zap },
       { to: "/analysis", label: "Dependencies", icon: Waypoints },
       { to: "/health", label: "Health", icon: HeartPulse },
