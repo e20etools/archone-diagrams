@@ -1456,9 +1456,10 @@ and diagram in an answer is a link.
   follows: every diagram, object and connection, the findings, the approval queue, the
   approvers' notes on other diagrams, comments, decisions, rules, processes, model reviews
   and the people's names.
-- **What it may not do.** It reads; it changes nothing. It answers from the workspace and
-  says when the workspace does not record something, rather than guess. It is told that
-  passing the checks is not a certificate of compliance.
+- **What it may not do.** Outside a diagram the person may change, it reads and changes
+  nothing. It answers from the workspace and says when the workspace does not record
+  something, rather than guess. It is told that passing the checks is not a certificate of
+  compliance.
 - **Only with the person's say-so.** The first question asks before anything is sent to the
   AI provider, and the choice is shared with the Ask page. "Stop using AI" switches it off.
   Without an AI model, or with it off, the built-in reader answers what it can work out (in
@@ -1469,6 +1470,40 @@ and diagram in an answer is a link.
   workspace's AI limits.
 - **The conversation** keeps its last twelve turns as context, lasts for the browser tab
   (a reload keeps it), and starts again with New conversation.
+
+#### Changing the diagram by talking to the assistant
+
+On a diagram the person may change (edit rights in the workspace and in the diagram's
+category), with an AI model on, the assistant changes the diagram as it is asked, by typing
+or by speaking (the microphone, in Arabic or English, where the browser can take dictation).
+"May change this diagram" under the message box switches it off, and the choice is kept.
+
+- **At once.** It adds servers, networks, firewalls and other objects (showing one that is
+  already in the model rather than making a copy), connects them with their kind,
+  protocols and ports, network and encryption, changes names, owners, technology and basic
+  information (IP address, operating system, data classification...), renames or describes
+  the diagram and tidies it. The changes are made as one step on the diagram on screen: the
+  view moves to them, clear of the panel, and marks them for a moment. Under the answer,
+  a card lists each change with **Undo**, which takes it back while nothing has been
+  changed after it (otherwise the editor's own Undo does). New objects say they were made
+  by the AI model at the person's request.
+- **With a yes.** Taking an object off the diagram, deleting an object or a connection, and
+  changes the model is not sure the person wants wait under "Waiting for your yes", with
+  **Yes, do it** and **No**. A removal is never made without the yes, whichever list the
+  model put it in.
+- **Suggestions.** Improvements the person did not ask for (encrypt a connection, put a
+  firewall in front of a data store, add an owner, a backup, a classification) are offered
+  one by one with **Do it**, or put aside.
+- **Warnings.** After each change the checks run on the diagram (security baseline,
+  privacy, PCI DSS, NCA ECC, AI agents and the workspace's own rules). What a change broke
+  shows as a warning under it, and what it fixed is counted. The model is told to warn
+  before a change that breaks a rule, to say that changing an approved or waiting diagram
+  starts a version that has to be approved again, to ask one short question when a request
+  is unclear, and never to invent IP addresses, owners or products.
+- **How.** The model ends its answer with a block of changes in three lists (`apply`,
+  `confirm`, `suggest`); the app checks each change before it touches the model, leaves out
+  what it cannot read, and shows the answer without the block. The next message tells the
+  model what was changed, undone, said yes or no to, and taken or put aside.
 
 ### The component library
 
@@ -1580,9 +1615,9 @@ build does not reload.
 ## Check it
 
 ```bash
-npm test                   # 608 tests: model, the component library, flows, links, protected live links, decisions, arranging, health, CALM, scenario merging, the trust page, the document, your own rules, large models, templates, the pull-request gate, the APM import, AI, questions, checks, MCP, import readers, sync engine, comparison, and the database rules and the API on a real Postgres
+npm test                   # 622 tests: model, the component library, flows, links, protected live links, decisions, arranging, health, CALM, scenario merging, the trust page, the document, your own rules, large models, templates, the pull-request gate, the APM import, AI, questions, checks, MCP, import readers, sync engine, comparison, and the database rules and the API on a real Postgres
 npm run build              # type-check and production build into dist/
-npm run test:browser       # 268 end-to-end checks of browser-only mode (run after a build)
+npm run test:browser       # 280 end-to-end checks of browser-only mode (run after a build)
 npm run test:browser:cloud # 126 end-to-end checks of hosted mode with several people
 ```
 

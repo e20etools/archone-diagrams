@@ -73,6 +73,8 @@ const requestSchema = z.discriminatedUnion("mode", [
     context: z.string().max(MAX_CONTEXT),
     /** Where in the app the person is, in words. */
     page: z.string().max(300).optional(),
+    /** The diagram the person is editing and lets the assistant change. */
+    edit: z.object({ diagramId: z.string().min(1).max(120) }).optional(),
   }),
 ]);
 export type AiRequest = z.infer<typeof requestSchema>;
@@ -221,7 +223,7 @@ export function chatTurns(messages: { role: "user" | "assistant"; content: strin
 /** What is sent to the model: the instruction, and the turns of the conversation (one, except in a chat). */
 function messageFor(request: AiRequest): { system: string; turns: Turn[]; maxTokens: number } {
   const one = (text: string): Turn[] => [{ role: "user", text }];
-  if (request.mode === "chat") return { system: buildChatSystemPrompt(request.context, request.page ?? ""), turns: chatTurns(request.messages), maxTokens: 2500 };
+  if (request.mode === "chat") return { system: buildChatSystemPrompt(request.context, request.page ?? "", request.edit?.diagramId), turns: chatTurns(request.messages), maxTokens: request.edit ? 4000 : 2500 };
   if (request.mode === "ask") return { system: buildAskSystemPrompt(), turns: one(buildAskText(request.question, request.context)), maxTokens: 1500 };
   if (request.mode === "process") return { system: PROCESS_SYSTEM_PROMPT, turns: one(request.image ? processImageText(request.text) : processUserText(request.text)), maxTokens: 8000 };
   return { system: buildSystemPrompt(), turns: one(buildUserText(request.mode, request.text ?? "")), maxTokens: 8000 };

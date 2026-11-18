@@ -75,6 +75,26 @@ function fakeProvider(port) {
         res.end(JSON.stringify({ choices: [{ message: { content: `Nothing in the model says so.\n- [[${id}]] holds the bookings.\n- [[obj_invented]] is made up.` } }] }));
         return;
       }
+      // The assistant asked to change the diagram on screen: add a server and connect it, hold a removal for a yes, suggest two fixes.
+      if (String(sent.messages?.[0]?.content ?? "").includes("EDITING THE DIAGRAM\n") && /خادم ويب|web server/i.test(String(sent.messages.at(-1).content))) {
+        const system = sent.messages[0].content;
+        const booking = /^\s*\[\[(\S+?)\]\] Booking service \|/m.exec(system)?.[1] ?? "missing";
+        const portal = /^\s*\[\[(\S+?)\]\] Clinic portal \|/m.exec(system)?.[1] ?? "missing";
+        const plan = {
+          apply: [
+            { op: "add_object", ref: "n1", name: "Web server 1", type: "server", technology: "IIS 10", fields: { "IP address": "10.0.1.5", "Operating system": "Windows Server 2022" } },
+            { op: "connect", from: "n1", to: booking, kind: "calls", protocols: [{ name: "HTTP", port: 80, transport: "TCP" }], encrypted: "no" },
+          ],
+          confirm: [{ op: "hide_object", id: portal }],
+          suggest: [
+            { op: "update_connection", from: "n1", to: booking, protocols: [{ name: "HTTPS", port: "443", transport: "TCP" }], encrypted: "yes" },
+            { say: "Give Web server 1 an owner", ops: [{ op: "update_object", id: "n1", owner: "Infrastructure" }] },
+          ],
+        };
+        const content = `أضفت خادم الويب وربطته بخدمة [[${booking}]].\n\n**تنبيه:** الاتصال غير مشفر، وهذا يخالف ضوابط NCA ECC.\n\nهل تريد إخفاء [[${portal}]] من هذا المخطط؟\n\n\`\`\`archone-changes\n${JSON.stringify(plan)}\n\`\`\``;
+        res.end(JSON.stringify({ choices: [{ message: { content } }], usage: { total_tokens: 1500 } }));
+        return;
+      }
       // The assistant: answer from the workspace that came in the instruction, naming the diagram on screen and an object on it.
       if (String(sent.messages?.[0]?.content ?? "").startsWith("You are the assistant inside ArchONE Diagrams")) {
         const system = sent.messages[0].content;
@@ -2650,6 +2670,65 @@ try {
   await clickText(page2, "Answer with AI");
   await page2.click('[aria-label="New conversation"]');
   check("a new conversation starts empty", !(await page2.$("[data-assistant-turns]")) && !!(await page2.$("[data-assistant-suggestions]")));
+
+  // The assistant changes the diagram on screen: at once, with Undo; removals wait for a yes; suggestions and the checks' warnings beside them.
+  if (await page2.$("[data-assistant-ai-on]")) await page2.click("[data-assistant-ai-on]");
+  await page2.waitForSelector("[data-assistant-edit-toggle]");
+  check(
+    "on a diagram the person may change, the assistant offers to change it, and says so",
+    (await page2.$eval("[data-assistant-edit-toggle]", (e) => e.checked)) && (await page2.$eval("[data-assistant-engine]", (e) => e.textContent)).startsWith("Changes this diagram with") && (await hasText(page2, "Changes appear on the diagram at once")),
+  );
+  const nodeNames = () => page2.$$eval(".object-node", (nodes) => nodes.map((n) => n.innerText));
+  const nodesBefore = await nodeNames();
+  const editBefore = seen.length;
+  await page2.type("[data-assistant-input]", "أضف خادم ويب واربطه بخدمة الحجز عبر HTTP");
+  await page2.keyboard.press("Enter");
+  await page2.waitForSelector("[data-assistant-change]");
+  const editCall = seen.at(-1).body;
+  check("the model is told which diagram it may change and how", seen.length === editBefore + 1 && String(editCall.messages[0].content).includes(`EDITING THE DIAGRAM\nThe person is editing the diagram [[d:${shownDiagram}]]`));
+  await page2.waitForFunction((n) => document.querySelectorAll(".object-node").length === n + 1, { timeout: 5000 }, nodesBefore.length).catch(() => {});
+  const afterAdd = await nodeNames();
+  await sleep(700);
+  const inView = await page2.evaluate(() => {
+    const panel = document.querySelector("[data-assistant-panel]").getBoundingClientRect();
+    const server = [...document.querySelectorAll(".react-flow__node")].find((n) => n.innerText.includes("Web server 1"));
+    const r = server?.getBoundingClientRect();
+    return { marked: !!server?.classList.contains("assistant-changed"), clear: !!r && r.right <= panel.left && r.left >= 0 && r.bottom <= innerHeight };
+  });
+  check("the view moves to what changed, clear of the assistant's panel, and marks it", inView.marked && inView.clear, JSON.stringify(inView));
+  const card = await page2.$eval("[data-assistant-change]", (e) => ({
+    made: [...e.querySelectorAll("[data-assistant-made] [data-assistant-lines] li")].map((li) => li.textContent),
+    findings: e.querySelector("[data-assistant-findings]")?.innerText ?? "",
+    waiting: e.querySelector("[data-assistant-confirm]")?.getAttribute("data-assistant-confirm"),
+    suggestions: e.querySelectorAll("[data-assistant-suggestion]").length,
+    block: e.closest("[data-assistant-kind]").innerText.includes("archone-changes"),
+  }));
+  check("the server appears on the diagram at once, connected, and the answer lists what changed without the block", afterAdd.length === nodesBefore.length + 1 && afterAdd.some((t) => t.includes("Web server 1")) && card.made.length === 2 && card.made[1].includes("HTTP 80/TCP, not encrypted") && !card.block, JSON.stringify(card.made));
+  check("the checks' new findings come with the change, as a warning", /\[high\].*Web server 1/.test(card.findings) && /\[medium\].*Web server 1/.test(card.findings), card.findings.slice(0, 200));
+  check("taking something off the diagram waits for a yes, and the suggestions wait for a click", card.waiting === "waiting" && card.suggestions === 2 && afterAdd.some((t) => t.includes("Clinic portal")));
+  await shot(page2, "49-assistant-edits");
+  await page2.click("[data-assistant-yes]");
+  await page2.waitForFunction(() => ![...document.querySelectorAll(".object-node")].some((n) => n.innerText.includes("Clinic portal")), { timeout: 5000 }).catch(() => {});
+  const afterYes = await nodeNames();
+  const madeUndo = await page2.$eval("[data-assistant-made] [data-assistant-undo]", (b) => b.disabled);
+  check("after the yes the portal leaves the diagram, and the first change can no longer be undone from the card", !afterYes.some((t) => t.includes("Clinic portal")) && afterYes.length === nodesBefore.length && madeUndo && (await page2.$eval("[data-assistant-confirm]", (e) => e.getAttribute("data-assistant-confirm"))) === "yes");
+  await page2.click("[data-assistant-confirm] [data-assistant-undo]");
+  await page2.waitForFunction(() => [...document.querySelectorAll(".object-node")].some((n) => n.innerText.includes("Clinic portal")), { timeout: 5000 }).catch(() => {});
+  check("Undo puts the portal back, and the change is marked undone", (await nodeNames()).some((t) => t.includes("Clinic portal")) && (await hasText(page2, "Undone.")));
+  await page2.click('[data-assistant-suggestion="0"] [data-assistant-take]');
+  await page2.waitForSelector('[data-assistant-suggestion="0"] li');
+  const taken = await page2.$eval('[data-assistant-suggestion="0"]', (e) => e.innerText);
+  check("a suggestion taken is made at once, and the warning it fixes is cleared", taken.includes("Changed the connection Web server 1 → Booking service") && taken.includes("1 finding of the checks is cleared"), taken);
+  await page2.click('[data-assistant-suggestion="1"] [aria-label^="Put aside"]');
+  check("a suggestion put aside is struck through and offers nothing more", !(await page2.$('[data-assistant-suggestion="1"] [data-assistant-take]')) && (await page2.$eval('[data-assistant-suggestion="1"] span', (e) => getComputedStyle(e).textDecorationLine)) === "line-through");
+  await page2.click("[data-assistant-edit-toggle]");
+  check("with changes switched off the assistant only answers", (await page2.$eval("[data-assistant-engine]", (e) => e.textContent)).startsWith("Answers with"));
+  await page2.type("[data-assistant-input]", "شكرا، ماذا غيرت؟");
+  await page2.keyboard.press("Enter");
+  await page2.waitForFunction((n) => document.querySelectorAll('[data-assistant-kind="ai"]').length === n, {}, 2);
+  const followUp = seen.at(-1).body;
+  const remembered = String(followUp.messages[2]?.content ?? "");
+  check("the next message carries no permission to change, and remembers what was changed, undone and taken", !followUp.edit && remembered.includes("Changes made: Added Web server 1") && remembered.includes("the person said yes") && remembered.includes("(put aside)"), remembered.slice(-300));
   await page2.close();
 
   check("no errors in the browser console", errors.length === 0, errors.slice(0, 3).join(" | "));

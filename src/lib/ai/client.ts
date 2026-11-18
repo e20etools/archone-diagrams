@@ -258,10 +258,10 @@ export interface ChatMessage {
 }
 
 /** Asks the assistant the next turn of a conversation; what the workspace holds goes along as text. */
-export async function chatAi(messages: ChatMessage[], context: string, page: string): Promise<{ answer: string; engine: string }> {
+export async function chatAi(messages: ChatMessage[], context: string, page: string, edit?: { diagramId: string }): Promise<{ answer: string; engine: string }> {
   let result: Awaited<ReturnType<typeof post>>;
   try {
-    result = await post({ mode: "chat", messages, context, page });
+    result = await post({ mode: "chat", messages, context, page, ...(edit ? { edit } : {}) });
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") throw new AiError("failed", "The AI model took too long to answer. Try again, or ask a narrower question.");
     throw new AiError("failed", "The server could not be reached. Check your connection and try again.");

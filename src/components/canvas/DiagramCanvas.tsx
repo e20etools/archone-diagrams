@@ -32,6 +32,7 @@ import { zonesOf } from "@/lib/zones";
 import { protocolLabel } from "@/lib/library/protocols";
 import { componentSubtitle } from "@/lib/library";
 import { childrenOf, protocolsOf } from "@/lib/model";
+import { SHOW_CHANGES, type ShowChanges } from "@/lib/assistant/show";
 import type { Diagram, ModelObject, Workspace } from "@/lib/types";
 import { scopeMembers, visibleEdges } from "@/lib/views";
 import { familyLabel, networkLink, objectNetwork, type NetworkLink } from "@/lib/networkLinks";
@@ -319,6 +320,34 @@ function Inner({
   const wrapper = useRef<HTMLDivElement>(null);
   const [connecting, setConnecting] = useState(false);
   const [whole, setWhole] = useState(false);
+  const [flash, setFlash] = useState<ReadonlySet<string>>(() => new Set());
+
+  // What the assistant changed comes into view, clear of its panel, and is marked for a moment.
+  useEffect(() => {
+    let fit = 0;
+    let fade = 0;
+    const show = (event: Event) => {
+      const detail = (event as CustomEvent<ShowChanges>).detail;
+      if (!detail || detail.diagramId !== diagram.id) return;
+      window.clearTimeout(fit);
+      window.clearTimeout(fade);
+      setFlash(new Set(detail.ids));
+      fit = window.setTimeout(() => {
+        const box = wrapper.current?.getBoundingClientRect();
+        const panel = document.querySelector("[data-assistant-panel]")?.getBoundingClientRect();
+        const covered = box && panel && panel.left < box.right && panel.right > box.left ? Math.max(0, Math.min(box.width * 0.6, box.right - panel.left)) : 0;
+        const nodes = detail.ids.filter((id) => flow.getNode(id)).map((id) => ({ id }));
+        void flow.fitView({ ...(nodes.length ? { nodes } : {}), padding: { top: "56px", bottom: "56px", left: "56px", right: `${Math.round(covered) + 56}px` }, duration: 350, maxZoom: 1 });
+      }, 90);
+      fade = window.setTimeout(() => setFlash(new Set()), 3200);
+    };
+    window.addEventListener(SHOW_CHANGES, show);
+    return () => {
+      window.removeEventListener(SHOW_CHANGES, show);
+      window.clearTimeout(fit);
+      window.clearTimeout(fade);
+    };
+  }, [flow, diagram.id]);
 
   // A zone holding boxes on this diagram is drawn around them rather than as a box.
   const zones = useMemo(() => zonesOf(ws, diagram), [ws, diagram]);
@@ -347,10 +376,11 @@ function Inner({
         selected: picked?.length ? picked.includes(id) : selection?.objectId === id,
         width: NODE_W,
         height: NODE_H,
+        ...(flash.has(id) ? { className: "assistant-changed" } : {}),
       });
     }
     return list;
-  }, [ws, diagram, highlight, spotlight, comments, readOnly, selection?.objectId, picked, onOpen, zoneIds]);
+  }, [ws, diagram, highlight, spotlight, comments, readOnly, selection?.objectId, picked, onOpen, zoneIds, flash]);
 
   // React Flow owns positions while a node is being dragged; the store is updated when the drag ends.
   const [nodes, setNodes] = useState<Node[]>(derived);

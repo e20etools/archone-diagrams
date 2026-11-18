@@ -284,6 +284,30 @@ describe("AI endpoint (AI-01, AI-02)", () => {
     expect(checkAiRequest({ ...request, messages: [] }).ok).toBe(false);
   });
 
+  it("tells the model how to change the diagram only when the person lets it", async () => {
+    const seen: any[] = [];
+    const openai = (async (_url: string, init: RequestInit) => {
+      seen.push(JSON.parse(String(init.body)));
+      return new Response(JSON.stringify({ choices: [{ message: { content: "Done." } }] }), { status: 200 });
+    }) as unknown as typeof fetch;
+    const base = { mode: "chat", messages: [{ role: "user", content: "أضف خادم ويب واربطه بقاعدة البيانات" }], context: "DIAGRAMS\n[[d:dg_1]] Payments", page: "the diagram Payments" };
+    expect(checkAiRequest({ ...base, edit: { diagramId: "dg_1" } })).toEqual({ ok: true, kind: "ask" });
+    await handleAiRequest({ ...base, edit: { diagramId: "dg_1" } }, { AI_PROVIDER: "groq", AI_API_KEY: "gsk_test" }, openai);
+    await handleAiRequest(base, { AI_PROVIDER: "groq", AI_API_KEY: "gsk_test" }, openai);
+    const [editing, reading] = seen.map((s) => s.messages[0].content as string);
+    expect(editing).toContain("EDITING THE DIAGRAM");
+    expect(editing).toContain("[[d:dg_1]] and may ask you to change it");
+    expect(editing).toContain("```archone-changes");
+    expect(editing).toContain('"op":"connect"');
+    expect(editing).toContain("NCA ECC");
+    expect(seen[0].max_tokens).toBe(4000);
+    expect(reading).not.toContain("EDITING THE DIAGRAM\n");
+    expect(reading).not.toContain("archone-changes");
+    expect(reading).toContain("You cannot change anything here");
+    expect(seen[1].max_tokens).toBe(2500);
+    expect(checkAiRequest({ ...base, edit: { diagramId: "" } }).ok).toBe(false);
+  });
+
   it("explains a used-up free allowance and a refused key", async () => {
     const env = { AI_PROVIDER: "groq", AI_API_KEY: "gsk_test" };
     const limited = (async () => new Response("rate limit for org_abc", { status: 429 })) as unknown as typeof fetch;

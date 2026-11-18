@@ -1,14 +1,18 @@
-import { BotMessageSquare, Check, Copy, SendHorizontal, SquarePen, X } from "lucide-react";
+import { BotMessageSquare, Check, Copy, Mic, MicOff, PencilRuler, SendHorizontal, SquarePen, TriangleAlert, Undo2, X } from "lucide-react";
 import { Fragment, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { IconButton, cx } from "@/components/ui";
 import { fetchAiStatus, type AiStatus } from "@/lib/ai/client";
 import { exampleQuestions } from "@/lib/ask/ask";
 import { parseAnswer, type Block, type Inline } from "@/lib/assistant/answer";
-import { getUseAi, newConversation, openConversation, pageOf, sendToAssistant, setAssistantOpen, setUseAi, useAssistant, type ChatTurn } from "@/lib/assistant/chat";
-import { useSession } from "@/lib/cloud/session";
-import { useWorkspace } from "@/lib/store";
+import { answerConfirm, answerSuggestion, canUndo, getUseAi, newConversation, openConversation, pageOf, sendToAssistant, setAssistantOpen, setUseAi, undoStep, useAssistant, type ChangeStep, type ChatTurn, type DiagramChange } from "@/lib/assistant/chat";
+import { viewCategory } from "@/lib/categories";
+import { useCanEdit, useCategoryRank, useSession } from "@/lib/cloud/session";
+import { DICTATION_LANGUAGES, useDictation } from "@/lib/dictation";
+import { useStore, useWorkspace } from "@/lib/store";
 import type { Workspace } from "@/lib/types";
+
+const EDIT_KEY = "archone.assistant.edit";
 
 /** The answer with names in place of tags, to copy elsewhere. */
 export const plainAnswer = (ws: Workspace, text: string) =>
@@ -164,6 +168,128 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
+function StepResult({ step, onUndo }: { step: ChangeStep; onUndo: () => void }) {
+  const ws = useStore((s) => s.ws);
+  return (
+    <div className="space-y-1">
+      {step.lines.length > 0 && (
+        <ul className="list-disc space-y-0.5 ps-5" dir="auto" data-assistant-lines>
+          {step.lines.map((line, i) => (
+            <li key={i} className={step.undone ? "line-through text-ink-faint" : undefined}>
+              {line}
+            </li>
+          ))}
+        </ul>
+      )}
+      {step.problems.map((p, i) => (
+        <p key={i} className="text-ink-soft">
+          Not done: {p}
+        </p>
+      ))}
+      {!step.undone && step.findings.length > 0 && (
+        <div className="rounded-md bg-signal-soft px-2 py-1.5 text-signal" data-assistant-findings>
+          <p className="flex items-center gap-1 font-medium">
+            <TriangleAlert size={13} aria-hidden /> The checks now find
+          </p>
+          <ul className="list-disc ps-5">
+            {step.findings.map((f, i) => (
+              <li key={i}>{f}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {!step.undone && step.cleared > 0 && <p className="text-ok">{step.cleared === 1 ? "1 finding of the checks is cleared." : `${step.cleared} findings of the checks are cleared.`}</p>}
+      {step.lines.length > 0 &&
+        (step.undone ? (
+          <p className="text-ink-faint">Undone.</p>
+        ) : (
+          <button
+            type="button"
+            disabled={!canUndo(step, ws)}
+            onClick={onUndo}
+            title={canUndo(step, ws) ? "Take this change back" : "Other changes came after this one: use Undo in the editor (Ctrl Z)"}
+            className="inline-flex items-center gap-1 rounded-md border border-line px-2 py-0.5 hover:border-ink-faint disabled:opacity-50"
+            data-assistant-undo
+          >
+            <Undo2 size={12} /> Undo
+          </button>
+        ))}
+    </div>
+  );
+}
+
+function ChangeCard({ turn, change }: { turn: ChatTurn; change: DiagramChange }) {
+  return (
+    <div className="mt-2 space-y-2.5 rounded-lg border border-line bg-surface px-3 py-2 text-[12.5px]" data-assistant-change>
+      {change.made && (
+        <section data-assistant-made>
+          <p className="mb-0.5 flex items-center gap-1 font-medium text-ink">
+            <PencilRuler size={13} aria-hidden /> Changed on the diagram
+          </p>
+          <StepResult step={change.made} onUndo={() => undoStep(turn.id, "made")} />
+        </section>
+      )}
+      {change.confirm.ops.length > 0 && (
+        <section data-assistant-confirm={change.confirm.answer ?? "waiting"}>
+          <p className="mb-0.5 font-medium text-ink">{change.confirm.answer ? (change.confirm.answer === "yes" ? "You said yes" : "You said no") : "Waiting for your yes"}</p>
+          {change.confirm.step ? (
+            <StepResult step={change.confirm.step} onUndo={() => undoStep(turn.id, "confirm")} />
+          ) : (
+            <ul className={cx("list-disc space-y-0.5 ps-5", change.confirm.answer === "no" && "line-through text-ink-faint")} dir="auto">
+              {change.confirm.lines.map((line, i) => (
+                <li key={i}>{line}</li>
+              ))}
+            </ul>
+          )}
+          {!change.confirm.answer && (
+            <div className="mt-1.5 flex gap-1.5">
+              <button type="button" onClick={() => answerConfirm(turn.id, true)} className="rounded-md bg-blueprint px-2.5 py-0.5 font-medium text-on-accent hover:bg-blueprint-deep" data-assistant-yes>
+                Yes, do it
+              </button>
+              <button type="button" onClick={() => answerConfirm(turn.id, false)} className="rounded-md border border-line px-2.5 py-0.5 hover:border-ink-faint" data-assistant-no>
+                No
+              </button>
+            </div>
+          )}
+        </section>
+      )}
+      {change.suggest.length > 0 && (
+        <section data-assistant-suggest>
+          <p className="mb-0.5 font-medium text-ink">Suggestions</p>
+          <ul className="space-y-1">
+            {change.suggest.map((item, i) => (
+              <li key={i} className="flex flex-wrap items-start gap-1.5" data-assistant-suggestion={i}>
+                {item.step ? (
+                  <div className="flex-1">
+                    <StepResult step={item.step} onUndo={() => undoStep(turn.id, i)} />
+                  </div>
+                ) : (
+                  <>
+                    <span className={cx("min-w-0 flex-1", item.dismissed && "line-through text-ink-faint")} dir="auto">
+                      {item.line}
+                    </span>
+                    {!item.dismissed && (
+                      <>
+                        <button type="button" onClick={() => answerSuggestion(turn.id, i, true)} className="rounded-md border border-blueprint px-2 py-0.5 font-medium text-blueprint hover:bg-blueprint-soft" data-assistant-take>
+                          Do it
+                        </button>
+                        <button type="button" onClick={() => answerSuggestion(turn.id, i, false)} className="rounded-md px-1.5 py-0.5 text-ink-faint hover:text-ink" aria-label={`Put aside: ${item.line}`}>
+                          <X size={12} />
+                        </button>
+                      </>
+                    )}
+                  </>
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+      {change.dropped > 0 && <p className="text-ink-faint">{change.dropped === 1 ? "One change could not be read and was left out." : `${change.dropped} changes could not be read and were left out.`}</p>}
+    </div>
+  );
+}
+
 function Turn({ ws, turn }: { ws: Workspace; turn: ChatTurn }) {
   if (turn.role === "user") {
     return (
@@ -195,6 +321,7 @@ function Turn({ ws, turn }: { ws: Workspace; turn: ChatTurn }) {
     <li data-assistant-turn="assistant" data-assistant-kind={turn.kind}>
       <div className="max-w-full rounded-2xl rounded-es-md border border-line-soft bg-paper/60 px-3 py-2">
         <AnswerBody ws={ws} text={turn.text} />
+        {turn.change && <ChangeCard turn={turn} change={turn.change} />}
       </div>
       <div className="mt-1 flex items-center gap-2 px-1 text-[11.5px] text-ink-faint">
         <span title={turn.engine}>{turn.kind ? KIND_NOTE[turn.kind] : ""}</span>
@@ -208,8 +335,16 @@ function Turn({ ws, turn }: { ws: Workspace; turn: ChatTurn }) {
   );
 }
 
-function suggestionsFor(ws: Workspace, onDiagram: boolean, ai: boolean): string[] {
+function suggestionsFor(ws: Workspace, onDiagram: boolean, ai: boolean, editing = false): string[] {
   if (!ai) return exampleQuestions(ws).slice(0, 4);
+  if (editing) {
+    return [
+      "Summarise this diagram: what it shows, who made it and where its approval stands",
+      "Add the protocols and ports to the connections that have none",
+      "Check this diagram against the NCA ECC checks and fix what you can",
+      "أضف خادم ويب جديد واربطه بقاعدة البيانات عبر HTTPS",
+    ];
+  }
   if (onDiagram) {
     return [
       "Summarise this diagram: what it shows, who made it and where its approval stands",
@@ -243,6 +378,19 @@ export function AssistantDock() {
   const list = useRef<HTMLDivElement>(null);
   const launcher = useRef<HTMLButtonElement>(null);
   const page = useMemo(() => pageOf(ws, location.pathname, location.search), [ws, location.pathname, location.search]);
+  const roleCanEdit = useCanEdit();
+  const rankIn = useCategoryRank();
+  const shown = page.diagramId ? ws.diagrams[page.diagramId] : undefined;
+  const mayChange = !!shown && roleCanEdit && rankIn(viewCategory(shown.viewType)) >= 3;
+  const [editOn, setEditOn] = useState(() => {
+    try {
+      return localStorage.getItem(EDIT_KEY) !== "no";
+    } catch {
+      return true;
+    }
+  });
+  const [lang, setLang] = useState<string>(DICTATION_LANGUAGES[0].id);
+  const dictation = useDictation((text) => setDraft((d) => `${d}${d && !/\s$/.test(d) ? " " : ""}${text}`));
 
   useEffect(() => openConversation(workspaceKey), [workspaceKey]);
   useEffect(() => {
@@ -262,10 +410,20 @@ export function AssistantDock() {
 
   const canAi = !!ai?.configured;
   const aiOn = canAi && useAi;
+  const editing = aiOn && mayChange && editOn;
   const send = (text: string) => {
     if (!text.trim() || busy) return;
+    if (dictation.listening) dictation.toggle(lang);
     setDraft("");
-    void sendToAssistant(text, { ws, ai, useAi: aiOn, page });
+    void sendToAssistant(text, { ws, ai, useAi: aiOn, page, editDiagramId: editing ? page.diagramId : null });
+  };
+  const switchEditing = (on: boolean) => {
+    setEditOn(on);
+    try {
+      localStorage.setItem(EDIT_KEY, on ? "yes" : "no");
+    } catch {
+      // The choice lasts for this visit.
+    }
   };
   const keys = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
@@ -295,7 +453,7 @@ export function AssistantDock() {
     );
   }
 
-  const suggestions = suggestionsFor(ws, !!page.diagramId, aiOn);
+  const suggestions = suggestionsFor(ws, !!page.diagramId, aiOn, editing);
   return (
     <section
       role="dialog"
@@ -311,7 +469,7 @@ export function AssistantDock() {
         <div className="min-w-0 leading-tight">
           <h2 className="font-semibold">Assistant</h2>
           <p className="truncate text-[11.5px] text-ink-faint" data-assistant-engine>
-            {ai === null ? "Checking the AI model…" : aiOn ? `Answers with ${ai.engine ?? "the AI model"}` : canAi ? "AI answers are switched off" : "Reads the model; no AI model is set up"}
+            {ai === null ? "Checking the AI model…" : editing ? `Changes this diagram with ${ai.engine ?? "the AI model"}` : aiOn ? `Answers with ${ai.engine ?? "the AI model"}` : canAi ? "AI answers are switched off" : "Reads the model; no AI model is set up"}
           </p>
         </div>
         <div className="ms-auto flex items-center">
@@ -355,7 +513,9 @@ export function AssistantDock() {
         {turns.length === 0 && (
           <div className="space-y-2.5 pt-1">
             <p className="text-ink-soft" dir="auto">
-              Ask about the diagrams in this workspace and everything on them: who made them, servers, networks and connections, approvals and the notes of Enterprise Architecture and Cybersecurity, security checks and compliance. In Arabic or in English.
+              {editing
+                ? "Ask for changes to this diagram, by typing or speaking, in Arabic or English: add servers, networks and connections, set protocols, owners and details. Changes appear on the diagram at once and can be undone; removals wait for your yes. The assistant suggests improvements and warns when a change breaks the checks or the workspace's rules."
+                : "Ask about the diagrams in this workspace and everything on them: who made them, servers, networks and connections, approvals and the notes of Enterprise Architecture and Cybersecurity, security checks and compliance. In Arabic or in English."}
             </p>
             {ai !== null && suggestions.length > 0 && (
               <ul className="flex flex-col items-start gap-1.5" data-assistant-suggestions>
@@ -407,17 +567,49 @@ export function AssistantDock() {
               e.target.style.height = `${Math.min(e.target.scrollHeight, 120)}px`;
             }}
             onKeyDown={keys}
-            placeholder={page.diagramId ? "Ask about this diagram…" : "Ask about diagrams, servers, approvals…"}
+            placeholder={editing ? "Ask for a change, or ask about this diagram…" : page.diagramId ? "Ask about this diagram…" : "Ask about diagrams, servers, approvals…"}
             aria-label="Your message to the assistant"
             className="max-h-[120px] min-h-[24px] flex-1 resize-none bg-transparent py-0.5 text-sm placeholder:text-ink-faint focus:outline-none"
             data-assistant-input
           />
+          {dictation.supported && (
+            <button
+              type="button"
+              onClick={() => dictation.toggle(lang)}
+              aria-label={dictation.listening ? "Stop speaking" : "Speak your message"}
+              title={dictation.listening ? "Stop" : `Speak (${DICTATION_LANGUAGES.find((l) => l.id === lang)?.label})`}
+              className={cx("grid size-8 shrink-0 place-items-center rounded-md", dictation.listening ? "bg-danger text-white" : "text-ink-soft hover:bg-line-soft hover:text-ink")}
+              data-assistant-mic
+            >
+              {dictation.listening ? <MicOff size={16} /> : <Mic size={16} />}
+            </button>
+          )}
           <button type="submit" disabled={busy || !draft.trim()} aria-label="Send" title="Send (Enter)" className="grid size-8 shrink-0 place-items-center rounded-md bg-blueprint text-on-accent hover:bg-blueprint-deep disabled:opacity-40">
             <SendHorizontal size={16} />
           </button>
         </div>
-        <p className="mt-1.5 flex items-center gap-2 px-1 text-[11px] text-ink-faint">
-          <span>Answers can be wrong: follow the links to check.</span>
+        {(dictation.listening || dictation.problem) && (
+          <p className="mt-1 px-1 text-[11.5px] text-ink-soft" dir="auto">
+            {dictation.problem || dictation.hearing || "Listening…"}
+          </p>
+        )}
+        <p className="mt-1.5 flex flex-wrap items-center gap-2 px-1 text-[11px] text-ink-faint">
+          {dictation.supported && (
+            <select value={lang} onChange={(e) => setLang(e.target.value)} disabled={dictation.listening} aria-label="Language spoken" className="rounded border border-line bg-surface px-1 py-0.5 text-[11px]">
+              {DICTATION_LANGUAGES.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.label}
+                </option>
+              ))}
+            </select>
+          )}
+          {aiOn && mayChange && (
+            <label className="inline-flex items-center gap-1 cursor-pointer text-ink-soft" data-assistant-edit-switch>
+              <input type="checkbox" className="accent-blueprint" checked={editOn} onChange={(e) => switchEditing(e.target.checked)} data-assistant-edit-toggle />
+              May change this diagram
+            </label>
+          )}
+          <span>Answers can be wrong: check them.</span>
           {aiOn && (
             <button
               type="button"
