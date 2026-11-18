@@ -11,6 +11,7 @@ import { saveComponent, saveProtocol } from "../libraryEdits";
 import { cleanLinks } from "../links";
 import {
   archiveDiagram,
+  restoreDiagram,
   createObject,
   createRelationship,
   deleteDiagram,
@@ -31,6 +32,8 @@ import {
 } from "../model";
 import { COLOR_BY, LIFECYCLES, NOTATIONS, RELATION_KINDS, TITLE_BLOCK_CORNERS, VIEW_TYPES, type Provenance, type ViewType, type Workspace } from "../types";
 import { addObjectsToDiagram, relayout } from "../views";
+import { guessPerspective, saveTemplate, templateFromDiagram } from "../templates";
+import type { Perspective } from "../templateCatalog";
 
 /**
  * Changes the assistant makes to the diagram on screen. The AI model ends its answer with a block
@@ -40,6 +43,10 @@ import { addObjectsToDiagram, relayout } from "../views";
  * always waits for a person's yes, whichever list the model put it in. Every operation is checked
  * here before it touches the model, and the person's own permissions still decide what is saved.
  */
+
+/** What the Export window makes, by the name the model uses. */
+export const EXPORT_FORMATS = ["png", "svg", "pdf", "pptx", "html", "gif", "video", "json", "xlsx", "csv-objects", "csv-relationships", "mermaid", "plantuml", "drawio", "structurizr", "archimate", "calm", "bpmn", "confluence", "channels"] as const;
+export type ExportFormat = (typeof EXPORT_FORMATS)[number];
 
 const name = z.string().trim().min(1).max(120);
 const ref = z.string().trim().min(1).max(120);
@@ -110,8 +117,24 @@ export const editOpSchema = z.discriminatedUnion("op", [
   z.object({ op: z.literal("duplicate_diagram"), name: z.string().trim().min(1).max(200).optional() }),
   z.object({ op: z.literal("archive_diagram"), reason: z.string().trim().min(1).max(500) }),
   z.object({ op: z.literal("delete_diagram") }),
+  z.object({ op: z.literal("restore_diagram"), reason: z.string().trim().min(1).max(500) }),
+  z.object({ op: z.literal("save_template"), name: z.string().trim().min(1).max(120).optional(), perspective: loose(["applications", "data", "infrastructure", "business"]), about: text(1000).optional(), tags: text(200).optional() }),
+  // Done for the person beyond the model: they reach other people or leave the app, so Undo does not take them back.
+  z.object({ op: z.literal("comment"), on: ref.optional(), text: z.string().trim().min(1).max(4000), reply_to: ref.optional(), mention: z.array(z.string().max(120)).max(10).optional() }),
+  z.object({ op: z.literal("send_for_approval"), note: text(2000).optional() }),
+  z.object({ op: z.literal("export"), format: z.enum(EXPORT_FORMATS) }),
+  z.object({ op: z.literal("share"), kind: loose(["live", "snapshot"]), days: z.number().int().min(1).max(365).optional() }),
+  z.object({ op: z.literal("present") }),
+  z.object({ op: z.literal("open"), what: z.enum(["share", "export", "approval", "comments", "files", "settings", "flows", "processes"]) }),
+  z.object({ op: z.literal("link_file"), file: ref }),
+  z.object({ op: z.literal("unlink_file"), file: ref }),
 ]);
 export type EditOp = z.infer<typeof editOpSchema>;
+
+/** Done for the person outside the model, after the model's changes: comments, approval, exports, links, files, the screen. */
+export const ACTION_OPS = new Set<EditOp["op"]>(["comment", "send_for_approval", "export", "share", "present", "open", "link_file", "unlink_file"]);
+export const isAction = (op: EditOp) => ACTION_OPS.has(op.op);
+export type ActionOp = Extract<EditOp, { op: "comment" | "send_for_approval" | "export" | "share" | "present" | "open" | "link_file" | "unlink_file" }>;
 
 /** A suggestion: one change, or a few that belong together, such as adding a firewall and routing a connection through it. */
 export interface Suggestion {
@@ -666,6 +689,25 @@ function applyOne(c: Context, op: EditOp, provenance: Provenance) {
       c.lines.push(`Deleted the diagram "${was}" (its objects stay in the model)`);
       return;
     }
+    case "restore_diagram": {
+      const next = restoreDiagram(c.ws, c.diagramId, c.who.by, op.reason);
+      if (next === c.ws) return c.problems.push("The diagram is not archived");
+      c.ws = next;
+      c.lines.push(`Restored the diagram from the archive: ${op.reason}`);
+      return;
+    }
+    case "save_template": {
+      const d = c.ws.diagrams[c.diagramId];
+      if (!d) return;
+      const made = templateFromDiagram(c.ws, c.diagramId, { name: op.name ?? d.name, perspective: (op.perspective as Perspective | undefined) ?? guessPerspective(c.ws, d), about: op.about ?? d.description, tags: op.tags ?? "" }, c.who.by);
+      if (!made) return c.problems.push("This diagram has no boxes yet, so there is nothing to make a template of");
+      c.ws = saveTemplate(c.ws, made.template);
+      c.lines.push(`Saved the diagram as the template "${made.template.name}" (under ${made.template.perspective}); find it under Start from a template`);
+      return;
+    }
+    default:
+      // Actions beyond the model are done after it, by the conversation (see actions.ts).
+      return;
   }
 }
 
@@ -780,8 +822,62 @@ export function describeOp(ws: Workspace, op: EditOp, plan: EditOp[] = []): stri
       return `Archive the diagram: ${op.reason}`;
     case "delete_diagram":
       return "Delete this whole diagram (its objects stay in the model)";
+    case "restore_diagram":
+      return `Restore the diagram from the archive: ${op.reason}`;
+    case "save_template":
+      return `Save the diagram as a template${op.name ? ` named "${op.name}"` : ""}`;
+    case "comment":
+      return `Write a comment${op.on ? ` on ${op.on === "diagram" ? "the diagram" : refName(op.on)}` : ""}: "${op.text.slice(0, 120)}${op.text.length > 120 ? "…" : ""}"`;
+    case "send_for_approval":
+      return `Send the diagram for approval${op.note ? `: "${op.note.slice(0, 120)}"` : ""}`;
+    case "export":
+      return `Export the diagram as ${EXPORT_LABEL[op.format]}`;
+    case "share":
+      return `Make a ${op.kind === "snapshot" ? "snapshot" : "live"} link to the diagram${op.days ? ` for ${op.days} days` : ""}`;
+    case "present":
+      return "Present the diagram full screen";
+    case "open":
+      return `Open ${OPEN_LABEL[op.what]}`;
+    case "link_file":
+      return `Link the file ${op.file} to the diagram`;
+    case "unlink_file":
+      return `Unlink the file ${op.file} from the diagram`;
   }
 }
+
+export const EXPORT_LABEL: Record<ExportFormat, string> = {
+  png: "PNG",
+  svg: "SVG",
+  pdf: "PDF",
+  pptx: "PowerPoint",
+  html: "interactive HTML",
+  gif: "GIF",
+  video: "video",
+  json: "JSON",
+  xlsx: "Excel",
+  "csv-objects": "objects CSV",
+  "csv-relationships": "relationships CSV",
+  mermaid: "Mermaid",
+  plantuml: "PlantUML",
+  drawio: "draw.io",
+  structurizr: "Structurizr DSL",
+  archimate: "ArchiMate",
+  calm: "FINOS CALM",
+  bpmn: "BPMN 2.0",
+  confluence: "a Confluence page",
+  channels: "a message to the connected channels",
+};
+
+export const OPEN_LABEL: Record<Extract<EditOp, { op: "open" }>["what"], string> = {
+  share: "the Share window",
+  export: "the Export window",
+  approval: "the Approval panel",
+  comments: "the comments",
+  files: "the diagram's files",
+  settings: "the diagram's settings",
+  flows: "the flows",
+  processes: "the linked processes",
+};
 
 /* ---------- what the checks say about a change ---------- */
 

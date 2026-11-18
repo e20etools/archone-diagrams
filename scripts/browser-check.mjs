@@ -75,6 +75,23 @@ function fakeProvider(port) {
         res.end(JSON.stringify({ choices: [{ message: { content: `Nothing in the model says so.\n- [[${id}]] holds the bookings.\n- [[obj_invented]] is made up.` } }] }));
         return;
       }
+      // The assistant does what a person does beyond the model: exports, a link, a template, a file, a comment; and presents.
+      if (String(sent.messages?.[0]?.content ?? "").includes("EDITING THE DIAGRAM\n") && /صدّر|اعرض/.test(String(sent.messages.at(-1).content))) {
+        const asked = String(sent.messages.at(-1).content);
+        const plan = asked.includes("اعرض")
+          ? { apply: [{ op: "present" }] }
+          : {
+              apply: [
+                { op: "export", format: "json" },
+                { op: "share" },
+                { op: "save_template", name: "Clinic template", perspective: "applications" },
+                { op: "link_file", file: "Vendor install guide" },
+                { op: "comment", on: "diagram", text: "Exported and shared." },
+              ],
+            };
+        res.end(JSON.stringify({ choices: [{ message: { content: `تم.\n\n\`\`\`archone-changes\n${JSON.stringify(plan)}\n\`\`\`` } }], usage: { total_tokens: 700 } }));
+        return;
+      }
       // The assistant hides a connection, shows it again from what the app says is not drawn, and is asked to delete the diagram.
       if (String(sent.messages?.[0]?.content ?? "").includes("EDITING THE DIAGRAM\n") && /أخف الاتصال|أظهر الاتصال|احذف المخطط/.test(String(sent.messages.at(-1).content))) {
         const system = sent.messages[0].content;
@@ -2770,14 +2787,77 @@ try {
   );
   await page2.evaluate(() => [...document.querySelectorAll("[data-assistant-no]")].at(-1).click());
 
+  // Beyond the model, as a person would: export, a link, a template, a file from the library; comments need accounts.
+  const downloads2 = await mkdtemp(join(tmpdir(), "archone-dl2-"));
+  await (await page2.createCDPSession()).send("Page.setDownloadBehavior", { behavior: "allow", downloadPath: downloads2 });
+  {
+    const uploads2 = await mkdtemp(join(tmpdir(), "archone-up2-"));
+    await writeFile(join(uploads2, "Vendor install guide.pdf"), "%PDF-1.4\n% a stand-in for a vendor guide\n");
+    const filesTab = await page2.browserContext().newPage();
+    await filesTab.goto(`${base2}/files`, { waitUntil: "networkidle0" });
+    await filesTab.waitForSelector("[data-file-input]");
+    await (await filesTab.$("[data-file-input]")).uploadFile(join(uploads2, "Vendor install guide.pdf"));
+    await filesTab.waitForSelector("[data-file-chosen]");
+    await filesTab.click("[data-file-upload-go]");
+    await filesTab.waitForFunction(() => document.querySelector("[data-file-rows]")?.getAttribute("data-file-rows") === "1");
+    await filesTab.close();
+    await page2.bringToFront();
+  }
+  await say("صدّر المخطط وشاركه واحفظه كقالب واربط دليل التركيب واكتب تعليقاً");
+  await page2.waitForFunction(() => [...document.querySelectorAll("[data-assistant-change]")].at(-1)?.querySelector("[data-assistant-done]"), { timeout: 20000 });
+  const doneCard = await page2.evaluate(() => {
+    const card = [...document.querySelectorAll("[data-assistant-change]")].at(-1);
+    return {
+      done: [...card.querySelectorAll("[data-assistant-done] li")].map((li) => li.textContent),
+      lines: [...card.querySelectorAll("[data-assistant-lines] li")].map((li) => li.textContent),
+      problems: [...card.querySelectorAll("[data-assistant-problem]")].map((p) => p.textContent),
+      link: card.querySelector('[data-assistant-link="Snapshot link"] input')?.value ?? "",
+    };
+  });
+  await sleep(500);
+  const exported = (await readdir(downloads2)).filter((f) => f.endsWith(".json"));
+  const filesCount = await page2.$eval("[data-diagram-files-count]", (e) => e.getAttribute("data-diagram-files-count")).catch(() => "0");
+  const savedTemplates = await page2.evaluate(() => Object.values(JSON.parse(localStorage.getItem("archone.workspace.v1")).templates ?? {}).map((t) => t.name));
+  check(
+    "the assistant exports through the Export window, makes a link to copy, saves a template and links a file from the library",
+    exported.length === 1 &&
+      doneCard.done.some((d) => d.startsWith("Downloaded ") && d.endsWith(".json")) &&
+      doneCard.link.startsWith(`${base2}/share#`) &&
+      doneCard.lines.some((l) => l.startsWith('Saved the diagram as the template "Clinic template"')) &&
+      savedTemplates.includes("Clinic template") &&
+      doneCard.done.includes("Linked the file Vendor install guide.pdf") &&
+      filesCount === "1",
+    JSON.stringify({ exported, doneCard, filesCount, savedTemplates }),
+  );
+  check("a comment asked for in the browser-only copy says it needs accounts, and the rest is still done", doneCard.problems.some((p) => p.includes("Comments need the hosted app with accounts")));
+  await shot(page2, "50-assistant-actions");
+  // Presenting leaves the editor, so the answer is read from where it took the person.
+  await page2.type("[data-assistant-input]", "اعرضه");
+  await page2.keyboard.press("Enter");
+  await page2.waitForFunction((id) => location.pathname === `/present/${id}`, { timeout: 10000 }, shownDiagram).catch(() => {});
+  check("asked to present, the assistant opens the diagram full screen", (await page2.evaluate(() => location.pathname)) === `/present/${shownDiagram}`);
+  await sleep(400);
+  await page2.goto(`${base2}/diagram/${shownDiagram}`, { waitUntil: "networkidle0" });
+  if (!(await page2.$("[data-assistant-panel]"))) await page2.click("[data-assistant-launcher]");
+  await page2.waitForSelector("[data-assistant-edit-toggle]");
+  aiTurns = await turnsNow();
+
   await page2.click("[data-assistant-edit-toggle]");
   check("with changes switched off the assistant only answers", (await page2.$eval("[data-assistant-engine]", (e) => e.textContent)).startsWith("Answers with"));
   await page2.type("[data-assistant-input]", "شكرا، ماذا غيرت؟");
   await page2.keyboard.press("Enter");
   await page2.waitForFunction((n) => document.querySelectorAll('[data-assistant-kind="ai"]').length === n + 1, {}, aiTurns);
   const followUp = seen.at(-1).body;
-  const remembered = String(followUp.messages.find((m, i) => i > 0 && m.role === "assistant")?.content ?? "");
-  check("the next message carries no permission to change, and remembers what was changed, undone and taken", !followUp.edit && remembered.includes("Changes made: Added Web server 1") && remembered.includes("the person said yes") && remembered.includes("(put aside)"), remembered.slice(-300));
+  const remembered = followUp.messages
+    .slice(1)
+    .filter((m) => m.role === "assistant")
+    .map((m) => String(m.content))
+    .join("\n");
+  check(
+    "the next message carries no permission to change, and remembers what was changed, done, and said no to",
+    !String(followUp.messages[0].content).includes("EDITING THE DIAGRAM\n") && remembered.includes("Changes made: Hid the connection") && remembered.includes("Done: Downloaded") && remembered.includes("Not done: Comment: Comments need") && remembered.includes("(the person said no)"),
+    remembered.slice(-400),
+  );
   await page2.close();
 
   check("no errors in the browser console", errors.length === 0, errors.slice(0, 3).join(" | "));

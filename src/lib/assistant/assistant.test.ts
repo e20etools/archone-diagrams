@@ -66,7 +66,7 @@ describe("what the assistant knows", () => {
     expect(text).toMatch(/-> \[\[[^\]]+\]\] \| reads \/ writes \| connection id rel_\w+ \| protocols: PostgreSQL 5432\/TCP \| network: Data VLAN \| encrypted: no/);
     expect(text).toContain("What the checks find on this diagram");
     expect(text).toMatch(/\[medium\] NCA ECC \(Saudi Arabia\) · Where classified data is hosted is written down \| Orders database holds confidential data/);
-    expect(text).toContain(`Sara, 2026-11-16 12:00, on [[${db.id}]] in [[d:${inside.id}]] (open): "Is the backup tested?"`);
+    expect(text).toMatch(new RegExp(`Sara, 2026-11-16 12:00, on \\[\\[${db.id}\\]\\] in \\[\\[d:${inside.id}\\]\\] \\(open; comment id \\S+\\): "Is the backup tested\\?"`));
     expect(text).toContain("Asked by: Khaled, owner of this workspace.");
     // Emails of people are not written out when they have a name.
     expect(text).not.toContain("sara@example.com");

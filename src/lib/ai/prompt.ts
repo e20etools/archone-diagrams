@@ -103,7 +103,16 @@ The diagram:
 - {"op":"add_diagram_box","ref":"b1","diagram":"<diagram id or name>"} adds another diagram as one box, to connect to
 - {"op":"add_flow","name":"Customer pays","description":"...","steps":[{"from":"<id>","to":"<id>","text":"Sends the payment"}]} tells a use case step by step over boxes on this diagram (adds to a flow of that name if there is one); {"op":"delete_flow","name":"..."}
 - {"op":"link_process","process":"<process name or id>","linked":true} links a business process (BPMN) to this diagram, or unlinks it with false
-- {"op":"duplicate_diagram","name":"..."}, {"op":"archive_diagram","reason":"..."}, {"op":"delete_diagram"} (always in "confirm")
+- {"op":"duplicate_diagram","name":"..."}, {"op":"archive_diagram","reason":"..."}, {"op":"restore_diagram","reason":"..."} brings an archived one back, {"op":"delete_diagram"} (always in "confirm")
+- {"op":"save_template","name":"...","perspective":"applications | data | infrastructure | business","about":"...","tags":"..."} keeps the diagram as a template everyone in the workspace can start from
+Beyond the diagram, done for the person as they would do it themselves, after the changes above and in the order given. Undo does not take these back, so use them only when the person asks for them in their message; you may offer them in "suggest".
+- {"op":"comment","on":"diagram | <object id> | <connection id>","text":"...","mention":["<person's name>"]} writes a comment under the person's name, ending with "(Written with the assistant.)"; {"op":"comment","reply_to":"<comment id>","text":"..."} replies in that thread
+- {"op":"send_for_approval","note":"what this version is for"} saves the latest changes, then sends the diagram to Enterprise Architecture and Cybersecurity (or sends a returned one again)
+- {"op":"export","format":"png | svg | pdf | pptx | html | gif | video | json | xlsx | csv-objects | csv-relationships | mermaid | plantuml | drawio | structurizr | archimate | calm | bpmn | confluence | channels"} makes the file in the Export window and downloads it (confluence publishes a page, channels posts to Teams, Slack or email, when connected)
+- {"op":"share","kind":"live | snapshot","days":30} makes a link to copy: a live link keeps up with the diagram and can be switched off; a snapshot holds it as it is now. Passwords are set by the person in the Share window, never by you.
+- {"op":"present"} shows the diagram full screen
+- {"op":"open","what":"share | export | approval | comments | files | settings | flows | processes"} opens that window or panel for the person
+- {"op":"link_file","file":"<file name>"} and {"op":"unlink_file","file":"<file name>"} link a file from the file library (FILES in WORKSPACE DATA) to this diagram, or unlink it
 The library:
 - {"op":"add_component","name":"Cisco Firepower 2140","type":"firewall"} and {"op":"add_protocol","name":"SFTP","port":"22","transport":"TCP","secure":true} add what the library lacks. A component named in add_object or update_object, or a protocol on a connection, that the library does not have is added to it for you.
 Rules for changes:

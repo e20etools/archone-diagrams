@@ -7,7 +7,9 @@ import { alignNodes, distributeNodes, type AlignMode } from "@/lib/arrange";
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { DRAG_MIME, DiagramCanvas, type CanvasHandle, type CanvasSelection, type DragItem } from "@/components/canvas/DiagramCanvas";
-import { AiDraftDialog, ExportMenu, ShareDialog } from "@/components/dialogs";
+import { AiDraftDialog, ExportMenu, ShareDialog, type ExportAsk } from "@/components/dialogs";
+import { OPEN_FILES } from "@/components/DiagramFiles";
+import { SCREEN_REQUEST, type ScreenRequest } from "@/lib/assistant/screen";
 import { FlowBar, FlowsPanel, NO_FLOW, useFlowCursor, useFlowKeys } from "@/components/Flows";
 import { LibraryPanel } from "@/components/LibraryBrowser";
 import { SaveAsTemplateDialog } from "@/components/SaveAsTemplate";
@@ -886,6 +888,66 @@ function Editor({ ws, diagram }: { ws: Workspace; diagram: Diagram }) {
   const crumbs = diagram.scopeId && ws.objects[diagram.scopeId] ? [...ancestorsOf(ws, diagram.scopeId)].reverse() : [];
   const empty = Object.keys(diagram.nodes).length === 0;
 
+  // The assistant asks the screen to export, present, or open a panel, as the person would.
+  const [exportAsk, setExportAsk] = useState<ExportAsk | null>(null);
+  const answerScreen = useRef<(request: ScreenRequest) => void>(() => undefined);
+  answerScreen.current = (request) => {
+    const { ask, answer } = request;
+    const done = (text: string) => answer({ ok: true, text });
+    if (ask.kind === "present") {
+      navigate(`/present/${diagramId}`);
+      return done("Opened the diagram full screen to present it");
+    }
+    if (ask.kind === "export") return setExportAsk({ format: ask.format, answer });
+    const panel = (open: () => void) => {
+      closeComments();
+      setFlowsOpen(false);
+      setApprovalOpen(false);
+      setProcessesOpen(false);
+      setSettingsOpen(false);
+      open();
+    };
+    switch (ask.what) {
+      case "share":
+        setDialog("share");
+        return done("Opened the Share window");
+      case "export":
+        setExportAsk({ format: null });
+        return done("Opened the Export window");
+      case "approval":
+        if (!cloudEnabled) return answer({ ok: false, text: "Approval needs the hosted app with accounts" });
+        panel(() => setApprovalOpen(true));
+        return done("Opened the Approval panel");
+      case "comments":
+        if (!cloudEnabled) return answer({ ok: false, text: "Comments need the hosted app with accounts" });
+        panel(() => setCommentsOpen(true));
+        return done("Opened the comments");
+      case "files":
+        window.dispatchEvent(new CustomEvent(OPEN_FILES, { detail: diagramId }));
+        return done("Opened the diagram's files");
+      case "settings":
+        panel(() => {
+          setSelection(NONE);
+          setSettingsOpen(true);
+        });
+        return done("Opened the diagram's settings");
+      case "flows":
+        panel(() => setFlowsOpen(true));
+        return done("Opened the flows");
+      case "processes":
+        panel(() => setProcessesOpen(true));
+        return done("Opened the linked processes");
+    }
+  };
+  useEffect(() => {
+    const on = (event: Event) => {
+      const request = (event as CustomEvent<ScreenRequest>).detail;
+      if (request?.diagramId === diagramId) answerScreen.current(request);
+    };
+    window.addEventListener(SCREEN_REQUEST, on);
+    return () => window.removeEventListener(SCREEN_REQUEST, on);
+  }, [diagramId]);
+
   return (
     <div className="h-full flex flex-col">
       <div className="shrink-0 flex items-center gap-2 h-12 px-3 bg-surface border-b border-line">
@@ -1029,7 +1091,7 @@ function Editor({ ws, diagram }: { ws: Workspace; diagram: Diagram }) {
           <Button icon={<Sparkles size={15} />} onClick={() => setDialog("ai")}>
             Draft with AI
           </Button>
-          <ExportMenu ws={ws} diagram={diagram} canvas={canvas} approval={approval.record} onNotice={notify} />
+          <ExportMenu ws={ws} diagram={diagram} canvas={canvas} approval={approval.record} onNotice={notify} ask={exportAsk} onAskTaken={() => setExportAsk(null)} />
           <Button icon={<Presentation size={15} />} title="Show this diagram full screen, without the tools around it" onClick={() => navigate(`/present/${diagramId}`)}>
             Present
           </Button>

@@ -981,6 +981,59 @@ try {
     await visit(ben, diagramUrl, ".object-node");
   }
 
+  /* ---------- the assistant comments, sends for approval and makes a live link, as the person would ---------- */
+  {
+    const asked = [];
+    const onRequest = (req) => {
+      if (new URL(req.url()).pathname !== "/api/ai") return void req.continue();
+      if (req.method() === "GET") return void req.respond({ status: 200, contentType: "application/json", body: JSON.stringify({ configured: true, engine: "stand-in:model", needsCode: false }) });
+      const body = JSON.parse(req.postData() ?? "{}");
+      asked.push(body);
+      const first = /Objects on it[^\n]*\n\s*\[\[(\S+?)\]\]/.exec(body.context ?? "")?.[1] ?? "missing";
+      const plan = {
+        apply: [
+          { op: "update_object", id: first, description: "Checked with the assistant." },
+          { op: "comment", on: "diagram", text: "Ready for another look.", mention: ["Vera Viewer"] },
+          { op: "send_for_approval", note: "Sent by the assistant" },
+          { op: "share", kind: "live", days: 7 },
+        ],
+      };
+      req.respond({ status: 200, contentType: "application/json", body: JSON.stringify({ answer: `Done.\n\n\`\`\`archone-changes\n${JSON.stringify(plan)}\n\`\`\``, engine: "stand-in:model" }) });
+    };
+    await ben.setRequestInterception(true);
+    ben.on("request", onRequest);
+    await visit(ben, diagramUrl, ".object-node");
+    await tap(ben, "[data-assistant-launcher]");
+    await waitFor(ben, "[data-assistant-edit-toggle]");
+    await typeIn(ben, "[data-assistant-input]", "Note the check, comment, send it for approval and make a link");
+    await ben.keyboard.press("Enter");
+    await waitFor(ben, "[data-assistant-change] [data-assistant-done]", { timeout: 20000 });
+    const card = await evalOn(ben, "[data-assistant-change]", (e) => ({
+      done: [...e.querySelectorAll("[data-assistant-done] li")].map((li) => li.textContent),
+      problems: [...e.querySelectorAll("[data-assistant-problem]")].map((p) => p.textContent),
+      link: e.querySelector('[data-assistant-link="Live link"] input')?.value ?? "",
+    }));
+    const written = await ben.evaluate(() => Object.values(window.__archoneSession.getState().comments).find((c) => c.body.startsWith("Ready for another look.")));
+    await until(ben, () => document.querySelector("[data-approval-button]")?.dataset.approvalButton === "pending", 15000).catch(() => {});
+    const status = await evalOn(ben, "[data-approval-button]", (e) => e.dataset.approvalButton);
+    check(
+      "the assistant writes a comment under the person's name, marked as written with it, sends the diagram for approval and makes a live link",
+      asked.at(-1)?.edit?.diagramId &&
+        card.done.some((d) => d.startsWith("Wrote a comment on the diagram, mentioning Vera Viewer")) &&
+        card.done.some((d) => /^Sent version \d+ for approval/.test(d)) &&
+        card.done.some((d) => d.startsWith("Made a live link that stops after 7 days")) &&
+        card.link.includes("/embed/") &&
+        written?.body.endsWith("(Written with the assistant.)") &&
+        written?.mentions.length === 1 &&
+        status === "pending",
+      JSON.stringify({ card, status, written: written?.body }),
+    );
+    await shot(ben, "37-assistant-actions");
+    ben.off("request", onRequest);
+    await ben.setRequestInterception(false);
+    await visit(ben, diagramUrl, ".object-node");
+  }
+
   /* ---------- offline edits are kept and saved later ---------- */
   await ben.bringToFront();
   await ben.setOfflineMode(true);

@@ -168,8 +168,39 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
+function LinkLine({ label, url }: { label: string; url: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <div className="flex items-center gap-1.5" data-assistant-link={label}>
+      <input readOnly value={url} aria-label={label} onFocus={(e) => e.currentTarget.select()} className="min-w-0 flex-1 rounded border border-line bg-paper px-1.5 py-0.5 text-[12px]" dir="ltr" />
+      <button
+        type="button"
+        onClick={() =>
+          void navigator.clipboard.writeText(url).then(
+            () => {
+              setCopied(true);
+              setTimeout(() => setCopied(false), 1600);
+            },
+            () => setCopied(false),
+          )
+        }
+        className="inline-flex shrink-0 items-center gap-1 rounded-md border border-line px-2 py-0.5 hover:border-ink-faint"
+      >
+        {copied ? <Check size={12} /> : <Copy size={12} />} {copied ? "Copied" : "Copy"}
+      </button>
+    </div>
+  );
+}
+
 function StepResult({ step, onUndo }: { step: ChangeStep; onUndo: () => void }) {
   const ws = useStore((s) => s.ws);
+  if (step.working) {
+    return (
+      <p className="text-ink-soft" data-assistant-working>
+        Working on it…
+      </p>
+    );
+  }
   return (
     <div className="space-y-1">
       {step.lines.length > 0 && (
@@ -181,8 +212,16 @@ function StepResult({ step, onUndo }: { step: ChangeStep; onUndo: () => void }) 
           ))}
         </ul>
       )}
+      {step.done && step.done.length > 0 && (
+        <ul className="list-disc space-y-0.5 ps-5" dir="auto" data-assistant-done>
+          {step.done.map((line, i) => (
+            <li key={i}>{line}</li>
+          ))}
+        </ul>
+      )}
+      {step.links?.map((l) => <LinkLine key={l.url} label={l.label} url={l.url} />)}
       {step.problems.map((p, i) => (
-        <p key={i} className="text-ink-soft">
+        <p key={i} className="text-ink-soft" data-assistant-problem>
           Not done: {p}
         </p>
       ))}
@@ -207,7 +246,7 @@ function StepResult({ step, onUndo }: { step: ChangeStep; onUndo: () => void }) 
             type="button"
             disabled={!canUndo(step, ws)}
             onClick={onUndo}
-            title={canUndo(step, ws) ? "Take this change back" : "Other changes came after this one: use Undo in the editor (Ctrl Z)"}
+            title={canUndo(step, ws) ? (step.done?.length ? "Take back the changes to the model; what was sent, exported or linked stays" : "Take this change back") : "Other changes came after this one: use Undo in the editor (Ctrl Z)"}
             className="inline-flex items-center gap-1 rounded-md border border-line px-2 py-0.5 hover:border-ink-faint disabled:opacity-50"
             data-assistant-undo
           >
@@ -224,7 +263,7 @@ function ChangeCard({ turn, change }: { turn: ChatTurn; change: DiagramChange })
       {change.made && (
         <section data-assistant-made>
           <p className="mb-0.5 flex items-center gap-1 font-medium text-ink">
-            <PencilRuler size={13} aria-hidden /> Changed on the diagram
+            <PencilRuler size={13} aria-hidden /> {change.made.lines.length || !change.made.done?.length ? "Changed on the diagram" : "Done"}
           </p>
           <StepResult step={change.made} onUndo={() => undoStep(turn.id, "made")} />
         </section>

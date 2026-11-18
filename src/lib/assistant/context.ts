@@ -36,6 +36,8 @@ export interface AssistantFacts {
   reviews?: Review[];
   /** The day it was read, YYYY-MM-DD. */
   today?: string;
+  /** The file library as this person sees it: names, kinds and the diagrams each is linked to. */
+  files?: { id: string; name: string; kind: string; description: string; diagramIds: string[] }[];
 }
 
 export interface AssistantContext {
@@ -196,9 +198,9 @@ function commentLines(ws: Workspace, comments: Comment[], people: Map<string, st
               return r ? `the connection ${objectTag(r.sourceId)} -> ${objectTag(r.targetId)}` : "a connection";
             })();
     const on = c.diagramId && c.targetKind !== "diagram" ? ` in ${diagramTag(c.diagramId)}` : "";
-    lines.push(`- ${people.get(c.authorId ?? "") ?? "a former member"}, ${when(c.createdAt)}, on ${target}${on} (${c.resolved ? "resolved" : "open"}): ${quoted(c.body)}`);
+    lines.push(`- ${people.get(c.authorId ?? "") ?? "a former member"}, ${when(c.createdAt)}, on ${target}${on} (${c.resolved ? "resolved" : "open"}; comment id ${c.id}): ${quoted(c.body)}`);
     for (const reply of comments.filter((x) => x.parentId === c.id).sort((a, b) => a.createdAt.localeCompare(b.createdAt))) {
-      lines.push(`  - reply by ${people.get(reply.authorId ?? "") ?? "a former member"}, ${when(reply.createdAt)}: ${quoted(reply.body)}`);
+      lines.push(`  - reply by ${people.get(reply.authorId ?? "") ?? "a former member"}, ${when(reply.createdAt)} (comment id ${reply.id}): ${quoted(reply.body)}`);
     }
   }
   return lines;
@@ -278,6 +280,10 @@ function diagramDetail(facts: AssistantFacts, d: Diagram, people: Map<string, st
   if (decisions.length) lines.push(`- Decisions about what it shows: ${decisions.map((a) => `ADR-${a.number} ${quoted(a.title, 120)} (${a.status})`).join("; ")}`);
   const processes = Object.values(ws.processes ?? {}).filter((p) => linksOf(p).includes(d.id));
   lines.push(processes.length ? `- Business processes (BPMN) linked to it: ${processes.map((p) => `${quoted(p.name, 120)} (${p.status})`).join("; ")}` : "- No business process is linked to it.");
+  if (facts.files) {
+    const linked = facts.files.filter((f) => f.diagramIds.includes(d.id));
+    lines.push(linked.length ? `- Files linked to it: ${linked.map((f) => `${quoted(f.name, 120)} (${f.kind})`).join("; ")}` : "- No file from the file library is linked to it.");
+  }
   return lines.filter(Boolean);
 }
 
@@ -435,6 +441,13 @@ function sections(facts: AssistantFacts, focus: AssistantContext["focus"]): { he
     },
     { title: "MODEL REVIEWS before publishing", lines: reviewLines, weight: 0.5 },
     { title: "PEOPLE in the workspace", lines: facts.people?.length ? [facts.people.map((p) => p.name || p.email.split("@")[0]).join(", ")] : [], weight: 0.3 },
+    {
+      title: "FILES in the file library",
+      lines: (facts.files ?? []).map((f) =>
+        parts(quoted(f.name, 160), f.kind, f.diagramIds.some((id) => ws.diagrams[id]) ? `linked to ${f.diagramIds.filter((id) => ws.diagrams[id]).map(diagramTag).join(", ")}` : "linked to no diagram", f.description.trim() && oneLine(f.description, 160)),
+      ),
+      weight: 0.4,
+    },
   ];
   return { header, rest: rest.filter((s) => s.lines.length > 0) };
 }

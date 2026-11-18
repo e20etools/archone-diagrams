@@ -2,27 +2,12 @@ import { useMemo, useState } from "react";
 import { LibraryIcon } from "@/components/icons";
 import { TemplatePreview } from "@/components/TemplatePicker";
 import { Button, Field, Input, Modal, Textarea } from "@/components/ui";
-import { componentById } from "@/lib/library";
 import { apply } from "@/lib/store";
-import { PERSPECTIVES, fromSaved, saveTemplate, templateFromDiagram, type Perspective } from "@/lib/templates";
+import { componentById } from "@/lib/library";
+import { PERSPECTIVES, fromSaved, guessPerspective, saveTemplate, templateFromDiagram, type Perspective } from "@/lib/templates";
 import type { Diagram, Workspace } from "@/lib/types";
 
 const PERSPECTIVE_ICON: Record<Perspective, string> = { applications: "AppWindow", data: "Database", infrastructure: "Server", business: "Briefcase" };
-
-/** A first guess at the perspective, from what most of the diagram's boxes are. The person chooses. */
-function guessPerspective(ws: Workspace, diagram: Diagram): Perspective {
-  const votes: Record<Perspective, number> = { applications: 0, data: 0, infrastructure: 0, business: 0 };
-  for (const id of Object.keys(diagram.nodes)) {
-    const o = ws.objects[id];
-    if (!o) continue;
-    const section = componentById(o.componentId)?.sectionId ?? "";
-    if (diagram.notation === "bpmn" || ["business", "people"].includes(section) || ["domain", "process", "task", "event", "decision", "actor"].includes(o.typeId)) votes.business++;
-    else if (["data"].includes(section) || ["database", "storage", "cache", "queue"].includes(o.typeId)) votes.data++;
-    else if (["compute", "storage", "datacenter", "network", "security", "end-user", "containers", "iot"].includes(section) || ["server", "network", "cluster", "gateway"].includes(o.typeId)) votes.infrastructure++;
-    else votes.applications++;
-  }
-  return (Object.entries(votes).sort((a, b) => b[1] - a[1])[0][0] as Perspective) ?? "applications";
-}
 
 /**
  * Turning one of the workspace's diagrams into a template of its own: a name, the perspective

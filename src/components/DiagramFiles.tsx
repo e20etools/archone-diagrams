@@ -1,5 +1,5 @@
 import { Link2, Paperclip } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useFileLibrary, type StoredFile } from "@/lib/files";
 import type { Diagram, Workspace } from "@/lib/types";
@@ -7,9 +7,17 @@ import { DeleteFileDialog, FileEditDialog, FileRows, UploadPanel } from "./FileL
 import { Button, Modal, Select } from "./ui";
 
 /** The toolbar button of a diagram: how many files go with it, and the window that shows them. */
+/** Asks the diagram's Files button to open its window, with the diagram's id. */
+export const OPEN_FILES = "archone:open-diagram-files";
+
 export function DiagramFilesButton({ ws, diagram }: { ws: Workspace; diagram: Diagram }) {
   const library = useFileLibrary();
   const [open, setOpen] = useState(false);
+  useEffect(() => {
+    const on = (event: Event) => (event as CustomEvent<string>).detail === diagram.id && setOpen(true);
+    window.addEventListener(OPEN_FILES, on);
+    return () => window.removeEventListener(OPEN_FILES, on);
+  }, [diagram.id]);
   const linked = (library.files ?? []).filter((f) => f.diagramIds.includes(diagram.id));
   return (
     <>

@@ -1,6 +1,7 @@
 import { writeBpmn } from "@/lib/bpmn";
 import { Check, Copy, Download, ImageUp, Sparkles } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import type { ExportFormat } from "@/lib/assistant/edits";
 import { useNavigate } from "react-router-dom";
 import type { CanvasHandle } from "@/components/canvas/DiagramCanvas";
 import { LiveLinks } from "@/components/cloud/LiveLinks";
@@ -325,14 +326,40 @@ export function ShareDialog({ ws, diagram, approval = null, onClose }: { ws: Wor
 
 const STAMP_KEY = "archone.export.stamp";
 
-export function ExportMenu({ ws, diagram, canvas, approval = null, onNotice }: { ws: Workspace; diagram: Diagram; canvas: React.RefObject<CanvasHandle | null>; approval?: DiagramRecord | null; onNotice: (text: string) => void }) {
+/** The assistant asking for an export: the window opens and makes it, or just opens. */
+export interface ExportAsk {
+  format: ExportFormat | null;
+  answer?: (result: { ok: boolean; text: string }) => void;
+}
+
+export function ExportMenu({ ws, diagram, canvas, approval = null, onNotice, ask = null, onAskTaken }: { ws: Workspace; diagram: Diagram; canvas: React.RefObject<CanvasHandle | null>; approval?: DiagramRecord | null; onNotice: (text: string) => void; ask?: ExportAsk | null; onAskTaken?: () => void }) {
   const [open, setOpen] = useState(false);
+  const [auto, setAuto] = useState<ExportAsk | null>(null);
+  useEffect(() => {
+    if (!ask) return;
+    setAuto(ask);
+    setOpen(true);
+    onAskTaken?.();
+  }, [ask, onAskTaken]);
   return (
     <>
       <Button icon={<Download size={15} />} onClick={() => setOpen(true)} data-export-open>
         Export
       </Button>
-      {open && <ExportDialog ws={ws} diagram={diagram} canvas={canvas} approval={approval} onNotice={onNotice} onClose={() => setOpen(false)} />}
+      {open && (
+        <ExportDialog
+          ws={ws}
+          diagram={diagram}
+          canvas={canvas}
+          approval={approval}
+          onNotice={onNotice}
+          auto={auto}
+          onClose={() => {
+            setOpen(false);
+            setAuto(null);
+          }}
+        />
+      )}
     </>
   );
 }
@@ -360,7 +387,7 @@ type ExportId =
   | "channels";
 
 /** Every way a diagram can leave the app, in one window, grouped by what the file is for. */
-function ExportDialog({ ws, diagram, canvas, approval, onNotice, onClose }: { ws: Workspace; diagram: Diagram; canvas: React.RefObject<CanvasHandle | null>; approval: DiagramRecord | null; onNotice: (text: string) => void; onClose: () => void }) {
+function ExportDialog({ ws, diagram, canvas, approval, onNotice, onClose, auto = null }: { ws: Workspace; diagram: Diagram; canvas: React.RefObject<CanvasHandle | null>; approval: DiagramRecord | null; onNotice: (text: string) => void; onClose: () => void; auto?: ExportAsk | null }) {
   const file = slugify(diagram.name) || "diagram";
   const [busy, setBusy] = useState<ExportId | null>(null);
   const [done, setDone] = useState("");
@@ -475,8 +502,8 @@ function ExportDialog({ ws, diagram, canvas, approval, onNotice, onClose }: { ws
       return answer.sent.map((s) => integrationOf(s.provider)?.label ?? s.provider).join(", ");
     },
   };
-  const go = async (id: ExportId) => {
-    if (busy) return;
+  const go = async (id: ExportId): Promise<{ ok: boolean; text: string }> => {
+    if (busy) return { ok: false, text: "Another export is being made. Try again in a moment." };
     setBusy(id);
     setDone("");
     try {
@@ -484,12 +511,24 @@ function ExportDialog({ ws, diagram, canvas, approval, onNotice, onClose }: { ws
       const sentTo = id === "confluence" ? `Published ${name}` : id === "channels" ? `Shared to ${name}` : "";
       setDone(sentTo || `Downloaded ${name}`);
       onNotice(sentTo || `Exported ${name}`);
+      return { ok: true, text: sentTo || `Downloaded ${name}` };
     } catch (e) {
-      setDone(e instanceof Error ? e.message : "The export failed. Try again.");
+      const text = e instanceof Error ? e.message : "The export failed. Try again.";
+      setDone(text);
+      return { ok: false, text };
     } finally {
       setBusy(null);
     }
   };
+  // Asked by the assistant: made once, as soon as the window is open.
+  const autoRan = useRef<ExportAsk | null>(null);
+  useEffect(() => {
+    if (!auto?.format || autoRan.current === auto) return;
+    autoRan.current = auto;
+    const id = auto.format as ExportId;
+    void go(id).then((result) => auto.answer?.(result));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [auto]);
   const hasFlows = (diagram.flows ?? []).some((f) => f.steps.length);
   const confluence = useConnected("publish").length > 0;
   const channels = useConnected("notify").length > 0;

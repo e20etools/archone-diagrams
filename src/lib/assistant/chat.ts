@@ -10,7 +10,8 @@ import { useStore } from "../store";
 import type { Workspace } from "../types";
 import { assistantContext, diagramTag, focusOf, objectTag, type AssistantFacts } from "./context";
 import { showChanges } from "./show";
-import { applyOps, clearedFindings, describeOp, diagramFindings, holdWipes, newFindings, planOps, readPlan, type EditOp, type Who } from "./edits";
+import { filesHere, runActions } from "./actions";
+import { applyOps, clearedFindings, describeOp, diagramFindings, holdWipes, isAction, newFindings, planOps, readPlan, type ActionOp, type EditOp, type Who } from "./edits";
 
 /**
  * The assistant beside every page: a conversation about the workspace. With an AI model it is
@@ -34,12 +35,19 @@ export interface ChatTurn {
 
 export interface ChangeStep {
   id: string;
+  /** Changes to the model, which Undo takes back. */
   lines: string[];
   problems: string[];
   /** New findings of the checks on the diagram after the step. */
   findings: string[];
   cleared: number;
   undone?: boolean;
+  /** Done beyond the model (comments, approval, exports, links, files): Undo does not take these back. */
+  done?: string[];
+  /** Links made for the person to copy. */
+  links?: { label: string; url: string }[];
+  /** Still being done. */
+  working?: boolean;
 }
 
 /** The workspace right after each step, while this page is open: a step is undone only while nothing came after it. */
@@ -76,7 +84,14 @@ function load(workspaceKey: string): ChatTurn[] {
   try {
     const raw = sessionStorage.getItem(`${STORE_KEY}.${workspaceKey}`);
     const turns = raw ? (JSON.parse(raw) as ChatTurn[]) : [];
-    return Array.isArray(turns) ? turns.filter((t) => t && (t.role === "user" || t.role === "assistant") && typeof t.text === "string").slice(-MAX_KEPT) : [];
+    // A step still being done when the page was left did not finish.
+    const settle = (step: ChangeStep | undefined) => (step?.working ? { ...step, working: false, problems: ["Not finished: the page was left while it was being done."] } : step);
+    return Array.isArray(turns)
+      ? turns
+          .filter((t) => t && (t.role === "user" || t.role === "assistant") && typeof t.text === "string")
+          .slice(-MAX_KEPT)
+          .map((t) => (t.change ? { ...t, change: { ...t.change, confirm: { ...t.change.confirm, step: settle(t.change.confirm.step) }, suggest: t.change.suggest.map((x) => ({ ...x, step: settle(x.step) })) } } : t))
+      : [];
   } catch {
     return [];
   }
@@ -236,6 +251,12 @@ export async function gatherFacts(ws: Workspace, texts: string[], page: PageInfo
     me: { name: session.user?.name || ws.userName || "", role: session.role },
     today: new Date().toISOString().slice(0, 10),
   };
+  // The file library, to link files to the diagram and to say what is linked.
+  const files = await filesHere()
+    .list()
+    .then((list) => list.slice(0, 300).map((f) => ({ id: f.id, name: f.name, kind: f.kind, description: f.description, diagramIds: f.diagramIds })))
+    .catch(() => undefined);
+  if (files) facts.files = files;
   if (!cloudEnabled || !session.workspaceId) return facts;
   const focus = focusOf(ws, texts, facts.page);
   return {
@@ -296,6 +317,19 @@ function makeStep(diagramId: string, ops: EditOp[], source: string, engine: stri
   return { id, lines: done!.lines, problems: done!.problems, findings: newFindings(after, findingsBefore, findingsAfter), cleared: clearedFindings(findingsBefore, findingsAfter) };
 }
 
+/** The model's changes as one undo step, then what is done beyond the model, in the order asked. */
+async function makeFullStep(diagramId: string, ops: EditOp[], source: string, engine: string, plan: EditOp[] = ops): Promise<ChangeStep> {
+  const model = ops.filter((op) => !isAction(op));
+  const actions = ops.filter(isAction) as ActionOp[];
+  const step: ChangeStep = model.length ? makeStep(diagramId, model, source, engine, plan) : { id: `step_${Date.now().toString(36)}_${++stepCount}`, lines: [], problems: [], findings: [], cleared: 0 };
+  if (!actions.length) return step;
+  const done = await runActions(diagramId, actions);
+  return { ...step, done: done.lines, problems: [...step.problems, ...done.problems], ...(done.links.length ? { links: done.links } : {}) };
+}
+
+/** Answers being made, so a second click does nothing. */
+const inFlight = new Set<string>();
+
 function patchTurn(id: number, change: (turn: ChatTurn) => ChatTurn) {
   useAssistant.setState((s) => {
     const turns = s.turns.map((t) => (t.id === id ? change(t) : t));
@@ -310,22 +344,40 @@ const askedFor = (turnId: number) => {
   return turns.slice(0, i).reverse().find((t) => t.role === "user")?.text ?? "";
 };
 
+const WORKING: ChangeStep = { id: "working", lines: [], problems: [], findings: [], cleared: 0, working: true };
+
 /** The person's yes or no to the changes that waited for it. */
-export function answerConfirm(turnId: number, yes: boolean) {
+export async function answerConfirm(turnId: number, yes: boolean) {
   const turn = useAssistant.getState().turns.find((t) => t.id === turnId);
   const change = turn?.change;
-  if (!turn || !change || change.confirm.answer) return;
-  const step = yes ? makeStep(change.diagramId, change.confirm.ops, askedFor(turnId), turn.engine ?? "AI model", change.plan) : undefined;
-  patchTurn(turnId, (t) => ({ ...t, change: { ...t.change!, confirm: { ...t.change!.confirm, answer: yes ? "yes" : "no", step } } }));
+  const key = `${turnId}:confirm`;
+  if (!turn || !change || change.confirm.answer || inFlight.has(key)) return;
+  const setConfirm = (step: ChangeStep | undefined) => patchTurn(turnId, (t) => ({ ...t, change: { ...t.change!, confirm: { ...t.change!.confirm, answer: yes ? "yes" : "no", step } } }));
+  if (!yes) return setConfirm(undefined);
+  inFlight.add(key);
+  setConfirm(WORKING);
+  try {
+    setConfirm(await makeFullStep(change.diagramId, change.confirm.ops, askedFor(turnId), turn.engine ?? "AI model", change.plan));
+  } finally {
+    inFlight.delete(key);
+  }
 }
 
 /** A suggestion taken, or put aside. */
-export function answerSuggestion(turnId: number, index: number, take: boolean) {
+export async function answerSuggestion(turnId: number, index: number, take: boolean) {
   const turn = useAssistant.getState().turns.find((t) => t.id === turnId);
   const item = turn?.change?.suggest[index];
-  if (!turn || !item || item.step || item.dismissed) return;
-  const step = take ? makeStep(turn.change!.diagramId, item.ops, askedFor(turnId), turn.engine ?? "AI model", turn.change!.plan) : undefined;
-  patchTurn(turnId, (t) => ({ ...t, change: { ...t.change!, suggest: t.change!.suggest.map((s, i) => (i === index ? { ...s, ...(take ? { step } : { dismissed: true }) } : s)) } }));
+  const key = `${turnId}:suggest:${index}`;
+  if (!turn || !item || item.step || item.dismissed || inFlight.has(key)) return;
+  const setItem = (patch: { step?: ChangeStep; dismissed?: boolean }) => patchTurn(turnId, (t) => ({ ...t, change: { ...t.change!, suggest: t.change!.suggest.map((s, i) => (i === index ? { ...s, ...patch } : s)) } }));
+  if (!take) return setItem({ dismissed: true });
+  inFlight.add(key);
+  setItem({ step: WORKING });
+  try {
+    setItem({ step: await makeFullStep(turn.change!.diagramId, item.ops, askedFor(turnId), turn.engine ?? "AI model", turn.change!.plan) });
+  } finally {
+    inFlight.delete(key);
+  }
 }
 
 /** Whether a step can still be undone: nothing was changed after it. */
@@ -354,6 +406,8 @@ function remembered(t: ChatTurn): string {
   if (!c) return t.text;
   const notes = [
     c.made?.lines.length ? `Changes made${c.made.undone ? " (then undone by the person)" : ""}: ${c.made.lines.join("; ")}` : "",
+    c.made?.done?.length ? `Done: ${c.made.done.join("; ")}` : "",
+    c.made?.problems.length ? `Not done: ${c.made.problems.join("; ")}` : "",
     c.confirm.ops.length ? `Waiting for a yes: ${c.confirm.lines.join("; ")}${c.confirm.answer ? ` (the person said ${c.confirm.answer})` : ""}` : "",
     c.suggest.length ? `Suggested: ${c.suggest.map((s) => `${s.line}${s.step ? " (taken)" : s.dismissed ? " (put aside)" : ""}`).join("; ")}` : "",
   ].filter(Boolean);
@@ -388,7 +442,7 @@ export async function sendToAssistant(question: string, env: AskEnv): Promise<vo
         change = {
           diagramId: editing,
           plan: all,
-          made: plan.apply.length ? makeStep(editing, plan.apply, asked, engine, all) : null,
+          made: plan.apply.length ? await makeFullStep(editing, plan.apply, asked, engine, all) : null,
           confirm: { ops: plan.confirm, lines: plan.confirm.map((op) => describeOp(now, op, all)) },
           suggest: plan.suggest.map((s) => ({ ops: s.ops, line: s.say ?? s.ops.map((op) => describeOp(now, op, all)).join("; ") })),
           dropped,

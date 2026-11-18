@@ -1,7 +1,7 @@
 import { componentById } from "./library";
 import { createDiagram, createObject, createRelationship, findByName, newId, nowIso, placeNodes, updateDiagram } from "./model";
 import { CATALOG, type Perspective } from "./templateCatalog";
-import type { RelationKind, SavedTemplate, ViewType, Workspace } from "./types";
+import type { Diagram, RelationKind, SavedTemplate, ViewType, Workspace } from "./types";
 import { addObjectsToDiagram, relayout, visibleEdges } from "./views";
 
 export type { Perspective };
@@ -371,4 +371,19 @@ export function deleteSavedTemplate(ws: Workspace, id: string): Workspace {
   if (!ws.templates?.[id]) return ws;
   const { [id]: _gone, ...rest } = ws.templates;
   return { ...ws, templates: rest, updatedAt: nowIso() };
+}
+
+/** A first guess at the perspective, from what most of the diagram's boxes are. The person chooses. */
+export function guessPerspective(ws: Workspace, diagram: Diagram): Perspective {
+  const votes: Record<Perspective, number> = { applications: 0, data: 0, infrastructure: 0, business: 0 };
+  for (const id of Object.keys(diagram.nodes)) {
+    const o = ws.objects[id];
+    if (!o) continue;
+    const section = componentById(o.componentId)?.sectionId ?? "";
+    if (diagram.notation === "bpmn" || ["business", "people"].includes(section) || ["domain", "process", "task", "event", "decision", "actor"].includes(o.typeId)) votes.business++;
+    else if (["data"].includes(section) || ["database", "storage", "cache", "queue"].includes(o.typeId)) votes.data++;
+    else if (["compute", "storage", "datacenter", "network", "security", "end-user", "containers", "iot"].includes(section) || ["server", "network", "cluster", "gateway"].includes(o.typeId)) votes.infrastructure++;
+    else votes.applications++;
+  }
+  return (Object.entries(votes).sort((a, b) => b[1] - a[1])[0][0] as Perspective) ?? "applications";
 }

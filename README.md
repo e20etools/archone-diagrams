@@ -1500,6 +1500,18 @@ or by speaking (the microphone, in Arabic or English, where the browser can take
     archive the diagram.
   - The library: a component or a protocol the library does not have is added to the
     workspace's own library when the assistant uses it, so it can be picked again.
+  - Beyond the model, when the person asks: write a comment on the diagram, an object or a
+    connection, or reply in a thread, mentioning people (published under the person's name
+    and ending with "(Written with the assistant.)"); save the latest changes and send the
+    diagram for approval, or send a returned one again; export it in any format of the Export
+    window (the file downloads, or the page is published to Confluence or posted to the
+    connected channels); make a live link (with how many days it lasts) or a snapshot link to
+    copy, with passwords left to the person in Share; present it full screen; open Share,
+    Export, Approval, Comments, Files, the settings, the flows or the linked processes; link a
+    file from the file library to the diagram or unlink it; save the diagram as a template;
+    restore an archived diagram. These are done after the model's changes, with the person's
+    rights, and listed on the card; Undo does not take them back. Comments, approval and live
+    links need the hosted app with accounts.
 - **At once, with Undo.** The changes are made as one step on the diagram on screen,
   removals included: the view moves to them, clear of the panel, and marks them for a
   moment. Under the answer, a card lists each change with **Undo**, which takes it back while
@@ -1633,10 +1645,10 @@ build does not reload.
 ## Check it
 
 ```bash
-npm test                   # 630 tests: model, the component library, flows, links, protected live links, decisions, arranging, health, CALM, scenario merging, the trust page, the document, your own rules, large models, templates, the pull-request gate, the APM import, AI, questions, checks, MCP, import readers, sync engine, comparison, and the database rules and the API on a real Postgres
+npm test                   # 632 tests: model, the component library, flows, links, protected live links, decisions, arranging, health, CALM, scenario merging, the trust page, the document, your own rules, large models, templates, the pull-request gate, the APM import, AI, questions, checks, MCP, import readers, sync engine, comparison, and the database rules and the API on a real Postgres
 npm run build              # type-check and production build into dist/
-npm run test:browser       # 282 end-to-end checks of browser-only mode (run after a build)
-npm run test:browser:cloud # 127 end-to-end checks of hosted mode with several people
+npm run test:browser       # 285 end-to-end checks of browser-only mode (run after a build)
+npm run test:browser:cloud # 128 end-to-end checks of hosted mode with several people
 ```
 
 `test:browser` serves the production build, including `api/ai.js`, and walks through the

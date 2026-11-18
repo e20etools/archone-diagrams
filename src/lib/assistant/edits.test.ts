@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { demoWorkspace } from "../demo";
-import { findByName, removeNodes, setRelationshipHidden, updateDiagram } from "../model";
+import { archiveDiagram, findByName, removeNodes, setRelationshipHidden, updateDiagram } from "../model";
 import { visibleEdges } from "../views";
 import type { Workspace } from "../types";
-import { applyOps, clearedFindings, describeOp, diagramFindings, holdWipes, newFindings, readPlan, type EditOp } from "./edits";
+import { applyOps, clearedFindings, describeOp, diagramFindings, holdWipes, isAction, newFindings, readPlan, type EditOp } from "./edits";
 
 const who = { by: "Khaled", source: "Add a web server and connect it", engine: "Test model (assistant)" };
 const diagramNamed = (ws: Workspace, name: string) => Object.values(ws.diagrams).find((d) => d.name === name)!;
@@ -233,6 +233,45 @@ describe("making the assistant's changes", () => {
     const done = applyOps(ws, diagram.id, [{ op: "set_diagram", viewType: "business" }], { ...who, mayUseView: (v) => v !== "business" });
     expect(done.ws.diagrams[diagram.id].viewType).toBe(diagram.viewType);
     expect(done.problems[0]).toMatch(/may not make diagrams of the kind "business"/);
+  });
+
+  it("keeps the diagram as a template and brings an archived one back", () => {
+    let ws = demoWorkspace("Khaled");
+    const diagram = diagramNamed(ws, "Inside Online store");
+    ws = archiveDiagram(ws, diagram.id, "Khaled", "Old design");
+    const done = applyOps(ws, diagram.id, [{ op: "restore_diagram", reason: "Still in use" }, { op: "save_template", name: "Shop inside", perspective: "applications" }], who);
+    expect(done.ws.diagrams[diagram.id].archive?.archived).toBe(false);
+    expect(done.ws.diagrams[diagram.id].archive?.history.at(-1)).toMatchObject({ action: "restored", reason: "Still in use", by: "Khaled" });
+    const template = Object.values(done.ws.templates ?? {}).find((t) => t.name === "Shop inside")!;
+    expect(template.perspective).toBe("applications");
+    expect(done.lines[1]).toMatch(/^Saved the diagram as the template "Shop inside"/);
+    expect(applyOps(done.ws, diagram.id, [{ op: "restore_diagram", reason: "Again" }], who).problems).toEqual(["The diagram is not archived"]);
+  });
+
+  it("leaves comments, approval, exports, links and files to be done after the model, never by the model's step", () => {
+    const { plan } = readPlan(
+      block({
+        apply: [
+          { op: "comment", on: "diagram", text: "Ready for review" },
+          { op: "send_for_approval", note: "First version" },
+          { op: "export", format: "pdf" },
+          { op: "export", format: "jpeg" },
+          { op: "share", kind: "live", days: 30 },
+          { op: "present" },
+          { op: "open", what: "share" },
+          { op: "link_file", file: "Firewall datasheet" },
+        ],
+      }),
+    );
+    expect(plan?.apply.map((op) => op.op)).toEqual(["comment", "send_for_approval", "export", "share", "present", "open", "link_file"]);
+    expect(plan!.apply.every(isAction)).toBe(true);
+    const ws = demoWorkspace("Khaled");
+    const diagram = diagramNamed(ws, "Inside Online store");
+    const done = applyOps(ws, diagram.id, plan!.apply, who);
+    expect(done.ws).toBe(ws);
+    expect(done.lines).toEqual([]);
+    expect(describeOp(ws, plan!.apply[2])).toBe("Export the diagram as PDF");
+    expect(describeOp(ws, plan!.apply[0])).toBe('Write a comment on the diagram: "Ready for review"');
   });
 
   it("deletes the diagram, its objects staying in the model, once a person said yes", () => {

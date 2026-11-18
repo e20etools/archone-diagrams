@@ -435,6 +435,8 @@ async function saved(): Promise<void> {
   await engine?.flush().catch(() => undefined);
   if (engine?.dirty) throw new BackendError("network", "Your latest changes are not saved yet. Wait for Saved in the header, then try again.");
 }
+/** Saves what is not saved yet, or says it could not: before something that has to see the latest changes. */
+export const saveNow = (): Promise<void> => saved();
 
 export async function saveVersion(name: string, note: string): Promise<void> {
   const { backend, workspaceId } = await here();

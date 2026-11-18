@@ -4,6 +4,7 @@ import type { FileKind, FilePatch, FileUpload, StoredFile } from "./cloud/backen
 import { cloudEnabled } from "./cloud/config";
 import { errorText, getBackend, useCategoryRank, useSession } from "./cloud/session";
 import type { Diagram } from "./types";
+import { FILES_CHANGED } from "./assistant/screen";
 
 /**
  * The file library: vendor documents, supporting files and designs, each linked to one or more
@@ -161,6 +162,12 @@ export function useFileLibrary(): FileLibrary {
   }, [store]);
   useEffect(() => {
     void refresh();
+  }, [refresh]);
+  // Files linked or unlinked elsewhere, by the assistant for one, are read again.
+  useEffect(() => {
+    const on = () => void refresh();
+    window.addEventListener(FILES_CHANGED, on);
+    return () => window.removeEventListener(FILES_CHANGED, on);
   }, [refresh]);
   const canEdit = !cloud || role === "owner" || role === "editor";
   return {
