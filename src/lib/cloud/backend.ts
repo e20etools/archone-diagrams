@@ -63,6 +63,8 @@ export interface AiLimits {
   day: number;
   tokensDay: number;
   paused: boolean;
+  /** An owner, while the owners have no limits: the numbers above do not stop them. */
+  unlimited?: boolean;
 }
 export interface AiUsePerson {
   userId: string;

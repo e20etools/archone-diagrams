@@ -1615,10 +1615,10 @@ build does not reload.
 ## Check it
 
 ```bash
-npm test                   # 622 tests: model, the component library, flows, links, protected live links, decisions, arranging, health, CALM, scenario merging, the trust page, the document, your own rules, large models, templates, the pull-request gate, the APM import, AI, questions, checks, MCP, import readers, sync engine, comparison, and the database rules and the API on a real Postgres
+npm test                   # 623 tests: model, the component library, flows, links, protected live links, decisions, arranging, health, CALM, scenario merging, the trust page, the document, your own rules, large models, templates, the pull-request gate, the APM import, AI, questions, checks, MCP, import readers, sync engine, comparison, and the database rules and the API on a real Postgres
 npm run build              # type-check and production build into dist/
 npm run test:browser       # 280 end-to-end checks of browser-only mode (run after a build)
-npm run test:browser:cloud # 126 end-to-end checks of hosted mode with several people
+npm run test:browser:cloud # 127 end-to-end checks of hosted mode with several people
 ```
 
 `test:browser` serves the production build, including `api/ai.js`, and walks through the
@@ -1704,6 +1704,11 @@ key is shared fairly and nobody can use more than their share.
   40 a day and 40,000 tokens a day per person; 300 requests and 150,000 tokens a day per
   workspace. Changes are recorded in the audit log.
 - **Exceptions per person:** another daily limit, or AI paused, from the "Use by person" table.
+- **No limits for owners** (on unless the owners switch it off): the limits per person and the
+  workspace's do not stop an owner. Their requests are still counted and shown, another owner
+  can still pause them, AI switched off or a feature switched off still applies, and so does
+  the server's daily cap for a shared key (`AI_GLOBAL_DAILY_REQUESTS`). Their own use shows
+  "no limit", and so does their row in "Use by person".
 - **How it is applied:** the AI server calls `ai_begin` in the database with the caller's own
   sign-in; the database checks the rules and counts the request, or refuses it with the
   reason and when to try again. After the answer the server calls `ai_finish` with the tokens

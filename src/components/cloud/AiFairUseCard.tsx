@@ -12,7 +12,20 @@ const n = (value: string, max: number) => Math.max(0, Math.min(max, Math.floor(N
 const fmt = (value: number) => value.toLocaleString();
 
 /** A used-of-allowed bar, amber near the end and red at it. */
-function Meter({ label, used, limit, unit = "requests", data }: { label: string; used: number; limit: number; unit?: string; data: string }) {
+function Meter({ label, used, limit, unit = "requests", data }: { label: string; used: number; limit: number | null; unit?: string; data: string }) {
+  if (limit === null) {
+    return (
+      <div data-ai-meter={data} data-ai-unlimited>
+        <div className="flex items-baseline justify-between gap-2 text-[13px]">
+          <span className="text-ink-soft">{label}</span>
+          <span className="tabular-nums">
+            <span className="font-medium">{fmt(used)}</span>
+            <span className="text-ink-faint"> {unit}, no limit</span>
+          </span>
+        </div>
+      </div>
+    );
+  }
   const share = limit > 0 ? Math.min(1, used / limit) : 1;
   return (
     <div data-ai-meter={data}>
@@ -122,6 +135,13 @@ export function AiFairUseCard() {
               <NumberField label="Tokens in 24 hours" value={policy.workspace.tokensDay} max={100_000_000} disabled={!canSet} data="workspace-tokensDay" onSave={(v) => save((p) => ({ ...p, workspace: { ...p.workspace, tokensDay: v } }))} />
             </div>
             <p className="text-xs text-ink-faint">A person's own use counts in every workspace they work in, so a scenario or another workspace does not start them afresh.</p>
+            <label className="flex items-start gap-2 text-[13px]">
+              <input type="checkbox" className="mt-0.5" checked={policy.ownersUnlimited} disabled={!canSet} onChange={(e) => save((p) => ({ ...p, ownersUnlimited: e.target.checked }))} data-ai-owners-unlimited />
+              <span>
+                No limits for owners
+                <span className="block text-xs text-ink-faint">Owners are not stopped by the limits per person or the workspace's. Their use still counts, and the AI service's own daily allowance still applies.</span>
+              </span>
+            </label>
           </div>
         </div>
       </div>
@@ -140,9 +160,10 @@ function MyUse({ report }: { report: AiUsageReport }) {
         <h3 className="text-sm font-semibold">
           Your use {me.limits.paused && <Badge tone="red">Paused by an owner</Badge>}
         </h3>
-        <Meter label="This hour" used={me.hour} limit={me.limits.hour} data="me-hour" />
-        <Meter label="Last 24 hours" used={me.day} limit={me.limits.day} data="me-day" />
-        <Meter label="Tokens, last 24 hours" used={me.tokensDay} limit={me.limits.tokensDay} unit="tokens" data="me-tokens" />
+        {me.limits.unlimited && <p className="text-xs text-ink-faint">You are an owner, and owners have no limits here. Your use still counts.</p>}
+        <Meter label="This hour" used={me.hour} limit={me.limits.unlimited ? null : me.limits.hour} data="me-hour" />
+        <Meter label="Last 24 hours" used={me.day} limit={me.limits.unlimited ? null : me.limits.day} data="me-day" />
+        <Meter label="Tokens, last 24 hours" used={me.tokensDay} limit={me.limits.unlimited ? null : me.limits.tokensDay} unit="tokens" data="me-tokens" />
       </div>
       <div className="space-y-2.5">
         <h3 className="text-sm font-semibold">The workspace</h3>
@@ -182,7 +203,7 @@ function UseByPerson({ report, policy, canSet }: { report: AiUsageReport; policy
               const own = policy.overrides[p.userId] ?? {};
               // The limits as set here, so a change shows at once rather than after the next reading.
               const paused = own.blocked === true;
-              const near = p.day >= (own.day ?? policy.perUser.day) * 0.8;
+              const near = !(policy.ownersUnlimited && p.role === "owner") && p.day >= (own.day ?? policy.perUser.day) * 0.8;
               return (
                 <tr key={p.userId} className="border-b border-line-soft last:border-b-0" data-ai-person={p.name}>
                   <td className="py-1.5">
@@ -199,6 +220,11 @@ function UseByPerson({ report, policy, canSet }: { report: AiUsageReport; policy
                   <td className="py-1.5 text-right tabular-nums">{fmt(p.tokensDay)}</td>
                   <td className="py-1.5 pl-3 text-ink-soft whitespace-nowrap">{p.lastUsed ? formatDateTime(p.lastUsed) : "Never"}</td>
                   <td className="py-1 pl-3">
+                    {policy.ownersUnlimited && p.role === "owner" ? (
+                      <span className="text-[13px] text-ink-faint" data-ai-person-unlimited={p.name}>
+                        No limit
+                      </span>
+                    ) : (
                     <CommitInput
                       type="number"
                       min={0}
@@ -211,6 +237,7 @@ function UseByPerson({ report, policy, canSet }: { report: AiUsageReport; policy
                       data-ai-person-limit={p.name}
                       onCommit={(v) => apply((w) => setAiOverride(w, p.userId, { ...own, day: v.trim() === "" ? undefined : n(v, 10000) }))}
                     />
+                    )}
                   </td>
                   <td className="py-1 text-right">
                     {canSet && (

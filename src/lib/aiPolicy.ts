@@ -15,6 +15,7 @@ export const DEFAULT_AI_POLICY: Omit<AiPolicy, "updatedAt"> = {
   perUser: { hour: 10, day: 40, tokensDay: 40000 },
   workspace: { day: 300, tokensDay: 150000 },
   overrides: {},
+  ownersUnlimited: true,
 };
 
 export const AI_WHO_LABEL: Record<AiPolicy["who"], string> = {

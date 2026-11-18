@@ -69,8 +69,15 @@ export function onAllowance(listener: (a: AiAllowance | null) => void): () => vo
   return () => allowanceListeners.delete(listener);
 }
 function noteAllowance(data: Record<string, unknown> | null) {
-  const a = data?.allowance as Partial<AiAllowance> | undefined;
-  if (!a || typeof a.day !== "number") return;
+  const a = data?.allowance as (Partial<AiAllowance> & { unlimited?: boolean }) | undefined;
+  if (!a) return;
+  if (a.unlimited === true) {
+    // An owner the limits do not stop: nothing to count down, but the use shown is read again.
+    lastAllowance = null;
+    for (const listener of allowanceListeners) listener(null);
+    return;
+  }
+  if (typeof a.day !== "number") return;
   lastAllowance = { hour: Number(a.hour) || 0, day: a.day, tokens: Number(a.tokens) || 0 };
   for (const listener of allowanceListeners) listener(lastAllowance);
 }

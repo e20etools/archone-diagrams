@@ -524,6 +524,7 @@ try {
   /* ---------- fair use of the AI: owners set the limits, everyone sees their own use ---------- */
   await visit(ana, `${base}/settings`, "[data-ai-fair-use] [data-ai-meter]");
   const defaults = await ana.$eval('[data-ai-meter="me-day"]', (e) => e.innerText.replace(/\s+/g, " "));
+  const ownersFree = await ana.$eval("[data-ai-owners-unlimited]", (e) => e.checked);
   await ana.select("[data-ai-who]", "editors");
   await ana.$eval('[data-ai-limit="hour"]', (e) => e.select());
   await ana.keyboard.type("6");
@@ -540,6 +541,7 @@ try {
     hour: document.querySelector('[data-ai-limit="hour"]').value,
     paused: document.querySelector("[data-ai-my-use]").innerText.includes("Paused by an owner"),
     byPerson: !!document.querySelector("[data-ai-by-person]"),
+    day: document.querySelector('[data-ai-meter="me-day"]').innerText.replace(/\s+/g, " "),
   }));
   await ana.bringToFront();
   await ana.waitForFunction(() => document.querySelector('[data-ai-person="Ben Editor"]')?.innerText.includes("Paused"));
@@ -547,8 +549,13 @@ try {
   await shot(ana, "45-ai-fair-use");
   check(
     "owners set who may use AI and the limits; others see them, their own use and when they are paused, but not use by person",
-    defaults.includes("of 40 requests") && benView.who === "editors" && benView.locked && benView.hour === "6" && benView.paused && !benView.byPerson,
-    JSON.stringify({ defaults, benView }),
+    benView.day.includes("of 40 requests") && benView.who === "editors" && benView.locked && benView.hour === "6" && benView.paused && !benView.byPerson,
+    JSON.stringify({ benView }),
+  );
+  check(
+    "owners have no AI limits unless they choose so: their own use shows no limit, and so does their row",
+    ownersFree && defaults.includes("no limit") && !!(await ana.$("[data-ai-by-person] [data-ai-person-unlimited]")) && !(await ana.$('[data-ai-person-unlimited="Ben Editor"]')),
+    defaults,
   );
   // An editor's attempt to change the limits is refused before it is saved.
   const refusedChange = await ben.evaluate(async () => {

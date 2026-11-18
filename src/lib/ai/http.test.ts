@@ -153,11 +153,19 @@ describe("AI endpoint over HTTP", () => {
     ]);
     expect(drafts).toBe(1);
 
+    // An owner the limits do not stop is counted the same, and told there is nothing to count down.
+    refuse = { allowed: true, usage: 8, key: "k-8", unlimited: true };
+    const owner = await handle(post(signed, withWorkspace));
+    expect(owner.status).toBe(200);
+    expect((await owner.json()).allowance).toEqual({ unlimited: true });
+    expect(calls.at(-1)).toEqual({ name: "ai_finish", auth: "Bearer good-token", args: { p_usage: 8, p_key: "k-8", p_tokens: 321, p_ok: true } });
+    expect(drafts).toBe(2);
+
     refuse = { allowed: false, reason: "day", message: "You have used your 40 AI requests for the last 24 hours.", retryAt: "2026-11-18T09:00:00Z" };
     const limited = await handle(post(signed, withWorkspace));
     expect(limited.status).toBe(429);
     expect(await limited.json()).toEqual({ error: "quota", reason: "day", message: "You have used your 40 AI requests for the last 24 hours.", retryAt: "2026-11-18T09:00:00Z" });
-    expect(drafts).toBe(1);
+    expect(drafts).toBe(2);
 
     // When the limits cannot be checked, nothing is sent to the model.
     refuse = null;
@@ -165,7 +173,7 @@ describe("AI endpoint over HTTP", () => {
     const down = await handle(post(signed, withWorkspace));
     expect(down.status).toBe(503);
     expect(await down.json()).toMatchObject({ error: "limits_unavailable" });
-    expect(drafts).toBe(1);
+    expect(drafts).toBe(2);
 
     // Groq's free plan gets a ceiling for everyone together unless the host sets one.
     databaseDown = false;

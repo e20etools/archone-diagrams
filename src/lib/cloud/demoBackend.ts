@@ -582,7 +582,8 @@ export function createDemoBackend(): Backend {
       const policy = aiPolicyOf({ ...emptyWorkspace(""), aiPolicy: db.rows[root]?.aiPolicy ?? {} });
       const limitsOf = (userId: string) => {
         const o = policy.overrides[userId] ?? {};
-        return { hour: o.hour ?? policy.perUser.hour, day: o.day ?? policy.perUser.day, tokensDay: o.tokensDay ?? policy.perUser.tokensDay, paused: o.blocked === true };
+        const unlimited = policy.ownersUnlimited && roleOf(db, root, userId) === "owner";
+        return { hour: o.hour ?? policy.perUser.hour, day: o.day ?? policy.perUser.day, tokensDay: o.tokensDay ?? policy.perUser.tokensDay, paused: o.blocked === true, unlimited };
       };
       const owner = roleOf(db, workspaceId, me().id) === "owner";
       const today = new Date();

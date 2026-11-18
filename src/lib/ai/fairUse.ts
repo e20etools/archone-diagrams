@@ -11,7 +11,8 @@ import type { AiKind } from "./server-core";
 export interface Ticket {
   usage: number;
   key: string;
-  remaining: { hour: number; day: number; tokens: number };
+  /** What is left; null for an owner the limits do not stop. */
+  remaining: { hour: number; day: number; tokens: number } | null;
 }
 
 type Service = { url: string; key: string };
@@ -55,7 +56,10 @@ export async function beginUse(
   }
   const remaining = (answer.remaining ?? {}) as Record<string, unknown>;
   const n = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? Math.max(0, v) : 0);
-  return { ok: true, ticket: { usage: Number(answer.usage), key: String(answer.key), remaining: { hour: n(remaining.hour), day: n(remaining.day), tokens: n(remaining.tokens) } } };
+  return {
+    ok: true,
+    ticket: { usage: Number(answer.usage), key: String(answer.key), remaining: answer.unlimited === true ? null : { hour: n(remaining.hour), day: n(remaining.day), tokens: n(remaining.tokens) } },
+  };
 }
 
 /** Closes a counted request with the tokens used. A request the model failed does not count. */

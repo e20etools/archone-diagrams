@@ -143,6 +143,31 @@ describe("fair use of the AI", () => {
     expect((await as("olivia", (q) => q("select count(distinct user_id)::int as n from public.ai_usage where workspace_id = $1", [ws])))[0].n).toBe(3);
   });
 
+  it("does not stop owners unless the owners choose so, and still counts their use", async () => {
+    await age("olivia", "2 days");
+    await age("edgar", "2 days");
+    await age("vera", "2 days");
+    await setPolicy({ perUser: { hour: 1, day: 1, tokensDay: 10 }, workspace: { day: 1, tokensDay: 10 } });
+    const first = await begin("olivia");
+    expect(first).toMatchObject({ allowed: true, unlimited: true });
+    expect(first.remaining).toBeUndefined();
+    await finish("olivia", first.usage, first.key, 5000);
+    expect((await begin("olivia", "ask")).allowed).toBe(true);
+    // The owner's use counts for the workspace, so the others meet its limit.
+    expect((await begin("edgar")).reason).toBe("workspace");
+    // The server's daily cap for a shared key holds for owners too.
+    expect((await begin("olivia", "text", ws, 1)).reason).toBe("global");
+    const mine = await report("olivia");
+    expect(mine.me).toMatchObject({ day: 2, tokensDay: 5000, limits: { unlimited: true } });
+    expect(mine.people.find((p: any) => p.name === "olivia").limits.unlimited).toBe(true);
+    expect(mine.people.find((p: any) => p.name === "edgar").limits.unlimited).toBe(false);
+    expect((await report("edgar")).me.limits.unlimited).toBe(false);
+    // Switched off, owners have the same limits as everyone.
+    await setPolicy({ perUser: { hour: 1, day: 1, tokensDay: 10 }, workspace: { day: 100, tokensDay: 100000 }, ownersUnlimited: false });
+    expect((await begin("olivia")).reason).toBe("hour");
+    expect((await report("olivia")).me.limits.unlimited).toBe(false);
+  });
+
   it("records each change of the limits in the audit log", async () => {
     const log = (await db.query<{ action: string }>("select action from public.audit_log where workspace_id = $1 and action = 'AI limits changed'", [ws])).rows;
     expect(log.length).toBeGreaterThan(5);

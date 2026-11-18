@@ -45,6 +45,7 @@ export function allowanceText(report: AiUsageReport | null): string | null {
   if (!report) return null;
   const { me } = report;
   if (me.limits.paused) return "An owner has paused AI for you in this workspace.";
+  if (me.limits.unlimited) return "No AI limits for you: owners of this workspace have none.";
   const day = Math.max(0, me.limits.day - me.day);
   const hour = Math.max(0, me.limits.hour - me.hour);
   return `${Math.min(day, hour)} AI ${Math.min(day, hour) === 1 ? "request" : "requests"} left now: ${hour} of ${me.limits.hour} this hour, ${day} of ${me.limits.day} in 24 hours.`;

@@ -146,9 +146,10 @@ export function createAiHandler(getEnv: () => ServerEnv, fetchImpl: typeof fetch
     if (ticket) {
       await finishUse(service!, bearer(request), ticket, result.tokens ?? 0, result.status === 200, fetchImpl);
       const used = result.status === 200 ? 1 : 0;
+      const left = ticket.remaining;
       return json(result.status, {
         ...result.body,
-        allowance: { hour: ticket.remaining.hour + 1 - used, day: ticket.remaining.day + 1 - used, tokens: Math.max(0, ticket.remaining.tokens - (result.tokens ?? 0)) },
+        allowance: left ? { hour: left.hour + 1 - used, day: left.day + 1 - used, tokens: Math.max(0, left.tokens - (result.tokens ?? 0)) } : { unlimited: true },
       });
     }
     return json(result.status, result.body);

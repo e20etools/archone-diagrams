@@ -508,6 +508,8 @@ export const aiPolicySchema = z.object({
   perUser: z.object({ hour: limit(1000), day: limit(10000), tokensDay: limit(10_000_000) }),
   workspace: z.object({ day: limit(100000), tokensDay: limit(100_000_000) }),
   overrides: z.record(z.object({ day: limit(10000).optional(), hour: limit(1000).optional(), tokensDay: limit(10_000_000).optional(), blocked: z.boolean().optional() })).default({}),
+  /** Owners are not stopped by the limits per person or the workspace's; their use is still counted. */
+  ownersUnlimited: z.boolean().default(true),
   updatedAt: z.string(),
 });
 export type AiPolicy = z.infer<typeof aiPolicySchema>;
