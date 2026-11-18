@@ -59,6 +59,10 @@ Rules:
 
 export const processUserText = (text: string) => `Model this process:\n\n${text.trim()}`;
 
+/** For a picture: a BPMN diagram, a flowchart, a swimlane chart, a whiteboard, a hand drawing or a page about a process. */
+export const processImageText = (note: string) =>
+  `Model the business process this picture shows. It may be a BPMN diagram, a flowchart, a swimlane chart, a whiteboard, a hand drawing, or a page of a document that describes a process. Read every box, diamond and circle as a step, every arrow as a flow, and every band or column as a lane. Keep the names as they are written, in their language.${note.trim() ? `\n\nWhat the person who sent it says, and any text that came with it:\n${note.trim().slice(0, 11000)}` : ""}`;
+
 const text = z.union([z.string(), z.number(), z.null(), z.undefined()]).transform((v) => (v === null || v === undefined ? "" : String(v)));
 const num = z.union([z.number(), z.string(), z.null(), z.undefined()]).transform((v) => (v === null || v === undefined || v === "" ? undefined : Number(v)));
 const rawSchema = z.object({

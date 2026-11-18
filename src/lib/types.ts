@@ -434,13 +434,35 @@ export const savedTemplateSchema = z.object({
 });
 export type SavedTemplate = z.infer<typeof savedTemplateSchema>;
 
+/** A step the workspace uses again and again in its processes, kept in its BPMN library. */
+export const bpmnBlockSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  /** The BPMN library element it is: user-task, service-task... */
+  element: z.string().min(1).max(60),
+  description: z.string().max(600).default(""),
+  /** The role that usually does it, the lane it goes in. */
+  role: z.string().max(120).default(""),
+  /** What the step brings with it into a process. */
+  info: z
+    .object({
+      objectIds: z.array(z.string()).max(40).default([]),
+      duration: z.object({ min: z.number().min(0), mode: z.number().min(0), max: z.number().min(0) }).optional(),
+      cost: z.number().min(0).optional(),
+      automation: z.enum(["manual", "partly", "automated", "candidate"]).optional(),
+      notes: z.string().max(600).optional(),
+    })
+    .default({ objectIds: [] }),
+});
+export type BpmnBlock = z.infer<typeof bpmnBlockSchema>;
+
 /**
  * A change the workspace made to the component library or the protocols: one of its own (new or
- * a copy), a built-in one changed (same id as the built-in), or a built-in one removed.
+ * a copy), a built-in one changed (same id as the built-in), or a built-in one removed. A "bpmn"
+ * item is one of its own BPMN building blocks, kept apart from the diagram components.
  */
 export const libraryItemSchema = z.object({
   id: z.string().min(1).max(120),
-  type: z.enum(["component", "protocol"]),
+  type: z.enum(["component", "protocol", "bpmn"]),
   /** Hides a built-in component or protocol. */
   removed: z.boolean().optional(),
   component: z
@@ -464,6 +486,7 @@ export const libraryItemSchema = z.object({
       use: z.string().max(300).default(""),
     })
     .optional(),
+  bpmn: bpmnBlockSchema.optional(),
   /** The built-in or own item it was copied from. */
   copiedFrom: z.string().max(120).optional(),
   createdAt: z.string(),
@@ -552,6 +575,8 @@ export const processModelSchema = z.object({
   version: z.number().int().min(0).default(0),
   /** The model object that stands for the process, so it can be linked to applications and capabilities. */
   objectId: z.string().nullable().default(null),
+  /** The architecture diagrams this process is linked to: the systems it runs on, drawn. A diagram can be linked to many processes. */
+  diagramIds: z.array(z.string().max(120)).max(200).default([]),
   tags: z.array(z.string()).default([]),
   /** How often it runs, in words: "about 200 a day". */
   frequency: z.string().default(""),

@@ -27,6 +27,7 @@ export interface ProcessInput {
   elements?: ProcessModel["elements"];
   decisions?: Record<string, DecisionTable>;
   tags?: string[];
+  diagramIds?: string[];
 }
 
 export function createProcess(ws: Workspace, input: ProcessInput): { ws: Workspace; process: ProcessModel } {
@@ -44,6 +45,7 @@ export function createProcess(ws: Workspace, input: ProcessInput): { ws: Workspa
     status: "draft",
     version: 0,
     objectId: null,
+    diagramIds: input.diagramIds ?? [],
     tags: input.tags ?? [],
     frequency: "",
     // Areas and groups are boxes in the landscape; processes and below have a model.
@@ -73,6 +75,33 @@ export function updateProcess(ws: Workspace, id: string, patch: ProcessPatch): W
 }
 
 /** Removes a process; what sat inside it moves up to its parent. */
+/* ---------- links between processes and architecture diagrams ---------- */
+
+/** The diagrams a process is linked to: none for a process saved before links existed. */
+export const linksOf = (process: Pick<ProcessModel, "diagramIds">): string[] => (Array.isArray(process.diagramIds) ? process.diagramIds : []);
+
+/** The diagrams a process is linked to that still exist, by name. */
+export const diagramsOfProcess = (ws: Workspace, process: ProcessModel) =>
+  linksOf(process)
+    .map((id) => ws.diagrams[id])
+    .filter((d): d is NonNullable<typeof d> => !!d)
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+/** The processes linked to a diagram, by name. */
+export const processesOfDiagram = (ws: Workspace, diagramId: string) =>
+  Object.values(ws.processes)
+    .filter((p) => linksOf(p).includes(diagramId))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+/** Links a process and a diagram, or takes the link away. */
+export function linkProcessDiagram(ws: Workspace, processId: string, diagramId: string, linked: boolean): Workspace {
+  const p = ws.processes[processId];
+  if (!p || (linked && !ws.diagrams[diagramId])) return ws;
+  const has = linksOf(p).includes(diagramId);
+  if (has === linked) return ws;
+  return updateProcess(ws, processId, { diagramIds: linked ? [...linksOf(p), diagramId] : linksOf(p).filter((id) => id !== diagramId) });
+}
+
 export function deleteProcess(ws: Workspace, id: string): Workspace {
   const p = ws.processes[id];
   if (!p) return ws;

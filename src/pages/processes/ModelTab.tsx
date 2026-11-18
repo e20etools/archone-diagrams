@@ -2,7 +2,10 @@ import { Download, FileUp, Maximize2 } from "lucide-react";
 import { useMemo, useRef, useState, type RefObject } from "react";
 import { Link } from "react-router-dom";
 import BpmnCanvas, { type BpmnCanvasApi, type OverlayTone, type SelectedElement } from "@/components/bpm/BpmnCanvas";
-import { Badge, Button, CommitInput, Field, Input, Select, cx } from "@/components/ui";
+import { BpmnSymbol, LibraryPanel, blockElement } from "@/components/bpm/BpmnLibrary";
+import { Badge, Button, CommitInput, Field, Input, Select, Tabs, cx } from "@/components/ui";
+import { blockFromStep, blockInfo, elementOf, saveBlock } from "@/lib/bpm/elements";
+import { apply } from "@/lib/store";
 import { downloadBlob, downloadText } from "@/lib/exporters";
 import { parseBpmn, type BpmnGraph } from "@/lib/bpm/bpmn";
 import { pathOf } from "@/lib/bpm/processes";
@@ -61,6 +64,8 @@ interface Props {
 
 export function ModelTab({ ws, process, graph, canEdit, findings, sim, colourBy, setColourBy, apiRef, onXml, patchElement, onDecision }: Props) {
   const [selected, setSelected] = useState<SelectedElement | null>(null);
+  const [side, setSide] = useState<"details" | "library">("details");
+  const [placing, setPlacing] = useState("");
   const [problem, setProblem] = useState("");
   const file = useRef<HTMLInputElement>(null);
   const [replacing, setReplacing] = useState(false);
@@ -178,7 +183,10 @@ export function ModelTab({ ws, process, graph, canEdit, findings, sim, colourBy,
             xml={process.xml}
             editable={canEdit}
             onChange={onXml}
-            onSelect={setSelected}
+            onSelect={(element) => {
+              setSelected(element);
+              setPlacing("");
+            }}
             onError={setProblem}
             overlays={layers.overlays}
             markers={layers.markers}
@@ -193,7 +201,38 @@ export function ModelTab({ ws, process, graph, canEdit, findings, sim, colourBy,
         )}
       </div>
       <aside className="rounded-lg border border-line bg-surface px-4 py-3 xl:sticky xl:top-4 max-h-[calc(100vh-120px)] overflow-y-auto" data-step-panel>
-        {selected ? (
+        <div className="mb-3">
+          <Tabs
+            tabs={[
+              { id: "details", label: selected ? "Step" : "Process" },
+              { id: "library", label: "BPMN library" },
+            ]}
+            value={side}
+            onChange={setSide}
+          />
+        </div>
+        {side === "library" ? (
+          <>
+            {placing && (
+              <p className="mb-2 rounded-md bg-blueprint-soft px-2.5 py-1.5 text-[13px]" role="status" data-placing>
+                Now click on the canvas where {placing} goes.
+              </p>
+            )}
+            <LibraryPanel
+              ws={ws}
+              canEdit={canEdit}
+              onPick={(element, event) => element.create && apiRef.current?.place(event, element.create, () => setPlacing("")) && setPlacing(`the ${element.name.toLowerCase()}`)}
+              onPickBlock={(block, event) => {
+                const create = blockElement(block.bpmn).create;
+                if (create && apiRef.current?.place(event, { ...create, name: block.bpmn.name }, (id) => {
+                  setPlacing("");
+                  patchElement(id, blockInfo(block.bpmn));
+                }))
+                  setPlacing(`"${block.bpmn.name}"`);
+              }}
+            />
+          </>
+        ) : selected ? (
           <StepPanel key={selected.id} ws={ws} process={process} graph={graph} element={selected} canEdit={canEdit} apiRef={apiRef} patch={(p) => patchElement(selected.id, p)} findings={findings.filter((f) => f.elementId === selected.id)} onDecision={() => onDecision(selected.id)} />
         ) : (
           <ProcessSummary process={process} graph={graph} findings={findings} canEdit={canEdit} />
@@ -260,6 +299,8 @@ function StepPanel({ ws, process, graph, element, canEdit, apiRef, patch, findin
   const siblings = isChoice && graph && element.sourceId ? graph.nodes[element.sourceId]?.outgoing ?? [] : [];
   const siblingTotal = siblings.reduce((a, id) => a + (id === element.id ? 0 : process.elements[id]?.probability ?? 0), 0);
   const calls = Object.values(ws.processes).filter((p) => p.id !== process.id && p.xml);
+  const about = elementOf(element.type, node?.trigger);
+  const [kept, setKept] = useState(false);
   const d = info.duration;
   const setDuration = (key: "min" | "mode" | "max", v: number | undefined) => {
     const next = { min: d?.min ?? 0, mode: d?.mode ?? 0, max: d?.max ?? 0, [key]: v ?? 0 };
@@ -424,6 +465,43 @@ function StepPanel({ ws, process, graph, element, canEdit, apiRef, patch, findin
       <Field label="Notes">
         <CommitInput multiline rows={3} value={info.notes ?? ""} disabled={!canEdit} onCommit={(v) => patch({ notes: v.trim() || undefined })} maxLength={4000} placeholder={isActivity ? "Inputs, outputs, the rules it follows, known problems" : ""} />
       </Field>
+      {isActivity && canEdit && (
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            disabled={kept}
+            onClick={() => {
+              apply((w) => saveBlock(w, blockFromStep({ type: element.type, name: element.name, trigger: node?.trigger }, info.resource ?? (lane || role), info)).ws);
+              setKept(true);
+            }}
+            data-step-save-block
+          >
+            {kept ? "Saved to the BPMN library" : "Save to the BPMN library"}
+          </Button>
+          {kept && (
+            <Link to="/bpmn-library" className="text-[13px] text-blueprint hover:underline">
+              Open it
+            </Link>
+          )}
+        </div>
+      )}
+      {about && (
+        <div className="rounded-md bg-paper px-3 py-2 text-[13px]" data-step-about={about.id}>
+          <p className="flex items-center gap-2 font-medium">
+            <BpmnSymbol element={about} size={20} /> {about.name} <span className="font-normal text-ink-soft">·</span>
+            <span className="font-normal text-ink-soft" dir="rtl">
+              {about.nameAr}
+            </span>
+          </p>
+          <p className="mt-1 text-ink-soft">{about.meaning}</p>
+          <p className="mt-0.5 text-ink-soft" dir="rtl">
+            {about.meaningAr}
+          </p>
+          <Link to="/bpmn-library" className="mt-1 inline-block text-blueprint hover:underline">
+            More in the BPMN library
+          </Link>
+        </div>
+      )}
     </div>
   );
 }

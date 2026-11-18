@@ -1,11 +1,12 @@
-import { ChevronRight, FileUp, LayoutTemplate, Pickaxe, Plus, Sparkles, Workflow } from "lucide-react";
+import { ChevronRight, FileUp, GraduationCap, LayoutTemplate, LibraryBig, Pickaxe, Plus, Sparkles, Workflow } from "lucide-react";
 import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Badge, Button, EmptyState, Input, Select, Tabs, cx, formatDate } from "@/components/ui";
 import { useCanEdit } from "@/lib/cloud/session";
 import { CATEGORY_LABEL, LEVEL_LABEL, STATUS_LABEL, childProcesses, repositoryStats, stepCount, systemsMatrix } from "@/lib/bpm/processes";
 import { sampleLandscape } from "@/lib/bpm/templates";
-import { apply, useWorkspace } from "@/lib/store";
+import { TRAINING_EXAMPLES, TRAINING_TAG, addTrainingExamples } from "@/lib/bpm/training";
+import { apply, useStore, useWorkspace } from "@/lib/store";
 import type { ProcessModel, Workspace } from "@/lib/types";
 import { NewProcessDialog, StatusBadge, pathLabel } from "./shared";
 
@@ -27,6 +28,15 @@ export default function ProcessesPage() {
     return new Set(all.filter((p) => (status === "all" || p.status === status) && (!q || `${p.name} ${p.owner} ${p.description} ${p.tags.join(" ")}`.toLowerCase().includes(q))).map((p) => p.id));
   }, [all, query, status]);
   const filtering = !!query.trim() || status !== "all";
+  const navigate = useNavigate();
+  const trainingArea = all.find((p) => p.level === 0 && p.tags.includes(TRAINING_TAG));
+  const trainingDone = !!trainingArea && TRAINING_EXAMPLES.every((t) => all.some((p) => p.parentId === trainingArea.id && p.tags.includes(t.id)));
+  const training = () => {
+    if (trainingDone) return navigate(`/processes/${trainingArea!.id}`);
+    const made = addTrainingExamples(useStore.getState().ws);
+    apply(() => made.ws);
+    navigate(`/processes/${made.areaId}`);
+  };
 
   return (
     <div className="max-w-6xl mx-auto px-6 py-7">
@@ -39,8 +49,14 @@ export default function ProcessesPage() {
         </div>
         {canEdit && (
           <div className="flex gap-2 shrink-0">
+            <Link to="/bpmn-library" className="inline-flex items-center gap-1.5 h-8.5 px-3 rounded-md border border-line text-sm font-medium hover:border-ink-faint">
+              <LibraryBig size={15} aria-hidden /> BPMN library
+            </Link>
+            <Button icon={<GraduationCap size={15} />} onClick={training} data-process-training-add>
+              {trainingDone ? "Training examples" : "Add training examples"}
+            </Button>
             <Button icon={<FileUp size={15} />} onClick={() => setStart({ way: "import" })}>
-              Import BPMN
+              From a file or picture
             </Button>
             <Button variant="primary" icon={<Plus size={15} />} onClick={() => setStart({ way: "blank" })} data-process-new>
               New process

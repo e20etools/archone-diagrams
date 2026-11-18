@@ -1,4 +1,4 @@
-import { BadgeCheck, FileBarChart, FolderOpen, Network, Zap, Boxes, Workflow, Pickaxe, ClipboardCheck, FileText, GitBranch, HeartPulse, History, GalleryThumbnails, LayoutGrid, MessageCircleQuestion, Redo2, Scale, ScrollText, Search, Settings, Shapes, ShieldCheck, Sparkles, Undo2, Waypoints } from "lucide-react";
+import { BadgeCheck, LibraryBig, FileBarChart, FolderOpen, Network, Zap, Boxes, Workflow, Pickaxe, ClipboardCheck, FileText, GitBranch, HeartPulse, History, GalleryThumbnails, LayoutGrid, MessageCircleQuestion, Redo2, Scale, ScrollText, Search, Settings, Shapes, ShieldCheck, Sparkles, Undo2, Waypoints } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { AssistantDock } from "@/components/assistant/AssistantDock";
@@ -38,6 +38,7 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
     items: [
       { to: "/processes", label: "Process landscape", icon: Workflow },
       { to: "/process-mining", label: "Process mining", icon: Pickaxe },
+      { to: "/bpmn-library", label: "BPMN library", icon: LibraryBig },
     ],
   },
   {

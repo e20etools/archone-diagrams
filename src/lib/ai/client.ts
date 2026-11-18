@@ -180,6 +180,36 @@ export async function draftProcess(text: string): Promise<{ draft: ProcessDraft;
   throw new AiError("failed", String(result.data?.message ?? "The AI draft failed. Try again."));
 }
 
+export interface ImageData {
+  mime: "image/png" | "image/jpeg" | "image/webp" | "image/gif";
+  data: string;
+}
+
+/** A picture to send: PNG, JPEG, WebP or GIF, up to 5 MB. */
+export async function imageFromFile(file: Blob & { type: string }): Promise<ImageData> {
+  if (!["image/png", "image/jpeg", "image/webp", "image/gif"].includes(file.type)) throw new AiError("failed", "Choose a PNG, JPEG, WebP or GIF image.");
+  if (file.size > 5 * 1024 * 1024) throw new AiError("failed", "The image is larger than 5 MB. Use a smaller one and try again.");
+  return { mime: file.type as ImageData["mime"], data: await fileToBase64(file as File) };
+}
+
+/** A business process read from a picture by the AI model: a diagram, a flowchart, a whiteboard, a page. */
+export async function draftProcessFromImage(image: ImageData, note: string): Promise<{ draft: ProcessDraft; engine: string }> {
+  let result: Awaited<ReturnType<typeof post>>;
+  try {
+    result = await post({ mode: "process", text: note.slice(0, 12000), image });
+  } catch {
+    throw new AiError("failed", "The server could not be reached. Check your connection and try again.");
+  }
+  if (result.status === 501 || result.status === 404 || result.status === 405 || (result.status === 200 && !result.data?.process)) {
+    throw new AiError("not_configured", "Reading a picture needs an AI model, and none is set up. An owner connects one in Settings → Integrations, or describe the process in words.");
+  }
+  const refused = denied(result) ?? limited(result);
+  if (refused) throw refused;
+  const draft = result.status === 200 ? reviveProcessDraft(result.data?.process) : null;
+  if (draft) return { draft, engine: typeof result.data?.engine === "string" ? result.data.engine : "AI model" };
+  throw new AiError("failed", String(result.data?.message ?? "The picture could not be read as a process. Try a clearer picture, or describe it in words."));
+}
+
 export async function draftFromImage(file: File, note: string): Promise<DraftResult> {
   if (!["image/png", "image/jpeg", "image/webp", "image/gif"].includes(file.type)) {
     throw new AiError("failed", "Choose a PNG, JPEG, WebP or GIF image.");

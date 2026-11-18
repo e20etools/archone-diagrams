@@ -234,6 +234,22 @@ try {
     await ben.click("[data-process-publish-confirm]");
     await waitText(vera, "Published v1", 15000);
     check("an editor publishes a process, and the viewer sees it published at once", await hasText(vera, "Published v1"));
+
+    // The BPMN library's own building blocks and the training examples belong to the workspace, for everyone.
+    await visit(ana, `${base}/bpmn-library`, "[data-block-new]");
+    await ana.click("[data-block-new]");
+    await ana.waitForSelector("[data-block-name]");
+    await ana.type("[data-block-name]", "Approve the invoice in the ERP");
+    await ana.type("[data-block-role]", "Finance");
+    await ana.click("[data-block-save]");
+    await ana.waitForSelector("[data-block]");
+    await ana.click("[data-training-add]");
+    await ana.waitForSelector('[data-training-example="leave-request"] a');
+    await saved(ana);
+    await visit(vera, `${base}/bpmn-library`, "[data-bpmn-own]");
+    await waitText(vera, "Approve the invoice in the ERP", 15000);
+    await until(vera, () => document.querySelectorAll("[data-training-example] a").length === 10, 15000);
+    check("a building block and the training examples added by the owner reach the others, who read but do not change them", (await count(vera, "[data-block]")) === 1 && !(await vera.$("[data-block-new]")) && !(await vera.$("[data-training-add]")));
   }
 
   /* ---------- the file library: your own files, and those of diagrams you can see ---------- */

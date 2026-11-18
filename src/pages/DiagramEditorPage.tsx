@@ -1,7 +1,7 @@
 import { DiagramFilesButton } from "@/components/DiagramFiles";
 import { NOTATION_INFO } from "@/lib/notation";
 import { NOTATIONS, type Notation } from "@/lib/types";
-import { Zap, ListTree, Archive, BookmarkPlus, AlignCenterHorizontal, AlignCenterVertical, AlignEndHorizontal, AlignEndVertical, AlignHorizontalSpaceAround, AlignStartHorizontal, AlignStartVertical, AlignVerticalSpaceAround, ChevronRight, EyeOff, LayoutDashboard, Presentation, ListOrdered, MessageSquare, BadgeCheck, PanelLeftClose, PanelLeftOpen, Search, Share2, ShieldCheck, Shuffle, SlidersHorizontal, Sparkles, Trash2, Waypoints, X, ZoomIn } from "lucide-react";
+import { Zap, Workflow, ListTree, Archive, BookmarkPlus, AlignCenterHorizontal, AlignCenterVertical, AlignEndHorizontal, AlignEndVertical, AlignHorizontalSpaceAround, AlignStartHorizontal, AlignStartVertical, AlignVerticalSpaceAround, ChevronRight, EyeOff, LayoutDashboard, Presentation, ListOrdered, MessageSquare, BadgeCheck, PanelLeftClose, PanelLeftOpen, Search, Share2, ShieldCheck, Shuffle, SlidersHorizontal, Sparkles, Trash2, Waypoints, X, ZoomIn } from "lucide-react";
 import { checkCopy } from "@/lib/freshness";
 import { alignNodes, distributeNodes, type AlignMode } from "@/lib/arrange";
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from "react";
@@ -52,6 +52,8 @@ import { searchObjects } from "@/lib/search";
 import { apply, useStore, useWorkspace, zoomInto } from "@/lib/store";
 import { COLOR_BY, RELATION_KINDS, type ColorBy, type Diagram, type RelationKind, type ViewType, type Workspace } from "@/lib/types";
 import { addObjectsToDiagram, missingSuggestions, relayout, visibleEdges } from "@/lib/views";
+import { DiagramProcessesPanel } from "@/components/bpm/ProcessLinks";
+import { processesOfDiagram } from "@/lib/bpm/processes";
 
 const CATEGORIES = Object.keys(CATEGORY_INFO) as Category[];
 const NONE: CanvasSelection = { objectId: null, edgeId: null };
@@ -630,6 +632,9 @@ function Editor({ ws, diagram }: { ws: Workspace; diagram: Diagram }) {
   const [selection, setSelectionOnly] = useState<CanvasSelection>(NONE);
   const [flowsOpen, setFlowsOpen] = useState(false);
   const [approvalOpen, setApprovalOpen] = useState(false);
+  const [processesOpen, setProcessesOpen] = useState(false);
+  const canEditProcesses = useCanEdit();
+  const linkedProcesses = processesOfDiagram(ws, diagram.id).length;
   const approval = useDiagramRecord(ws, diagram);
   const flows = useFlowCursor(ws, diagram);
   // Boxes picked together with Shift-click, to line up, space out or drag as a group.
@@ -951,12 +956,33 @@ function Editor({ ws, diagram }: { ws: Workspace; diagram: Diagram }) {
               if (!flowsOpen) {
                 setCommentsOpen(false);
                 setApprovalOpen(false);
+                setProcessesOpen(false);
                 setSelection(NONE);
               }
             }}
           >
             Flows
             {flowsOf(diagram).length > 0 && <span className="tabular-nums text-ink-soft">{flowsOf(diagram).length}</span>}
+          </Button>
+          <Button
+            icon={<Workflow size={15} />}
+            aria-pressed={processesOpen}
+            className={processesOpen ? "!bg-blueprint-soft !text-blueprint-deep !border-transparent" : undefined}
+            title={processesOpen ? "Close the processes" : "The business processes (BPMN) this diagram is linked to"}
+            data-processes-button
+            onClick={() => {
+              const next = !processesOpen;
+              setProcessesOpen(next);
+              if (next) {
+                closeComments();
+                setFlowsOpen(false);
+                setApprovalOpen(false);
+                setSelection(NONE);
+              }
+            }}
+          >
+            Processes
+            {linkedProcesses > 0 && <span className="tabular-nums text-ink-soft">{linkedProcesses}</span>}
           </Button>
           <DiagramFilesButton ws={ws} diagram={diagram} />
           {cloudEnabled && (
@@ -969,6 +995,7 @@ function Editor({ ws, diagram }: { ws: Workspace; diagram: Diagram }) {
                 if (commentsOpen) return closeComments();
                 setFlowsOpen(false);
                 setApprovalOpen(false);
+                setProcessesOpen(false);
                 setCommentsOpen(true);
               }}
             >
@@ -989,6 +1016,7 @@ function Editor({ ws, diagram }: { ws: Workspace; diagram: Diagram }) {
                 if (next) {
                   closeComments();
                   setFlowsOpen(false);
+                  setProcessesOpen(false);
                   setSelection(NONE);
                 }
               }}
@@ -1108,7 +1136,11 @@ function Editor({ ws, diagram }: { ws: Workspace; diagram: Diagram }) {
             </div>
           )}
         </div>
-        {approvalOpen ? (
+        {processesOpen ? (
+          <aside className="w-[340px] shrink-0 bg-surface border-l border-line" aria-label="Processes">
+            <DiagramProcessesPanel ws={ws} diagram={diagram} canEdit={canEditProcesses} onClose={() => setProcessesOpen(false)} />
+          </aside>
+        ) : approvalOpen ? (
           <aside className="w-[340px] shrink-0 bg-surface border-l border-line" aria-label="Approval">
             <ApprovalPanel diagram={diagram} record={approval.record} problem={approval.problem} canEdit={canEdit} onRecord={approval.setRecord} onClose={() => setApprovalOpen(false)} />
           </aside>

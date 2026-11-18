@@ -1223,10 +1223,11 @@ event log is read on the person's computer and never uploaded.
   landscape" adds five areas and six modelled processes (order to cash, procure to pay, incident
   management, onboarding, loan origination, complaint handling), each with times and chances so
   they can be simulated at once.
-- **New process**: blank, from a template, described in words, or imported from any tool that saves
-  BPMN 2.0 (Camunda, Signavio, ARIS, Bizagi, Visio). A description goes to the AI model (the server's,
-  or the workspace's own from Settings → Integrations) in a mode of its own (`mode: "process"`); without
-  one, built-in rules draft it from lines such as "Sales: check the order" and "If ..., ...; otherwise ...".
+- **New process**: blank, from a template or a training example, described in words (typed, or spoken
+  in Arabic or English with the browser's dictation), or from a file or a picture. A description goes to
+  the AI model (the server's, or the workspace's own from Settings → Integrations) in a mode of its own
+  (`mode: "process"`); without one, built-in rules draft it from lines such as "Sales: check the order"
+  and "If ..., ...; otherwise ...". See "From a file or a picture" below.
 - **Model**: bpmn.io's modeler (bpmn-js) with its toolbox, context pad and type changes. Selecting
   a step shows what BPMN does not hold: how long it takes (least, usually, most), who does it, cost,
   automation, the systems and data it uses (objects of the architecture model), RACI, the decision
@@ -1293,7 +1294,45 @@ curl -X POST -H "Authorization: Bearer ark_..." -H "Content-Type: application/js
   every stored process with care, so a damaged part (one step's details, one KPI) is left out instead
   of the whole process.
 
-### Flows: a use case, step by step
+### BPMN training, the BPMN library, and processes linked to diagrams
+
+- **Training examples** (Process landscape → Add training examples, or the BPMN library). Ten small
+  processes under the area "BPMN training", each teaching one part of BPMN: a decision (exclusive
+  gateway), work at the same time (parallel), one or more ways (inclusive), deadlines and reminders
+  (interrupting and non-interrupting timer boundary events, an intermediate timer), a failure (error
+  boundary event and a loop back), another party (a closed pool, message flows, send and receive tasks),
+  whichever comes first (event-based gateway), data and rules (data objects, data stores, a business
+  rule task with its DMN table, notes), sub-processes, call activities and signals, and loops with a
+  terminate end event. Each has typical times and chances, so it simulates at once, and its details say
+  what to notice in English and in Arabic. Adding them again only brings back the ones that were removed.
+- **The BPMN library** (`/bpmn-library`, menu → Processes) is separate from the component library of
+  diagrams. It holds every BPMN 2.0 element in seven groups (events, activities, gateways, data, pools and
+  lanes, notes and groups, connections), each with its symbol, its name and meaning in English and Arabic,
+  when to use it, and the training examples that show it. Search works in both languages.
+- **Your building blocks**: steps the workspace uses again and again ("Approve the invoice in the
+  ERP"), with their kind, the role that does them, their time and the systems they use. Make one on the
+  library page, or select a step in a model and choose Save to the BPMN library. They are kept with the
+  workspace's library items as items of type `bpmn` (migration 20261118160000), so they sync, copy into
+  scenarios and appear in the audit log as "BPMN building block".
+- **In the modeler**, the panel beside the canvas has a BPMN library tab: click an element or a building
+  block, then click on the canvas where it goes (a boundary event, on the edge of a task). A building block
+  brings its name, role, time and systems into the step's details. Selecting a step shows what its element
+  means, in both languages.
+- **From a file or a picture** (New process → From a file or picture). A BPMN file is imported as it is. A
+  draw.io or Visio flowchart becomes a process by its shapes: bands become lanes, diamonds decisions,
+  circles events, boxes tasks and arrows flows, with a start and an end added when the chart has none. A
+  picture (PNG, JPEG, WebP, GIF) goes to the AI model's vision model with an optional note (`mode:
+  "process"` with an `image`, counted as a picture against the workspace's AI limits); a PDF sends its
+  first page as a picture with the text of its pages, or only its text to the built-in rules when there is
+  no AI model. A Word or PowerPoint document, a text, or a spreadsheet of steps ("Step" and "Role" columns,
+  in English or Arabic) is drafted from its words. Files are read in the browser; only what goes to the AI
+  model leaves it.
+- **Links between diagrams and processes**, many to many: a diagram's Processes button lists the
+  processes it is linked to, links more, and suggests the processes whose steps use what it shows; a
+  process's Diagrams tab does the same the other way. The links are kept on the process (`diagramIds`),
+  and the assistant knows them.
+
+### Flows: a use case, step by step### Flows: a use case, step by step
 
 A diagram shows what exists. A flow tells what happens: one use case, in order, over the
 boxes of one diagram ("A customer pays an invoice").
@@ -1541,10 +1580,10 @@ build does not reload.
 ## Check it
 
 ```bash
-npm test                   # 598 tests: model, the component library, flows, links, protected live links, decisions, arranging, health, CALM, scenario merging, the trust page, the document, your own rules, large models, templates, the pull-request gate, the APM import, AI, questions, checks, MCP, import readers, sync engine, comparison, and the database rules and the API on a real Postgres
+npm test                   # 608 tests: model, the component library, flows, links, protected live links, decisions, arranging, health, CALM, scenario merging, the trust page, the document, your own rules, large models, templates, the pull-request gate, the APM import, AI, questions, checks, MCP, import readers, sync engine, comparison, and the database rules and the API on a real Postgres
 npm run build              # type-check and production build into dist/
-npm run test:browser       # 255 end-to-end checks of browser-only mode (run after a build)
-npm run test:browser:cloud # 125 end-to-end checks of hosted mode with several people
+npm run test:browser       # 268 end-to-end checks of browser-only mode (run after a build)
+npm run test:browser:cloud # 126 end-to-end checks of hosted mode with several people
 ```
 
 `test:browser` serves the production build, including `api/ai.js`, and walks through the

@@ -4307,13 +4307,44 @@ var savedTemplateSchema = objectType({
 	createdAt: stringType(),
 	updatedAt: stringType()
 });
+/** A step the workspace uses again and again in its processes, kept in its BPMN library. */
+var bpmnBlockSchema = objectType({
+	name: stringType().trim().min(1).max(120),
+	/** The BPMN library element it is: user-task, service-task... */
+	element: stringType().min(1).max(60),
+	description: stringType().max(600).default(""),
+	/** The role that usually does it, the lane it goes in. */
+	role: stringType().max(120).default(""),
+	/** What the step brings with it into a process. */
+	info: objectType({
+		objectIds: arrayType(stringType()).max(40).default([]),
+		duration: objectType({
+			min: numberType().min(0),
+			mode: numberType().min(0),
+			max: numberType().min(0)
+		}).optional(),
+		cost: numberType().min(0).optional(),
+		automation: enumType([
+			"manual",
+			"partly",
+			"automated",
+			"candidate"
+		]).optional(),
+		notes: stringType().max(600).optional()
+	}).default({ objectIds: [] })
+});
 /**
 * A change the workspace made to the component library or the protocols: one of its own (new or
-* a copy), a built-in one changed (same id as the built-in), or a built-in one removed.
+* a copy), a built-in one changed (same id as the built-in), or a built-in one removed. A "bpmn"
+* item is one of its own BPMN building blocks, kept apart from the diagram components.
 */
 var libraryItemSchema = objectType({
 	id: stringType().min(1).max(120),
-	type: enumType(["component", "protocol"]),
+	type: enumType([
+		"component",
+		"protocol",
+		"bpmn"
+	]),
 	/** Hides a built-in component or protocol. */
 	removed: booleanType().optional(),
 	component: objectType({
@@ -4339,6 +4370,7 @@ var libraryItemSchema = objectType({
 		secure: booleanType(),
 		use: stringType().max(300).default("")
 	}).optional(),
+	bpmn: bpmnBlockSchema.optional(),
 	/** The built-in or own item it was copied from. */
 	copiedFrom: stringType().max(120).optional(),
 	createdAt: stringType(),
@@ -4495,6 +4527,8 @@ var processModelSchema = objectType({
 	version: numberType().int().min(0).default(0),
 	/** The model object that stands for the process, so it can be linked to applications and capabilities. */
 	objectId: stringType().nullable().default(null),
+	/** The architecture diagrams this process is linked to: the systems it runs on, drawn. A diagram can be linked to many processes. */
+	diagramIds: arrayType(stringType().max(120)).max(200).default([]),
 	tags: arrayType(stringType()).default([]),
 	/** How often it runs, in words: "about 200 a day". */
 	frequency: stringType().default(""),
@@ -4631,7 +4665,8 @@ var APP_GUIDE = `- Home (/): the workspace at a glance. Diagrams (/diagrams): ev
 - A diagram (/diagram/<id>): draw and edit it. Its toolbar has Approval (send it to Enterprise Architecture and Cybersecurity, see their decisions and notes), Comments, Flows (use cases told step by step), Share (live links and verified copies with a QR code), Export (pictures and files), and the settings of its information box.
 - Model (/model): every object and relationship, with owner, lifecycle, technology, tags and basic information such as host name, IP address, operating system, classification and personal data. Library (/library): the components boxes are made from. Files (/files): documents attached to diagrams and objects.
 - Drafts (/ai): diagrams drafted by AI from text, a picture or a file, waiting for a person to accept them.
-- Processes (/processes) and Process mining (/process-mining): business processes in BPMN, with their risks, KPIs and decisions.
+- Processes (/processes) and Process mining (/process-mining): business processes in BPMN, with their risks, KPIs and decisions. A new process starts blank, from a template or one of ten training examples, from a description typed or spoken, or from a file or picture (a BPMN file, a draw.io or Visio flowchart, a picture or PDF read by the AI model, a Word or PowerPoint document, a text or a spreadsheet of steps). A process's Diagrams tab, and a diagram's Processes button, link processes and diagrams, many to many.
+- BPMN library (/bpmn-library): every BPMN element with its meaning in English and Arabic, the training examples, and the workspace's own building blocks; in a process model, the BPMN library tab beside the canvas places them.
 - Impact (/impact) and Dependencies (/analysis): what a change or a failure of an object reaches. Health (/health): gaps in the model. Checks (/checks): the security baseline, privacy, card data (PCI DSS), NCA ECC (Saudi Arabia) and AI agent rule packs, and the workspace's own rules (/checks/rules).
 - Decisions (/decisions): architecture decision records. Reports (/reports) and Document (/document): reports and a written document of the architecture.
 - Approvals (/approvals): diagrams waiting for Enterprise Architecture and Cybersecurity, and recent decisions. Reviews (/reviews) and Versions (/versions): review of the whole model before publishing, and saved versions. Scenarios (/scenarios): what-if copies. Audit log (/audit, owners): every change.
@@ -4801,6 +4836,8 @@ Rules:
 - minutes is a typical time for the step, when the description says or it is obvious; probability is the percent of cases taking each flow out of a decision, adding up to 100.
 - At most 60 steps. Ids are short and unique. Keep the language of the description.`;
 var processUserText = (text) => `Model this process:\n\n${text.trim()}`;
+/** For a picture: a BPMN diagram, a flowchart, a swimlane chart, a whiteboard, a hand drawing or a page about a process. */
+var processImageText = (note) => `Model the business process this picture shows. It may be a BPMN diagram, a flowchart, a swimlane chart, a whiteboard, a hand drawing, or a page of a document that describes a process. Read every box, diamond and circle as a step, every arrow as a flow, and every band or column as a lane. Keep the names as they are written, in their language.${note.trim() ? `\n\nWhat the person who sent it says, and any text that came with it:\n${note.trim().slice(0, 11e3)}` : ""}`;
 var text = unionType([
 	stringType(),
 	numberType(),
@@ -4966,6 +5003,10 @@ var chatTurnSchema = objectType({
 	role: enumType(["user", "assistant"]),
 	content: stringType().trim().min(1).max(MAX_CHAT_TEXT)
 });
+var imageSchema = objectType({
+	mime: enumType(IMAGE_TYPES),
+	data: stringType().min(100).max(MAX_IMAGE_BASE64).regex(/^[A-Za-z0-9+/=]+$/)
+});
 var requestSchema = discriminatedUnionType("mode", [
 	objectType({
 		mode: literalType("prompt"),
@@ -4974,10 +5015,7 @@ var requestSchema = discriminatedUnionType("mode", [
 	objectType({
 		mode: literalType("image"),
 		text: stringType().max(2e3).optional(),
-		image: objectType({
-			mime: enumType(IMAGE_TYPES),
-			data: stringType().min(100).max(MAX_IMAGE_BASE64).regex(/^[A-Za-z0-9+/=]+$/)
-		})
+		image: imageSchema
 	}),
 	objectType({
 		mode: literalType("ask"),
@@ -4986,7 +5024,8 @@ var requestSchema = discriminatedUnionType("mode", [
 	}),
 	objectType({
 		mode: literalType("process"),
-		text: stringType().trim().min(3).max(MAX_TEXT)
+		text: stringType().trim().max(MAX_TEXT).default(""),
+		image: imageSchema.optional()
 	}),
 	objectType({
 		mode: literalType("chat"),
@@ -4996,6 +5035,10 @@ var requestSchema = discriminatedUnionType("mode", [
 		page: stringType().max(300).optional()
 	})
 ]);
+/** A request the schema lets through that still says nothing to work from. */
+var empty = (r) => r.mode === "process" && !r.image && r.text.length < 3;
+/** The picture that goes with a request, if any. */
+var imageOf = (r) => r.mode === "image" || r.mode === "process" ? r.image : void 0;
 /**
 * A workspace's own AI provider (Settings → Integrations), reached through the integrations Edge
 * Function with the person's sign-in and a ticket for a request already counted by ai_begin. The
@@ -5145,7 +5188,7 @@ function messageFor(request) {
 	};
 	if (request.mode === "process") return {
 		system: PROCESS_SYSTEM_PROMPT,
-		turns: one(processUserText(request.text)),
+		turns: one(request.image ? processImageText(request.text) : processUserText(request.text)),
 		maxTokens: 8e3
 	};
 	return {
@@ -5158,12 +5201,13 @@ async function callAnthropic(p, request, fetchImpl) {
 	const { system, turns, maxTokens } = messageFor(request);
 	const messages = turns.map((turn, i) => {
 		const content = [];
-		if (request.mode === "image" && i === turns.length - 1) content.push({
+		const image = imageOf(request);
+		if (image && i === turns.length - 1) content.push({
 			type: "image",
 			source: {
 				type: "base64",
-				media_type: request.image.mime,
-				data: request.image.data
+				media_type: image.mime,
+				data: image.data
 			}
 		});
 		content.push({
@@ -5192,14 +5236,15 @@ async function callAnthropic(p, request, fetchImpl) {
 }
 async function callOpenAiStyle(p, request, fetchImpl) {
 	const { system, turns, maxTokens } = messageFor(request);
+	const image = imageOf(request);
 	const messages = turns.map((turn, i) => ({
 		role: turn.role,
-		content: request.mode === "image" && i === turns.length - 1 ? [{
+		content: image && i === turns.length - 1 ? [{
 			type: "text",
 			text: turn.text
 		}, {
 			type: "image_url",
-			image_url: { url: `data:${request.image.mime};base64,${request.image.data}` }
+			image_url: { url: `data:${image.mime};base64,${image.data}` }
 		}] : turn.text
 	}));
 	return fetchImpl(`${p.baseUrl.replace(/\/$/, "")}/chat/completions`, {
@@ -5221,7 +5266,7 @@ async function callOpenAiStyle(p, request, fetchImpl) {
 	});
 }
 /** The model for this request: the vision model for a picture, when one is set. */
-var modelFor = (p, request) => request.mode === "image" && p.visionModel ? p.visionModel : p.model;
+var modelFor = (p, request) => imageOf(request) && p.visionModel ? p.visionModel : p.model;
 function answerText(provider, payload) {
 	const data = payload;
 	if (provider.id === "anthropic") return (Array.isArray(data?.content) ? data.content : []).filter((b) => b?.type === "text").map((b) => String(b.text ?? "")).join("\n");
@@ -5241,14 +5286,18 @@ var badRequest = (body) => {
 /** Checks a request before anything is counted or sent: its kind, or the answer that refuses it. */
 function checkAiRequest(body) {
 	const parsed = requestSchema.safeParse(body);
-	if (!parsed.success) return {
+	if (!parsed.success || empty(parsed.data)) return {
 		ok: false,
 		result: badRequest(body)
 	};
 	const mode = parsed.data.mode;
+	if (mode === "process") return {
+		ok: true,
+		kind: parsed.data.image ? "image" : "text"
+	};
 	return {
 		ok: true,
-		kind: mode === "prompt" || mode === "process" ? "text" : mode === "chat" ? "ask" : mode
+		kind: mode === "prompt" ? "text" : mode === "chat" ? "ask" : mode
 	};
 }
 /**
@@ -5268,7 +5317,7 @@ function usedTokens(provider, payload) {
 }
 async function handleAiRequest(body, env, fetchImpl = fetch, own) {
 	const parsed = requestSchema.safeParse(body);
-	if (!parsed.success) return badRequest(body);
+	if (!parsed.success || empty(parsed.data)) return badRequest(body);
 	const provider = own ?? resolveProvider(env);
 	if (!provider) return {
 		status: 501,

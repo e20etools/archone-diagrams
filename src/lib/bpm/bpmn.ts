@@ -149,6 +149,7 @@ export type StepType =
   | "endEvent"
   | "intermediateThrowEvent"
   | "intermediateCatchEvent"
+  | "boundaryEvent"
   | "task"
   | "userTask"
   | "serviceTask"
@@ -171,8 +172,37 @@ export interface SpecStep {
   lane?: string;
   /** For an event: message, timer, error, signal, conditional, escalation, terminate. */
   trigger?: string;
+  /** For a boundary event: the activity it sits on. */
+  attachedTo?: string;
+  /** For a boundary event: false when the activity goes on (a dashed circle). */
+  interrupting?: boolean;
 }
 export interface SpecFlow {
+  from: string;
+  to: string;
+  name?: string;
+}
+/** A data object (a document of this case) or a data store (kept beyond it), and the steps that read and write it. */
+export interface SpecData {
+  id: string;
+  name: string;
+  kind: "object" | "store";
+  reads?: string[];
+  writes?: string[];
+}
+/** A note on a step. */
+export interface SpecNote {
+  id: string;
+  text: string;
+  on: string;
+}
+/** Someone outside the process, drawn as a closed pool above it. */
+export interface SpecPartner {
+  id: string;
+  name: string;
+}
+/** A message between a partner and a step, either way. */
+export interface SpecMessage {
   from: string;
   to: string;
   name?: string;
@@ -183,6 +213,10 @@ export interface ProcessSpec {
   lanes?: string[];
   steps: SpecStep[];
   flows: SpecFlow[];
+  data?: SpecData[];
+  notes?: SpecNote[];
+  partners?: SpecPartner[];
+  messages?: SpecMessage[];
 }
 
 const SIZE: Record<string, { w: number; h: number }> = { event: { w: 36, h: 36 }, gateway: { w: 50, h: 50 }, activity: { w: 110, h: 80 } };
@@ -191,39 +225,66 @@ const ncname = (raw: string) => {
   const clean = raw.replace(/[^A-Za-z0-9_.-]/g, "_");
   return /^[A-Za-z_]/.test(clean) ? clean : `_${clean}`;
 };
+type Box = { x: number; y: number; w: number; h: number };
 
-/** Writes a process as BPMN 2.0 with its diagram: lanes as rows of one pool, flows from left to right. */
+/**
+ * Writes a process as BPMN 2.0 with its diagram: lanes as rows of one pool, flows from left to right,
+ * boundary events on the edge of their activity, partners as closed pools above with their messages,
+ * notes above the steps they explain, and data objects and stores below the pool.
+ */
 export function buildBpmn(spec: ProcessSpec): string {
-  const steps = spec.steps.map((s) => ({ ...s, id: ncname(s.id) }));
-  const ids = new Set(steps.map((s) => s.id));
-  const flows = spec.flows.map((f, i) => ({ ...f, id: `Flow_${i + 1}`, from: ncname(f.from), to: ncname(f.to) })).filter((f) => ids.has(f.from) && ids.has(f.to));
   const lanes = (spec.lanes ?? []).filter((l, i, all) => l && all.indexOf(l) === i);
   const laneOf = (s: { lane?: string }) => (lanes.length ? (s.lane && lanes.includes(s.lane) ? s.lane : lanes[0]) : "");
+  const raw = spec.steps.map((s) => ({ ...s, id: ncname(s.id), attachedTo: s.attachedTo ? ncname(s.attachedTo) : undefined }));
+  const ids0 = new Set(raw.map((s) => s.id));
+  // A boundary event needs an activity to sit on, and sits in its lane.
+  const steps = raw
+    .filter((s) => s.type !== "boundaryEvent" || (s.attachedTo && ids0.has(s.attachedTo) && kindOf(raw.find((h) => h.id === s.attachedTo)!.type) === "activity"))
+    .map((s) => (s.type === "boundaryEvent" ? { ...s, lane: raw.find((h) => h.id === s.attachedTo)!.lane } : s));
+  const ids = new Set(steps.map((s) => s.id));
+  const isBoundary = (id: string) => steps.find((x) => x.id === id)?.type === "boundaryEvent";
+  const flows = spec.flows.map((f, i) => ({ ...f, id: `Flow_${i + 1}`, from: ncname(f.from), to: ncname(f.to) })).filter((f) => ids.has(f.from) && ids.has(f.to) && !isBoundary(f.to));
+  const placed = steps.filter((s) => s.type !== "boundaryEvent");
+  const hostOf = (id: string) => steps.find((x) => x.id === id)?.attachedTo;
+  // Steps reached only from a boundary event: the exception path, drawn below the main one.
+  const exception = new Set(placed.filter((s) => flows.some((f) => f.to === s.id && isBoundary(f.from)) && !flows.some((f) => f.to === s.id && !isBoundary(f.from))).map((s) => s.id));
 
   // Columns from a left-to-right layering; within a lane, steps in one column stack.
   const g = new dagre.graphlib.Graph();
   g.setGraph({ rankdir: "LR", nodesep: 30, ranksep: 60 });
   g.setDefaultEdgeLabel(() => ({}));
-  for (const s of steps) g.setNode(s.id, { width: sizeOf(s.type).w, height: sizeOf(s.type).h });
-  for (const f of flows) g.setEdge(f.from, f.to);
+  for (const s of placed) g.setNode(s.id, { width: sizeOf(s.type).w, height: sizeOf(s.type).h });
+  for (const f of flows) g.setEdge(isBoundary(f.from) ? hostOf(f.from)! : f.from, f.to);
   dagre.layout(g);
-  const xs = [...new Set(steps.map((s) => Math.round(g.node(s.id).x)))].sort((a, b) => a - b);
-  const column = new Map(steps.map((s) => [s.id, xs.indexOf(Math.round(g.node(s.id).x))]));
+  const xs = [...new Set(placed.map((s) => Math.round(g.node(s.id).x)))].sort((a, b) => a - b);
+  const column = new Map(placed.map((s) => [s.id, xs.indexOf(Math.round(g.node(s.id).x))]));
   const laneRows = new Map<string, Map<number, string[]>>();
-  for (const s of [...steps].sort((a, b) => g.node(a.id).y - g.node(b.id).y)) {
+  for (const s of [...placed].sort((a, b) => Number(exception.has(a.id)) - Number(exception.has(b.id)) || g.node(a.id).y - g.node(b.id).y)) {
     const lane = laneOf(s);
     const cols = laneRows.get(lane) ?? new Map<number, string[]>();
     const col = column.get(s.id)!;
     cols.set(col, [...(cols.get(col) ?? []), s.id]);
     laneRows.set(lane, cols);
   }
+  const partners = (spec.partners ?? []).map((p) => ({ ...p, id: ncname(`Partner_${p.id}`), key: p.id }));
+  const partnerId = new Map(partners.map((p) => [p.key, p.id]));
+  const notes = (spec.notes ?? []).map((n) => ({ ...n, id: ncname(n.id), on: ncname(n.on) })).filter((n) => ids.has(n.on));
+  const data = (spec.data ?? []).map((d) => ({
+    ...d,
+    id: ncname(d.id),
+    reads: (d.reads ?? []).map(ncname).filter((id) => ids.has(id) && kindOf(steps.find((x) => x.id === id)!.type) === "activity"),
+    writes: (d.writes ?? []).map(ncname).filter((id) => ids.has(id) && kindOf(steps.find((x) => x.id === id)!.type) === "activity"),
+  }));
+  const pooled = lanes.length > 0 || partners.length > 0;
+
   const ROW = 110;
   const COL = 150;
   const LANE_LABEL = lanes.length ? 30 : 0;
-  const POOL_LABEL = lanes.length ? 30 : 0;
+  const POOL_LABEL = pooled ? 30 : 0;
   const left = 160 + POOL_LABEL + LANE_LABEL;
-  const top = 80;
-  const pos = new Map<string, { x: number; y: number; w: number; h: number }>();
+  const PARTNER_H = 60;
+  const top = 80 + partners.length * (PARTNER_H + 30) + (notes.length ? 80 : 0);
+  const pos = new Map<string, Box>();
   const laneBounds: { name: string; y: number; h: number }[] = [];
   let y = top;
   for (const lane of lanes.length ? lanes : [""]) {
@@ -242,17 +303,61 @@ export function buildBpmn(spec: ProcessSpec): string {
     laneBounds.push({ name: lane, y, h });
     y += h;
   }
+  // Boundary events on the lower edge of their activity, from the right.
+  const onHost = new Map<string, number>();
+  for (const s of steps.filter((x) => x.type === "boundaryEvent")) {
+    const host = pos.get(s.attachedTo!)!;
+    const k = onHost.get(s.attachedTo!) ?? 0;
+    onHost.set(s.attachedTo!, k + 1);
+    pos.set(s.id, { x: host.x + host.w - 28 - k * 40, y: host.y + host.h - 18, w: 36, h: 36 });
+  }
   const width = Math.max(600, (xs.length || 1) * COL + 100);
+  const poolX = 160;
+  const poolW = width + POOL_LABEL + LANE_LABEL;
+  const poolBottom = y;
+
+  const partnerBox = new Map(partners.map((p, i) => [p.id, { x: poolX, y: 80 + i * (PARTNER_H + 30), w: poolW, h: PARTNER_H }]));
+  const noteRow = 80 + partners.length * (PARTNER_H + 30);
+  const noteBox = new Map<string, Box>();
+  const noteCount = new Map<string, number>();
+  for (const n of notes) {
+    const on = pos.get(n.on)!;
+    const k = noteCount.get(n.on) ?? 0;
+    noteCount.set(n.on, k + 1);
+    noteBox.set(n.id, { x: on.x + k * 180, y: noteRow, w: 170, h: 50 });
+  }
+  const dataBox = new Map<string, Box>();
+  const taken: number[] = [];
+  for (const d of data) {
+    const users = [...d.writes, ...d.reads].map((id) => pos.get(id)!).filter(Boolean);
+    const want = users.length ? users.reduce((n, b) => n + b.x + b.w / 2, 0) / users.length : left + 40;
+    let x = Math.round(want - 25);
+    // Far enough apart that their names do not run into each other.
+    while (taken.some((t) => Math.abs(t - x) < 120)) x += 120;
+    taken.push(x);
+    dataBox.set(d.id, d.kind === "store" ? { x, y: poolBottom + 50, w: 50, h: 50 } : { x: x + 7, y: poolBottom + 50, w: 36, h: 50 });
+  }
 
   const process = "Process_1";
   const flowXml = (f: (typeof flows)[number]) => `    <bpmn:sequenceFlow id="${f.id}" sourceRef="${f.from}" targetRef="${f.to}"${f.name ? ` name="${escapeXml(f.name)}"` : ""} />`;
+  const reads = data.flatMap((d) => d.reads.map((stepId, i) => ({ id: ncname(`${d.id}_in_${i + 1}`), data: d.id, step: stepId })));
+  const writes = data.flatMap((d) => d.writes.map((stepId, i) => ({ id: ncname(`${d.id}_out_${i + 1}`), data: d.id, step: stepId })));
   const stepXml = (s: (typeof steps)[number]) => {
     const inc = flows.filter((f) => f.to === s.id).map((f) => `      <bpmn:incoming>${f.id}</bpmn:incoming>`);
     const out = flows.filter((f) => f.from === s.id).map((f) => `      <bpmn:outgoing>${f.id}</bpmn:outgoing>`);
+    const ins = reads.filter((r) => r.step === s.id);
+    const property = ins.length ? [`      <bpmn:property id="${s.id}_input" name="__targetRef_placeholder" />`] : [];
+    const dataIn = ins.map((r) => `      <bpmn:dataInputAssociation id="${r.id}">\n        <bpmn:sourceRef>${r.data}</bpmn:sourceRef>\n        <bpmn:targetRef>${s.id}_input</bpmn:targetRef>\n      </bpmn:dataInputAssociation>`);
+    const dataOut = writes.filter((w) => w.step === s.id).map((w) => `      <bpmn:dataOutputAssociation id="${w.id}">\n        <bpmn:targetRef>${w.data}</bpmn:targetRef>\n      </bpmn:dataOutputAssociation>`);
     const trigger = s.trigger && kindOf(s.type) === "event" ? [`      <bpmn:${s.trigger}EventDefinition id="${s.id}_def" />`] : [];
-    const inner = [...inc, ...out, ...trigger];
-    return `    <bpmn:${s.type} id="${s.id}" name="${escapeXml(s.name)}"${inner.length ? `>\n${inner.join("\n")}\n    </bpmn:${s.type}>` : " />"}`;
+    const inner = [...inc, ...out, ...property, ...dataIn, ...dataOut, ...trigger];
+    const attrs = s.type === "boundaryEvent" ? ` attachedToRef="${s.attachedTo}"${s.interrupting === false ? ' cancelActivity="false"' : ""}` : "";
+    return `    <bpmn:${s.type} id="${s.id}" name="${escapeXml(s.name)}"${attrs}${inner.length ? `>\n${inner.join("\n")}\n    </bpmn:${s.type}>` : " />"}`;
   };
+  const dataXml = data.map((d) =>
+    d.kind === "store" ? `    <bpmn:dataStoreReference id="${d.id}" name="${escapeXml(d.name)}" />` : `    <bpmn:dataObjectReference id="${d.id}" name="${escapeXml(d.name)}" dataObjectRef="${d.id}_object" />\n    <bpmn:dataObject id="${d.id}_object" />`,
+  );
+  const noteXml = notes.flatMap((n) => [`    <bpmn:textAnnotation id="${n.id}">\n      <bpmn:text>${escapeXml(n.text)}</bpmn:text>\n    </bpmn:textAnnotation>`, `    <bpmn:association id="${n.id}_link" sourceRef="${n.on}" targetRef="${n.id}" />`]);
   const laneSet = lanes.length
     ? [
         `    <bpmn:laneSet id="LaneSet_1">`,
@@ -260,6 +365,10 @@ export function buildBpmn(spec: ProcessSpec): string {
         `    </bpmn:laneSet>`,
       ]
     : [];
+  const end = (id: string) => partnerId.get(id) ?? ncname(id);
+  const messages = (spec.messages ?? [])
+    .map((m, i) => ({ ...m, id: `Message_${i + 1}`, from: end(m.from), to: end(m.to) }))
+    .filter((m) => (partnerBox.has(m.from) && ids.has(m.to)) || (ids.has(m.from) && partnerBox.has(m.to)));
   const isGateway = (id: string) => kindOf(steps.find((x) => x.id === id)!.type) === "gateway";
   const edge = (f: (typeof flows)[number]) => {
     const a = pos.get(f.from)!;
@@ -270,8 +379,13 @@ export function buildBpmn(spec: ProcessSpec): string {
     const ty = b.y + b.h / 2;
     const acx = a.x + a.w / 2;
     const bcx = b.x + b.w / 2;
-    const points =
-      tx > sx + 10
+    const below = Math.max(a.y + a.h, b.y + b.h) + 30;
+    const points = isBoundary(f.from)
+      ? // Out of a boundary event: down from it, then across.
+        ty > a.y + a.h
+        ? [[acx, a.y + a.h], [acx, ty], [tx, ty]]
+        : [[acx, a.y + a.h], [acx, below], [bcx, below], [bcx, b.y + b.h]]
+      : tx > sx + 10
         ? sy === ty
           ? [[sx, sy], [tx, ty]]
           : isGateway(f.from)
@@ -282,11 +396,12 @@ export function buildBpmn(spec: ProcessSpec): string {
                 [[sx, sy], [bcx, sy], [bcx, sy < ty ? b.y : b.y + b.h]]
               : [[sx, sy], [Math.round((sx + tx) / 2), sy], [Math.round((sx + tx) / 2), ty], [tx, ty]]
         : // Back to an earlier step: round underneath.
-          [[acx, a.y + a.h], [acx, Math.max(a.y + a.h, b.y + b.h) + 30], [bcx, Math.max(a.y + a.h, b.y + b.h) + 30], [bcx, b.y + b.h]];
-    return [`      <bpmndi:BPMNEdge id="${f.id}_di" bpmnElement="${f.id}">`, ...points.map(([px, py]) => `        <di:waypoint x="${Math.round(px)}" y="${Math.round(py)}" />`), `      </bpmndi:BPMNEdge>`].join("\n");
+          [[acx, a.y + a.h], [acx, below], [bcx, below], [bcx, b.y + b.h]];
+    return line(f.id, points);
   };
-  const bounds = (b: { x: number; y: number; w: number; h: number }) => `<dc:Bounds x="${Math.round(b.x)}" y="${Math.round(b.y)}" width="${Math.round(b.w)}" height="${Math.round(b.h)}" />`;
-  const shape = (id: string, b: { x: number; y: number; w: number; h: number }, extra = "", label?: { x: number; y: number; w: number; h: number }) =>
+  const line = (id: string, points: number[][]) => [`      <bpmndi:BPMNEdge id="${id}_di" bpmnElement="${id}">`, ...points.map(([px, py]) => `        <di:waypoint x="${Math.round(px)}" y="${Math.round(py)}" />`), `      </bpmndi:BPMNEdge>`].join("\n");
+  const bounds = (b: Box) => `<dc:Bounds x="${Math.round(b.x)}" y="${Math.round(b.y)}" width="${Math.round(b.w)}" height="${Math.round(b.h)}" />`;
+  const shape = (id: string, b: Box, extra = "", label?: Box) =>
     `      <bpmndi:BPMNShape id="${id}_di" bpmnElement="${id}"${extra}>\n        ${bounds(b)}${label ? `\n        <bpmndi:BPMNLabel>\n          ${bounds(label)}\n        </bpmndi:BPMNLabel>` : ""}\n      </bpmndi:BPMNShape>`;
   // A decision's name goes above it when a flow leaves from its bottom, so the two do not cross.
   const gatewayLabel = (s: (typeof steps)[number]) => {
@@ -294,26 +409,66 @@ export function buildBpmn(spec: ProcessSpec): string {
     if (!s.name || !flows.some((f) => f.from === s.id && pos.get(f.to)!.y > p.y + p.h && pos.get(f.to)!.x > p.x + p.w)) return undefined;
     return { x: p.x + p.w / 2 - 50, y: p.y - 30, w: 100, h: 27 };
   };
-  const poolX = 160;
-  const poolW = width + POOL_LABEL + LANE_LABEL;
   const diShapes = [
-    ...(lanes.length ? [shape("Participant_1", { x: poolX, y: top, w: poolW, h: y - top }, ' isHorizontal="true"')] : []),
+    ...(pooled ? [shape("Participant_1", { x: poolX, y: top, w: poolW, h: y - top }, ' isHorizontal="true"')] : []),
+    ...partners.map((p) => shape(p.id, partnerBox.get(p.id)!, ' isHorizontal="true"')),
     ...laneBounds.filter((l) => l.name).map((l, i) => shape(`Lane_${i + 1}`, { x: poolX + POOL_LABEL, y: l.y, w: poolW - POOL_LABEL, h: l.h }, ' isHorizontal="true"')),
-    ...steps.map((s) => (kindOf(s.type) === "gateway" ? shape(s.id, pos.get(s.id)!, ' isMarkerVisible="true"', gatewayLabel(s)) : shape(s.id, pos.get(s.id)!))),
+    ...placed.map((s) => (kindOf(s.type) === "gateway" ? shape(s.id, pos.get(s.id)!, ' isMarkerVisible="true"', gatewayLabel(s)) : shape(s.id, pos.get(s.id)!))),
+    // Boundary events after their activities, so they are drawn on top.
+    ...steps.filter((s) => s.type === "boundaryEvent").map((s) => shape(s.id, pos.get(s.id)!)),
+    ...notes.map((n) => shape(n.id, noteBox.get(n.id)!)),
+    ...data.map((d) => shape(d.id, dataBox.get(d.id)!)),
+  ];
+  const otherEdges = [
+    ...notes.map((n) => {
+      const on = pos.get(n.on)!;
+      const box = noteBox.get(n.id)!;
+      return line(`${n.id}_link`, [[on.x + on.w / 2, on.y], [box.x + 20, box.y + box.h]]);
+    }),
+    ...reads.map((r) => {
+      const d = dataBox.get(r.data)!;
+      const s = pos.get(r.step)!;
+      return line(r.id, [[d.x + d.w / 2 - 6, d.y], [s.x + s.w / 2 - 12, s.y + s.h]]);
+    }),
+    ...writes.map((w) => {
+      const d = dataBox.get(w.data)!;
+      const s = pos.get(w.step)!;
+      return line(w.id, [[s.x + s.w / 2 + 12, s.y + s.h], [d.x + d.w / 2 + 6, d.y]]);
+    }),
+    ...messages.map((m, i) => {
+      const fromPartner = partnerBox.get(m.from);
+      const step = pos.get(fromPartner ? m.to : m.from)!;
+      const partner = fromPartner ?? partnerBox.get(m.to)!;
+      // Two messages on one step stand apart.
+      const x = step.x + step.w / 2 + (fromPartner ? -10 : 10) + (messages.slice(0, i).some((o) => o.from === m.from && o.to === m.to) ? 14 : 0);
+      const near = partner.y + partner.h;
+      return line(m.id, fromPartner ? [[x, near], [x, step.y]] : [[x, step.y], [x, near]]);
+    }),
   ];
   return [
     `<?xml version="1.0" encoding="UTF-8"?>`,
     `<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" id="Definitions_1" targetNamespace="http://bpmn.io/schema/bpmn" exporter="ArchONE Diagrams" exporterVersion="1">`,
-    ...(lanes.length ? [`  <bpmn:collaboration id="Collaboration_1">`, `    <bpmn:participant id="Participant_1" name="${escapeXml(spec.name)}" processRef="${process}" />`, `  </bpmn:collaboration>`] : []),
+    ...(pooled
+      ? [
+          `  <bpmn:collaboration id="Collaboration_1">`,
+          `    <bpmn:participant id="Participant_1" name="${escapeXml(spec.name)}" processRef="${process}" />`,
+          ...partners.map((p) => `    <bpmn:participant id="${p.id}" name="${escapeXml(p.name)}" />`),
+          ...messages.map((m) => `    <bpmn:messageFlow id="${m.id}" sourceRef="${m.from}" targetRef="${m.to}"${m.name ? ` name="${escapeXml(m.name)}"` : ""} />`),
+          `  </bpmn:collaboration>`,
+        ]
+      : []),
     `  <bpmn:process id="${process}" name="${escapeXml(spec.name)}" isExecutable="false">`,
     ...laneSet,
     ...steps.map(stepXml),
     ...flows.map(flowXml),
+    ...dataXml,
+    ...noteXml,
     `  </bpmn:process>`,
     `  <bpmndi:BPMNDiagram id="BPMNDiagram_1">`,
-    `    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="${lanes.length ? "Collaboration_1" : process}">`,
+    `    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="${pooled ? "Collaboration_1" : process}">`,
     ...diShapes,
     ...flows.map(edge),
+    ...otherEdges,
     `    </bpmndi:BPMNPlane>`,
     `  </bpmndi:BPMNDiagram>`,
     `</bpmn:definitions>`,

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { buildAskSystemPrompt, buildAskText, buildChatSystemPrompt, buildSystemPrompt, buildUserText } from "./prompt";
 import { normalizeDraft } from "./schema";
-import { normalizeProcessDraft, PROCESS_SYSTEM_PROMPT, processUserText } from "../bpm/draft";
+import { normalizeProcessDraft, PROCESS_SYSTEM_PROMPT, processImageText, processUserText } from "../bpm/draft";
 
 /**
  * Server-side AI drafting, independent of the host. api/ai.ts wraps it for Vercel and
@@ -49,17 +49,19 @@ export const MAX_CHAT_TEXT = 6000;
 
 const chatTurnSchema = z.object({ role: z.enum(["user", "assistant"]), content: z.string().trim().min(1).max(MAX_CHAT_TEXT) });
 
+const imageSchema = z.object({ mime: z.enum(IMAGE_TYPES), data: z.string().min(100).max(MAX_IMAGE_BASE64).regex(/^[A-Za-z0-9+/=]+$/) });
+
 const requestSchema = z.discriminatedUnion("mode", [
   z.object({ mode: z.literal("prompt"), text: z.string().trim().min(3).max(MAX_TEXT) }),
   z.object({
     mode: z.literal("image"),
     text: z.string().max(2000).optional(),
-    image: z.object({ mime: z.enum(IMAGE_TYPES), data: z.string().min(100).max(MAX_IMAGE_BASE64).regex(/^[A-Za-z0-9+/=]+$/) }),
+    image: imageSchema,
   }),
   // A question about the model. The model travels with the question, as text; the server keeps none of it.
   z.object({ mode: z.literal("ask"), question: z.string().trim().min(3).max(MAX_QUESTION), context: z.string().max(MAX_CONTEXT) }),
-  // A business process described in words, drafted as BPMN steps and flows.
-  z.object({ mode: z.literal("process"), text: z.string().trim().min(3).max(MAX_TEXT) }),
+  // A business process described in words, or shown in a picture (a diagram, a flowchart, a whiteboard, a page), drafted as BPMN steps and flows.
+  z.object({ mode: z.literal("process"), text: z.string().trim().max(MAX_TEXT).default(""), image: imageSchema.optional() }),
   // A conversation with the assistant. What the workspace holds travels with every turn, as text; the server keeps none of it.
   z.object({
     mode: z.literal("chat"),
@@ -74,6 +76,12 @@ const requestSchema = z.discriminatedUnion("mode", [
   }),
 ]);
 export type AiRequest = z.infer<typeof requestSchema>;
+
+/** A request the schema lets through that still says nothing to work from. */
+const empty = (r: AiRequest) => r.mode === "process" && !r.image && r.text.length < 3;
+
+/** The picture that goes with a request, if any. */
+const imageOf = (r: AiRequest) => (r.mode === "image" || r.mode === "process" ? r.image : undefined);
 
 export interface Provider {
   id: "anthropic" | "openai" | "groq" | "lovable" | "openai-compatible";
@@ -215,7 +223,7 @@ function messageFor(request: AiRequest): { system: string; turns: Turn[]; maxTok
   const one = (text: string): Turn[] => [{ role: "user", text }];
   if (request.mode === "chat") return { system: buildChatSystemPrompt(request.context, request.page ?? ""), turns: chatTurns(request.messages), maxTokens: 2500 };
   if (request.mode === "ask") return { system: buildAskSystemPrompt(), turns: one(buildAskText(request.question, request.context)), maxTokens: 1500 };
-  if (request.mode === "process") return { system: PROCESS_SYSTEM_PROMPT, turns: one(processUserText(request.text)), maxTokens: 8000 };
+  if (request.mode === "process") return { system: PROCESS_SYSTEM_PROMPT, turns: one(request.image ? processImageText(request.text) : processUserText(request.text)), maxTokens: 8000 };
   return { system: buildSystemPrompt(), turns: one(buildUserText(request.mode, request.text ?? "")), maxTokens: 8000 };
 }
 
@@ -223,8 +231,9 @@ async function callAnthropic(p: Provider, request: AiRequest, fetchImpl: typeof 
   const { system, turns, maxTokens } = messageFor(request);
   const messages = turns.map((turn, i) => {
     const content: unknown[] = [];
-    if (request.mode === "image" && i === turns.length - 1) {
-      content.push({ type: "image", source: { type: "base64", media_type: request.image.mime, data: request.image.data } });
+    const image = imageOf(request);
+    if (image && i === turns.length - 1) {
+      content.push({ type: "image", source: { type: "base64", media_type: image.mime, data: image.data } });
     }
     content.push({ type: "text", text: turn.text });
     return { role: turn.role, content };
@@ -239,13 +248,14 @@ async function callAnthropic(p: Provider, request: AiRequest, fetchImpl: typeof 
 async function callOpenAiStyle(p: Provider, request: AiRequest, fetchImpl: typeof fetch): Promise<Response> {
   const { system, turns, maxTokens } = messageFor(request);
   // Plain text for text requests: some OpenAI-style hosts accept a list of parts only for vision models.
+  const image = imageOf(request);
   const messages = turns.map((turn, i) => ({
     role: turn.role,
     content:
-      request.mode === "image" && i === turns.length - 1
+      image && i === turns.length - 1
         ? [
             { type: "text", text: turn.text },
-            { type: "image_url", image_url: { url: `data:${request.image.mime};base64,${request.image.data}` } },
+            { type: "image_url", image_url: { url: `data:${image.mime};base64,${image.data}` } },
           ]
         : turn.text,
   }));
@@ -262,7 +272,7 @@ async function callOpenAiStyle(p: Provider, request: AiRequest, fetchImpl: typeo
 }
 
 /** The model for this request: the vision model for a picture, when one is set. */
-const modelFor = (p: Provider, request: AiRequest) => (request.mode === "image" && p.visionModel ? p.visionModel : p.model);
+const modelFor = (p: Provider, request: AiRequest) => (imageOf(request) && p.visionModel ? p.visionModel : p.model);
 
 function answerText(provider: Provider, payload: unknown): string {
   const data = payload as Record<string, any>;
@@ -299,10 +309,11 @@ const badRequest = (body: unknown): AiResult => {
 /** Checks a request before anything is counted or sent: its kind, or the answer that refuses it. */
 export function checkAiRequest(body: unknown): { ok: true; kind: AiKind } | { ok: false; result: AiResult } {
   const parsed = requestSchema.safeParse(body);
-  if (!parsed.success) return { ok: false, result: badRequest(body) };
-  // A chat with the assistant is asking questions, and counts as such against the workspace's limits.
+  if (!parsed.success || empty(parsed.data)) return { ok: false, result: badRequest(body) };
+  // A chat with the assistant is asking questions, and counts as such; a process read from a picture counts as a picture.
   const mode = parsed.data.mode;
-  return { ok: true, kind: mode === "prompt" || mode === "process" ? "text" : mode === "chat" ? "ask" : mode };
+  if (mode === "process") return { ok: true, kind: parsed.data.image ? "image" : "text" };
+  return { ok: true, kind: mode === "prompt" ? "text" : mode === "chat" ? "ask" : mode };
 }
 
 /**
@@ -324,7 +335,7 @@ function usedTokens(provider: Provider, payload: unknown): number {
 
 export async function handleAiRequest(body: unknown, env: AiEnv, fetchImpl: typeof fetch = fetch, own?: Provider): Promise<AiResult> {
   const parsed = requestSchema.safeParse(body);
-  if (!parsed.success) return badRequest(body);
+  if (!parsed.success || empty(parsed.data)) return badRequest(body);
   const provider = own ?? resolveProvider(env);
   if (!provider) {
     return { status: 501, body: { error: "not_configured", message: "No AI provider is configured on the server." } };

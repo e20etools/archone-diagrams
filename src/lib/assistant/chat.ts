@@ -117,6 +117,7 @@ const PAGE_NAMES: [RegExp, string][] = [
   [/^\/ai/, "the drafts made by AI"],
   [/^\/process-mining/, "process mining"],
   [/^\/processes/, "the process landscape"],
+  [/^\/bpmn-library/, "the BPMN library, with the elements of BPMN and the workspace's own building blocks"],
   [/^\/impact/, "the impact page"],
   [/^\/analysis/, "the dependencies page"],
   [/^\/health/, "the health of the model"],

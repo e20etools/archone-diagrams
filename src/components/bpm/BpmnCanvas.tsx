@@ -22,7 +22,23 @@ export interface SelectedElement {
   laneName?: string;
 }
 
+/** A shape to put on the canvas: its BPMN type and settings (see the BPMN library). */
+export interface ShapeToPlace {
+  type: string;
+  eventDefinition?: string;
+  isExpanded?: boolean;
+  triggeredByEvent?: boolean;
+  cancelActivity?: boolean;
+  participant?: boolean;
+  name?: string;
+}
+
 export interface BpmnCanvasApi {
+  /**
+   * Picks up a shape to place: it follows the pointer onto the canvas and is put down with a click
+   * (a boundary event, on the edge of an activity). Says when it was placed, with its id.
+   */
+  place: (event: MouseEvent, shape: ShapeToPlace, onPlaced?: (id: string) => void) => boolean;
   rename: (id: string, name: string) => void;
   select: (id: string) => void;
   fit: () => void;
@@ -213,6 +229,28 @@ export default function BpmnCanvas({ xml, editable, onChange, onSelect, onError,
   useImperativeHandle(
     apiRef,
     () => ({
+      place: (event, wanted, onPlaced) => {
+        const d = diagram.current;
+        if (!d || !editable) return false;
+        const factory = d.get("elementFactory");
+        const attrs: Record<string, unknown> = { type: wanted.type };
+        if (wanted.eventDefinition) attrs.eventDefinitionType = wanted.eventDefinition;
+        if (wanted.isExpanded !== undefined) attrs.isExpanded = wanted.isExpanded;
+        if (wanted.triggeredByEvent) attrs.triggeredByEvent = true;
+        if (wanted.cancelActivity === false) attrs.cancelActivity = false;
+        const shape = wanted.participant ? factory.createParticipantShape() : factory.createShape(attrs);
+        if (wanted.name) shape.businessObject.name = wanted.name;
+        if (onPlaced) {
+          const placed = (e: { context: { shape: Diagram } }) => {
+            if (e.context.shape !== shape) return;
+            d.off("commandStack.shape.create.postExecuted", placed);
+            onPlaced(shape.businessObject.id);
+          };
+          d.on("commandStack.shape.create.postExecuted", placed);
+        }
+        d.get("create").start(event, shape);
+        return true;
+      },
       rename: (id, name) => {
         const d = diagram.current;
         const el = d?.get("elementRegistry").get(id);

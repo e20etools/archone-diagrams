@@ -158,6 +158,15 @@ describe("the file library", () => {
     expect((await as("olivia", (q) => q("select id from public.library_items where workspace_id = $1 order by id", [scenario]))).map((r) => r.id)).toEqual([own.id, hidden.id]);
   });
 
+  it("keeps the BPMN library's own building blocks beside the components, with a name, in the audit log", async () => {
+    const at = "2026-11-18T10:00:00.000Z";
+    const block = { id: "bpmn.approve-in-erp", type: "bpmn", bpmn: { name: "Approve in the ERP", element: "user-task", description: "", role: "Finance", info: { objectIds: [], duration: { min: 2, mode: 5, max: 15 } } }, createdAt: at, updatedAt: at };
+    expect(await attempt("ivan", "insert into public.library_items (workspace_id, id, data) values ($1, $2, $3) returning id", [ws, block.id, block])).toBe("allowed");
+    await expect(as("ivan", (q) => q("insert into public.library_items (workspace_id, id, data) values ($1, 'bpmn.x', $2)", [ws, { ...block, id: "bpmn.x", bpmn: { ...block.bpmn, name: "" } }]))).rejects.toThrow(/check constraint/);
+    const log = (await db.query<{ entity: string; entity_name: string; action: string }>("select entity, entity_name, action from public.audit_log where workspace_id = $1 and entity = 'BPMN building block'", [ws])).rows;
+    expect(log).toEqual([{ entity: "BPMN building block", entity_name: "Approve in the ERP", action: "added or changed" }]);
+  });
+
   it("keeps the workspace's branding: owners set it, every member reads it", async () => {
     const brand = { id: "workspace", appName: "Bank EA", logo: "", accent: "#0f766e", theme: "oasis", font: "", updatedAt: "2026-11-17" };
     expect(await attempt("ivan", "insert into public.workspace_branding (workspace_id, id, data) values ($1, 'workspace', $2) returning id", [ws, brand])).toBe("denied");

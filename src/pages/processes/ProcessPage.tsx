@@ -2,12 +2,13 @@ import { ArrowLeft, Download, Plus, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import type { BpmnCanvasApi } from "@/components/bpm/BpmnCanvas";
+import { ProcessDiagramsTab } from "@/components/bpm/ProcessLinks";
 import { Badge, Button, CommitInput, EmptyState, Field, IconButton, Input, Select, Tabs, cx, formatDate, formatDateTime, useNotice } from "@/components/ui";
 import { useCanEdit } from "@/lib/cloud/session";
 import { downloadText } from "@/lib/exporters";
 import { allOwners, newId } from "@/lib/model";
 import { blankBpmn, laneName } from "@/lib/bpm/bpmn";
-import { CATEGORY_LABEL, LEVEL_LABEL, backToDraft, childProcesses, compareModels, deleteProcess, graphOf, pathOf, publishProcess, raciMatrix, restoreVersion, sendForReview, syncProcessLinks, updateProcess, type ProcessPatch } from "@/lib/bpm/processes";
+import { CATEGORY_LABEL, LEVEL_LABEL, linksOf, backToDraft, childProcesses, compareModels, deleteProcess, graphOf, pathOf, publishProcess, raciMatrix, restoreVersion, sendForReview, syncProcessLinks, updateProcess, type ProcessPatch } from "@/lib/bpm/processes";
 import type { SimResult } from "@/lib/bpm/simulate";
 import { checkProcess } from "@/lib/bpm/validate";
 import { apply, useStore, useWorkspace } from "@/lib/store";
@@ -19,7 +20,7 @@ import { SimulationTab } from "./SimulationTab";
 import type { LoadedLog } from "./miningParts";
 import { NewProcessDialog, ObjectPicker, StatusBadge, parentOptions, pathLabel, useAuthor } from "./shared";
 
-type Tab = "model" | "details" | "raci" | "systems" | "simulation" | "decisions" | "mining" | "checks" | "versions";
+type Tab = "model" | "details" | "raci" | "systems" | "simulation" | "decisions" | "mining" | "checks" | "versions" | "diagrams";
 
 export default function ProcessPage() {
   const { id = "" } = useParams();
@@ -86,8 +87,12 @@ function ProcessView({ ws, process }: { ws: Workspace; process: ProcessModel }) 
         { id: "mining", label: "Mining" },
         { id: "checks", label: "Checks", count: findings.length },
         { id: "versions", label: "Versions", count: process.versions.length || undefined },
+        { id: "diagrams", label: "Diagrams", count: linksOf(process).filter((id) => ws.diagrams[id]).length || undefined },
       ]
-    : [{ id: "details", label: "Details" }];
+    : [
+        { id: "details", label: "Details" },
+        { id: "diagrams", label: "Diagrams", count: linksOf(process).filter((id) => ws.diagrams[id]).length || undefined },
+      ];
   const current = tabs.some((t) => t.id === tab) ? tab : tabs[0].id;
   const path = pathOf(ws, process.id).slice(0, -1);
 
@@ -241,6 +246,7 @@ function ProcessView({ ws, process }: { ws: Workspace; process: ProcessModel }) 
           />
         )}
         {current === "versions" && <Versions process={process} canEdit={canEdit} />}
+        {current === "diagrams" && <ProcessDiagramsTab ws={ws} process={process} canEdit={canEdit} />}
       </div>
       {adding && <NewProcessDialog parentId={process.id} onClose={() => setAdding(false)} />}
       {notice}

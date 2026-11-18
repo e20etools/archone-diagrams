@@ -2,6 +2,8 @@ import { APPROVAL_ROLES, EVENT_LABEL, ROLE_LABEL, STATUS_LABEL, type ApprovalQue
 import { LIFECYCLE_INFO, RELATION_KIND_INFO, VIEW_TYPE_INFO, objectType } from "../catalog";
 import { PACKS, RULES, runChecks, type Finding, type PackId } from "../checks/checks";
 import type { Comment, Person, Review } from "../cloud/collab";
+import { activitiesInOrder } from "../bpm/bpmn";
+import { graphOf, linksOf } from "../bpm/processes";
 import { flowsOf, stepLine } from "../flows";
 import { componentById, componentLabel } from "../library";
 import { mentionedObjects } from "../ask/ask";
@@ -255,7 +257,19 @@ function diagramDetail(facts: AssistantFacts, d: Diagram, people: Map<string, st
   if (comments.length) lines.push("- Comments:", ...comments.map((c) => `  ${c}`));
   const decisions = Object.values(ws.adrs ?? {}).filter((a) => a.objectIds.some((id) => shownSet.has(id)));
   if (decisions.length) lines.push(`- Decisions about what it shows: ${decisions.map((a) => `ADR-${a.number} ${quoted(a.title, 120)} (${a.status})`).join("; ")}`);
+  const processes = Object.values(ws.processes ?? {}).filter((p) => linksOf(p).includes(d.id));
+  lines.push(processes.length ? `- Business processes (BPMN) linked to it: ${processes.map((p) => `${quoted(p.name, 120)} (${p.status})`).join("; ")}` : "- No business process is linked to it.");
   return lines.filter(Boolean);
+}
+
+/** The steps of a process in order, with their lanes, briefly. */
+function stepsOf(p: NonNullable<Workspace["processes"]>[string]): string {
+  const graph = graphOf(p);
+  if (!graph) return "";
+  const steps = activitiesInOrder(graph);
+  const lane = (id: string) => graph.lanes.find((l) => l.id === graph.nodes[id]?.laneId)?.name ?? "";
+  const shown = steps.slice(0, 30).map((n) => `${oneLine(n.name || n.type, 60)}${lane(n.id) ? ` (${oneLine(lane(n.id), 40)})` : ""}`);
+  return `${steps.length} steps: ${shown.join(" > ")}${steps.length > 30 ? ` and ${steps.length - 30} more` : ""}`;
 }
 
 function objectDetail(facts: AssistantFacts, o: ModelObject, people: Map<string, string>, everywhere: Finding[]): string[] {
@@ -314,6 +328,7 @@ function sections(facts: AssistantFacts, focus: AssistantContext["focus"]): { he
       stampOf(d, facts.records?.[d.id]),
       standingOf(d, facts.records?.[d.id], facts.queue),
       (d.flows?.length ?? 0) > 0 && `${d.flows!.length} flows`,
+      processes.some((p) => linksOf(p).includes(d.id)) && `processes: ${processes.filter((p) => linksOf(p).includes(d.id)).map((p) => oneLine(p.name, 60)).join(", ")}`,
       d.archive?.archived && "archived",
       d.description.trim() && `description: ${oneLine(d.description, 160)}`,
     ),
@@ -392,6 +407,8 @@ function sections(facts: AssistantFacts, focus: AssistantContext["focus"]): { he
           p.objectId && ws.objects[p.objectId] && `stands as ${objectTag(p.objectId)}`,
           p.risks.length > 0 && `risks: ${p.risks.map((r) => `${oneLine(r.name, 80)} (${r.severity}${r.control.trim() ? `, control: ${oneLine(r.control, 120)}` : ""})`).join("; ")}`,
           p.kpis.length > 0 && `KPIs: ${p.kpis.map((k) => `${oneLine(k.name, 60)} target ${k.target || "-"}${k.unit ? ` ${k.unit}` : ""}, actual ${k.actual || "-"}`).join("; ")}`,
+          linksOf(p).some((id) => ws.diagrams[id]) && `linked to diagrams: ${linksOf(p).filter((id) => ws.diagrams[id]).map(diagramTag).join(", ")}`,
+          stepsOf(p),
           p.description.trim() && `description: ${oneLine(p.description, 240)}`,
         ),
       ),

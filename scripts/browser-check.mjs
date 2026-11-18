@@ -2285,7 +2285,7 @@ try {
   // Describing a process in words, with no AI model: the built-in rules draft it.
   await page.goto(`${base}/processes`, { waitUntil: "networkidle0" });
   await page.click("[data-process-new]");
-  await clickText(page, "Describe it", '[role="tab"]');
+  await clickText(page, "Describe or speak it", '[role="tab"]');
   await page.type("[data-process-description]", "Customer service: register the complaint\nIf it can be answered at once, answer the customer; otherwise investigate it (Specialist team)\nClose the complaint");
   await page.type("[data-process-name]", "Handle a complaint");
   await page.click("[data-process-create]");
@@ -2293,6 +2293,140 @@ try {
   const described = await processNamed("Handle a complaint");
   check("a described process is drafted by the built-in rules into lanes, steps and a decision", described.xml.includes('name="Investigate it"') && described.xml.includes('name="It can be answered at once?"') && described.xml.includes('name="Specialist team"') && (await hasText(page, "Drafted with the built-in rules")));
   await shot(page, "45-process-drafted");
+
+  // The BPMN library: every element with its symbol and meaning, in English and Arabic, apart from the diagram components.
+  await page.goto(`${base}/bpmn-library`, { waitUntil: "networkidle0" });
+  await page.waitForSelector('[data-bpmn-entry="event-based-gateway"]');
+  const symbol = await page.$eval('[data-bpmn-entry="exclusive-gateway"] [data-bpmn-symbol]', (e) => ({ font: getComputedStyle(e, "::before").fontFamily, content: getComputedStyle(e, "::before").content }));
+  check(
+    "the BPMN library shows each element with its BPMN symbol and what it means, in English and Arabic",
+    (await count(page, "[data-bpmn-entry]")) >= 50 && /bpmn/i.test(symbol.font) && symbol.content !== "none" && (await hasText(page, "بوابة حصرية")) && (await hasText(page, "exactly one way out is taken")),
+    JSON.stringify(symbol),
+  );
+  await page.type("[data-bpmn-library-search]", "مؤقت");
+  await sleep(200);
+  const timers = await page.$$eval("[data-bpmn-entry]", (els) => els.map((e) => e.dataset.bpmnEntry));
+  check("searching in Arabic finds the timer events", timers.includes("intermediate-catch-timer") && timers.length < 8, timers.join());
+  await shot(page, "46-bpmn-library");
+  await page.click("[data-training-add]");
+  await page.waitForSelector('[data-training-example="loan-data"] a');
+  const trainingProcesses = (await processes()).filter((p) => p.tags.includes("bpmn-training"));
+  check("the ten training examples are added under one area, each with what to notice in English and Arabic", trainingProcesses.length === 11 && trainingProcesses.filter((p) => p.level === 2).every((p) => p.description.includes("ما الذي تلاحظه")), String(trainingProcesses.length));
+
+  // Training examples open in the modeler: boundary events, other parties and messages, data and notes.
+  const openExample = async (id, shape) => {
+    await page.goto(`${base}/processes/${trainingProcesses.find((p) => p.tags.includes(id)).id}`, { waitUntil: "networkidle0" });
+    await page.waitForSelector(`[data-bpmn-canvas="edit"] g[data-element-id="${shape}"]`, { timeout: 20000 });
+  };
+  await openExample("purchase-deadlines", "daily");
+  const deadlines = await page.evaluate(() => ({ attached: !!document.querySelector('g[data-element-id="daily"]') && !!document.querySelector('g[data-element-id="expire"]'), errors: document.querySelectorAll('[data-model-canvas] ~ [role="alert"]').length }));
+  await openExample("supplier-messages", "Partner_supplier");
+  const ids = () => page.$$eval("g[data-element-id]", (els) => els.map((e) => e.dataset.elementId));
+  const pools = await page.evaluate(() => ({ partner: !!document.querySelector('g[data-element-id="Partner_supplier"]') }));
+  pools.messages = (await ids()).filter((id) => /^Message_\d+$/.test(id)).length;
+  await openExample("loan-data", "bureau");
+  const loanModel = await page.evaluate(() => ({ store: !!document.querySelector('g[data-element-id="bureau"]'), form: !!document.querySelector('g[data-element-id="form"]'), reads: document.querySelectorAll('g[data-element-id="bureau_in_1"]').length }));
+  loanModel.notes = (await ids()).filter((id) => /^note_[a-z]+$/.test(id)).length;
+  check("training examples open in the modeler with boundary events, another party's pool and its messages, data stores, data objects and notes", deadlines.attached && deadlines.errors === 0 && pools.partner && pools.messages === 5 && loanModel.store && loanModel.form && loanModel.notes === 2 && loanModel.reads === 1, JSON.stringify({ deadlines, pools, loanModel }));
+  await shot(page, "47-training-loan");
+
+  // A step saved as a building block, and placed again from the library beside the canvas; an element placed from the library.
+  await clickShape("capture");
+  await page.waitForSelector('[data-step="capture"] [data-step-about="user-task"]');
+  await page.click("[data-step-save-block]");
+  await sleep(300);
+  const block = Object.values((await stored()).library ?? {}).find((i) => i.type === "bpmn");
+  check("a step is saved to the BPMN library with its kind, role and time, and the step panel says what the element means", block?.bpmn.name === "Capture the application" && block.bpmn.element === "user-task" && block.bpmn.role === "Branch" && block.bpmn.info.duration?.mode === 20 && (await hasText(page, "مهمة مستخدم")), JSON.stringify(block?.bpmn));
+  const loanId = trainingProcesses.find((p) => p.tags.includes("loan-data")).id;
+  const lane = await (await page.$('g.djs-shape[data-element-id="Lane_1"]')).boundingBox();
+  const dropAt = { x: lane.x + lane.width - 70, y: lane.y + lane.height / 2 };
+  await clickText(page, "BPMN library", '[data-step-panel] [role="tab"]');
+  await page.waitForSelector(`[data-bpmn-block="${block.id}"]`);
+  await page.click(`[data-bpmn-block="${block.id}"]`);
+  await page.mouse.move(dropAt.x - 40, dropAt.y, { steps: 4 });
+  await page.mouse.move(dropAt.x, dropAt.y, { steps: 6 });
+  await page.mouse.down();
+  await page.mouse.up();
+  await sleep(1300);
+  const withBlock = (await stored()).processes[loanId];
+  const copies = (withBlock.xml.match(/name="Capture the application"/g) ?? []).length;
+  const placedInfo = Object.entries(withBlock.elements).find(([id, e]) => id !== "capture" && e.duration?.mode === 20 && e.resource === "Branch");
+  check("a building block placed from the library beside the canvas brings its name, role and time into the model", copies === 2 && !!placedInfo, `${copies} copies; ${JSON.stringify(placedInfo)}`);
+  await page.type('[data-bpmn-library-panel] input[aria-label="Find a BPMN element"]', "timer: wait");
+  await page.waitForSelector('[data-bpmn-element="intermediate-catch-timer"]');
+  const timersBefore = (withBlock.xml.match(/<bpmn:intermediateCatchEvent /g) ?? []).length;
+  const lane2 = await (await page.$('g.djs-shape[data-element-id="Lane_2"]')).boundingBox();
+  const timerAt = { x: lane2.x + lane2.width - 50, y: lane2.y + lane2.height / 2 };
+  await page.click('[data-bpmn-element="intermediate-catch-timer"]');
+  await page.mouse.move(timerAt.x - 40, timerAt.y, { steps: 4 });
+  await page.mouse.move(timerAt.x, timerAt.y, { steps: 6 });
+  await page.mouse.down();
+  await page.mouse.up();
+  await sleep(1300);
+  const withTimer = (await stored()).processes[loanId].xml;
+  check("an element picked in the BPMN library is placed on the canvas with a click", (withTimer.match(/<bpmn:intermediateCatchEvent /g) ?? []).length === timersBefore + 1 && withTimer.includes("timerEventDefinition"));
+
+  // Any diagram linked to any process, from either side.
+  const shownDiagrams = Object.values((await stored()).diagrams).filter((d) => Object.keys(d.nodes).length > 2).sort((a, b) => a.name.localeCompare(b.name));
+  const linkedDiagram = shownDiagrams[0];
+  await page.goto(`${base}/diagram/${linkedDiagram.id}`, { waitUntil: "networkidle0" });
+  await page.waitForSelector(".object-node");
+  await page.click("[data-processes-button]");
+  await page.waitForSelector("[data-diagram-processes] [data-link-process-choice]");
+  await page.select("[data-link-process-choice]", loanId);
+  await page.click("[data-link-process]");
+  const orderToCash = (await processNamed("Order to cash")).id;
+  await page.select("[data-link-process-choice]", orderToCash);
+  await page.click("[data-link-process]");
+  await sleep(300);
+  check("a diagram is linked to two processes from its Processes panel", (await count(page, "[data-linked-process]")) === 2 && (await stored()).processes[loanId].diagramIds.includes(linkedDiagram.id) && (await stored()).processes[orderToCash].diagramIds.includes(linkedDiagram.id));
+  await page.goto(`${base}/processes/${loanId}`, { waitUntil: "networkidle0" });
+  await clickText(page, "Diagrams1", '[role="tab"]');
+  await page.waitForSelector(`[data-linked-diagram="${linkedDiagram.id}"]`);
+  const otherDiagram = shownDiagrams[1];
+  await page.select("[data-link-diagram-choice]", otherDiagram.id);
+  await page.click("[data-link-diagram]");
+  await sleep(300);
+  check("a process is linked to several diagrams from its Diagrams tab", (await count(page, "[data-linked-diagram]")) === 2 && (await stored()).processes[loanId].diagramIds.length === 2);
+  await page.click(`[data-linked-diagram="${linkedDiagram.id}"] button`);
+  await sleep(300);
+  check("a link is taken away from either side", !(await stored()).processes[loanId].diagramIds.includes(linkedDiagram.id) && (await stored()).processes[orderToCash].diagramIds.includes(linkedDiagram.id));
+
+  // A process from a draw.io flowchart and from a Word document, with no AI model.
+  const flowchart = `<mxfile><diagram name="Orders"><mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/>
+    <mxCell id="lane" value="Sales" style="swimlane;" vertex="1" parent="1"><mxGeometry x="0" y="0" width="800" height="200" as="geometry"/></mxCell>
+    <mxCell id="a" value="Check the order" style="rounded=1;" vertex="1" parent="lane"><mxGeometry x="40" y="60" width="120" height="60" as="geometry"/></mxCell>
+    <mxCell id="b" value="In stock?" style="rhombus;" vertex="1" parent="lane"><mxGeometry x="220" y="50" width="80" height="80" as="geometry"/></mxCell>
+    <mxCell id="c" value="Ship the order" style="rounded=1;" vertex="1" parent="lane"><mxGeometry x="360" y="60" width="120" height="60" as="geometry"/></mxCell>
+    <mxCell id="d" value="Order a refill" style="rounded=1;" vertex="1" parent="lane"><mxGeometry x="360" y="140" width="120" height="50" as="geometry"/></mxCell>
+    <mxCell id="e1" edge="1" source="a" target="b" parent="1"><mxGeometry relative="1" as="geometry"/></mxCell>
+    <mxCell id="e2" value="Yes" edge="1" source="b" target="c" parent="1"><mxGeometry relative="1" as="geometry"/></mxCell>
+    <mxCell id="e3" value="No" edge="1" source="b" target="d" parent="1"><mxGeometry relative="1" as="geometry"/></mxCell>
+  </root></mxGraphModel></diagram></mxfile>`;
+  await writeFile(join(downloads, "orders.drawio"), flowchart);
+  await page.goto(`${base}/processes`, { waitUntil: "networkidle0" });
+  await page.click("[data-process-new]");
+  await clickText(page, "From a file or picture", '[role="tab"]');
+  await (await page.waitForSelector("[data-process-file]")).uploadFile(join(downloads, "orders.drawio"));
+  await page.waitForSelector('[data-process-file-read="diagram"]');
+  const readSays = await page.$eval('[data-process-file-read="diagram"]', (e) => e.innerText);
+  await page.click("[data-process-create]");
+  await page.waitForSelector("[data-process-drafted]");
+  const fromChart = (await processes()).find((p) => p.name === "orders");
+  check("a draw.io flowchart becomes a process: its lane, its steps, the diamond as a decision, and a start and ends added", readSays.includes("4 shapes") && !!fromChart && fromChart.xml.includes('name="In stock?"') && fromChart.xml.includes("<bpmn:exclusiveGateway") && fromChart.xml.includes('name="Sales"') && fromChart.xml.includes("<bpmn:startEvent"), readSays);
+  const docZip = new JSZip();
+  docZip.file("word/document.xml", '<w:document xmlns:w="w"><w:body><w:p><w:r><w:t>Reception: register the visitor</w:t></w:r></w:p><w:p><w:r><w:t>Security: print the badge</w:t></w:r></w:p><w:p><w:r><w:t>Reception: hand over the badge</w:t></w:r></w:p></w:body></w:document>');
+  await writeFile(join(downloads, "visitors.docx"), await docZip.generateAsync({ type: "nodebuffer" }));
+  await page.goto(`${base}/processes`, { waitUntil: "networkidle0" });
+  await page.click("[data-process-new]");
+  await clickText(page, "From a file or picture", '[role="tab"]');
+  await (await page.waitForSelector("[data-process-file]")).uploadFile(join(downloads, "visitors.docx"));
+  await page.waitForSelector('[data-process-file-read="words"]');
+  await page.type("[data-process-name]", "Visitors");
+  await page.click("[data-process-create]");
+  await page.waitForSelector("[data-process-drafted]");
+  const visitors = await processNamed("Visitors");
+  check("a Word document's steps are drafted into a process with its lanes, without an AI model", !!visitors && visitors.xml.includes('name="Print the badge"') && visitors.xml.includes('name="Security"'), visitors?.xml.slice(0, 80));
   await page.close();
 
   /* ---------- pass 2: an AI provider is configured ---------- */
@@ -2411,7 +2545,7 @@ try {
   // A process described in words goes to the AI model, which answers with BPMN steps.
   await page2.goto(`${base2}/processes`, { waitUntil: "networkidle0" });
   await page2.click("[data-process-new]");
-  await clickText(page2, "Describe it", '[role="tab"]');
+  await clickText(page2, "Describe or speak it", '[role="tab"]');
   await page2.type("[data-process-description]", "A patient checks in at reception and then sees the doctor.");
   await page2.click("[data-process-create]");
   await page2.waitForSelector("[data-process-drafted]");
@@ -2421,6 +2555,23 @@ try {
     "with an AI model, a described process is drafted by it, with its times",
     !!aiProcess && aiProcess.xml.includes('name="Examine the patient"') && aiProcess.elements.b?.duration?.mode === 20 && (await hasText(page2, "Drafted by openai-compatible:stand-in-model")) && String(seen.at(-1).body.messages[0].content).startsWith("You turn a description of a business process"),
     JSON.stringify({ found: !!aiProcess, xml: aiProcess?.xml.includes("Examine the patient"), b: aiProcess?.elements, said: await page2.$eval("[data-process-drafted]", (e) => e.innerText), sys: String(seen.at(-1)?.body.messages?.[0]?.content).slice(0, 40) }),
+  );
+
+  // A picture of a process goes to the AI model with a note, and comes back as a process to edit.
+  await page2.goto(`${base2}/processes`, { waitUntil: "networkidle0" });
+  await page2.click("[data-process-new]");
+  await clickText(page2, "From a file or picture", '[role="tab"]');
+  await (await page2.waitForSelector("[data-process-file]")).uploadFile(join(downloads, "whiteboard.png"));
+  await page2.waitForSelector('[data-process-file-read="image"] img');
+  await page2.type("[data-process-note]", "Two lanes: reception and doctor");
+  await page2.type("[data-process-name]", "Clinic from a picture");
+  await page2.click("[data-process-create]");
+  await page2.waitForSelector("[data-process-drafted]");
+  const sentPicture = seen.at(-1).body.messages[1].content;
+  check(
+    "a picture of a process is read by the AI model, with the note that came with it, and becomes a process to edit",
+    Array.isArray(sentPicture) && sentPicture[1]?.image_url?.url.startsWith("data:image/png;base64,") && sentPicture[0].text.includes("Two lanes: reception and doctor") && (await hasText(page2, "Read from whiteboard.png by openai-compatible:stand-in-model")) && !!(await page2.$('[data-bpmn-canvas="edit"]')),
+    JSON.stringify(Array.isArray(sentPicture) ? sentPicture[0].text.slice(0, 60) : sentPicture).slice(0, 120),
   );
 
   // Ask the architecture with an AI model: only with the person's say-so, and only for what the rules cannot answer.
@@ -2504,6 +2655,7 @@ try {
   check("no errors in the browser console", errors.length === 0, errors.slice(0, 3).join(" | "));
 } catch (error) {
   check("the run finished", false, error.message);
+  if (errors.length) console.log(errors.slice(0, 5).join("\n"));
   const pages = await browser.pages();
   await pages.at(-1)?.screenshot({ path: join(shots, "failure.png") }).catch(() => {});
 } finally {

@@ -38,6 +38,7 @@ import { VersionPage, VersionsPage } from "@/pages/VersionsPages";
 const ProcessesPage = lazy(() => import("@/pages/processes/ProcessesPage"));
 const ProcessPage = lazy(() => import("@/pages/processes/ProcessPage"));
 const MiningPage = lazy(() => import("@/pages/processes/MiningPage"));
+const BpmnLibraryPage = lazy(() => import("@/pages/processes/BpmnLibraryPage"));
 const later = (page: ReactNode) => <Suspense fallback={<p className="px-6 py-7 text-ink-soft">Loading…</p>}>{page}</Suspense>;
 
 function NotFound() {
@@ -75,6 +76,7 @@ export default function App() {
         <Route path="/processes" element={later(<ProcessesPage />)} />
         <Route path="/processes/:id" element={later(<ProcessPage />)} />
         <Route path="/process-mining" element={later(<MiningPage />)} />
+        <Route path="/bpmn-library" element={later(<BpmnLibraryPage />)} />
         <Route path="/ai" element={<AiInboxPage />} />
         <Route path="/ai/:id" element={<ProposalReviewPage />} />
         {cloudEnabled && (
