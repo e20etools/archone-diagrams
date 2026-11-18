@@ -14,6 +14,7 @@ import { normalizeProcessDraft, PROCESS_SYSTEM_PROMPT, processUserText } from ".
  *   AI_MODEL         the model id                         (required except for anthropic and groq)
  *   AI_VISION_MODEL  a model for drafting from pictures, when the main one takes no images
  *   AI_BASE_URL      base URL for openai-compatible providers
+ *   AI_REASONING_EFFORT  openai only: low | medium | high | xhigh (the model's own default when unset)
  */
 
 export interface AiEnv {
@@ -22,6 +23,7 @@ export interface AiEnv {
   AI_MODEL?: string;
   AI_BASE_URL?: string;
   AI_VISION_MODEL?: string;
+  AI_REASONING_EFFORT?: string;
   ANTHROPIC_API_KEY?: string;
   OPENAI_API_KEY?: string;
   GROQ_API_KEY?: string;
@@ -69,6 +71,8 @@ export interface Provider {
   headers?: Record<string, string>;
   /** Where the person fixes a key the provider refuses. */
   keyHint?: string;
+  /** OpenAI's thinking models: how long to think before answering. */
+  reasoningEffort?: string;
 }
 
 /**
@@ -104,7 +108,16 @@ export function resolveProvider(env: AiEnv): Provider | null {
       }
       case "openai": {
         const key = env.OPENAI_API_KEY || env.AI_API_KEY;
-        return key && env.AI_MODEL ? { id, key, model: env.AI_MODEL, visionModel: env.AI_VISION_MODEL, baseUrl: env.AI_BASE_URL || "https://api.openai.com/v1" } : null;
+        return key && env.AI_MODEL
+          ? {
+              id,
+              key,
+              model: env.AI_MODEL,
+              visionModel: env.AI_VISION_MODEL,
+              baseUrl: env.AI_BASE_URL || "https://api.openai.com/v1",
+              ...(/^(none|minimal|low|medium|high|xhigh|max)$/.test(env.AI_REASONING_EFFORT?.trim() ?? "") ? { reasoningEffort: env.AI_REASONING_EFFORT!.trim() } : {}),
+            }
+          : null;
       }
       case "groq": {
         const key = env.GROQ_API_KEY || env.AI_API_KEY;
@@ -201,6 +214,7 @@ async function callOpenAiStyle(p: Provider, request: AiRequest, fetchImpl: typeo
         { role: "user", content },
       ],
       ...(p.maxTokens ? { max_tokens: Math.min(p.maxTokens, maxTokens) } : {}),
+      ...(p.reasoningEffort ? { reasoning_effort: p.reasoningEffort } : {}),
     }),
   });
 }

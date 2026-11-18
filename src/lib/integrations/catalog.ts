@@ -35,8 +35,9 @@ export const INTEGRATION_GROUPS: IntegrationGroup[] = ["AI", "Cloud providers", 
 export type IntegrationUse = "ai" | "discover" | "apm" | "repository" | "directory" | "notify" | "issues" | "publish";
 
 /**
- * AI providers with a free plan that speak the OpenAI chat format. The suggested models are a
- * starting point: "Load models" in Settings lists what the key can use, and free models change.
+ * AI providers that speak the OpenAI chat format: OpenAI itself (paid), and providers with a free
+ * plan. The suggested models are a starting point: "Load models" in Settings lists what the key
+ * can use, newest first for OpenAI, and models change.
  */
 export interface AiProviderDef {
   id: string;
@@ -44,10 +45,42 @@ export interface AiProviderDef {
   baseUrl: string;
   model: string;
   visionModel?: string;
+  /** What it costs, in a sentence: its free plan, or how it is billed. */
   free: string;
   keyUrl: string;
+  /** Billed per use, with no free plan. */
+  paid?: boolean;
+  /** Models to pick from at a glance, newest family first. */
+  picks?: { id: string; label: string; note: string }[];
+  /** How hard the model thinks before answering, where the provider takes it. */
+  efforts?: string[];
 }
+
+/**
+ * OpenAI's current models (November 2026), from the most capable down. All read pictures and
+ * answer through the Chat Completions API. Prices are per million input and output tokens.
+ */
+export const OPENAI_MODELS = [
+  { id: "gpt-6-astra", label: "GPT-6 Astra", note: "Most capable, for the hardest work. $10 / $50." },
+  { id: "gpt-6.1-sol", label: "GPT-6.1 Sol", note: "Near Astra at a fifth of the price; the balanced choice. $2 / $10." },
+  { id: "gpt-6.1-terra", label: "GPT-6.1 Terra", note: "Fast and efficient, good with pictures. $1 / $5." },
+  { id: "gpt-6-luna", label: "GPT-6 Luna", note: "Fastest and cheapest, for simple drafts. $0.10 / $0.50." },
+];
+export const OPENAI_EFFORTS = ["low", "medium", "high", "xhigh"];
+
 export const AI_PROVIDERS: AiProviderDef[] = [
+  {
+    id: "openai",
+    label: "OpenAI (ChatGPT)",
+    baseUrl: "https://api.openai.com/v1",
+    model: "gpt-6.1-sol",
+    visionModel: "gpt-6.1-sol",
+    free: "Paid: billed per token to your OpenAI account, with no free plan. The newest GPT models, GPT-6 Astra, GPT-6.1 Sol, Terra and GPT-6 Luna.",
+    keyUrl: "https://platform.openai.com/api-keys",
+    paid: true,
+    picks: OPENAI_MODELS,
+    efforts: OPENAI_EFFORTS,
+  },
   { id: "groq", label: "Groq", baseUrl: "https://api.groq.com/openai/v1", model: "llama-3.3-70b-versatile", visionModel: "qwen/qwen3.8-27b", free: "Free plan with no card: about 30 requests a minute and 1,000 a day on Llama 3.3 70B. Very fast.", keyUrl: "https://console.groq.com/keys" },
   { id: "gemini", label: "Google Gemini (AI Studio)", baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai", model: "gemini-flash-latest", visionModel: "gemini-flash-latest", free: "Free tier on selected Gemini models with daily limits; very long context and pictures.", keyUrl: "https://aistudio.google.com/apikey" },
   { id: "openrouter", label: "OpenRouter", baseUrl: "https://openrouter.ai/api/v1", model: "meta-llama/llama-3.3-70b-instruct:free", free: "One key for many models; those ending in :free cost nothing, about 20 a minute and 50 a day.", keyUrl: "https://openrouter.ai/keys" },
@@ -89,6 +122,8 @@ export interface IntegrationField {
   when?: { key: string; values: string[] };
   /** The server setting it stands for. */
   env: string;
+  /** Not needed even when shown (a field shown for one choice is otherwise needed). */
+  optional?: boolean;
 }
 
 export interface IntegrationDef {
@@ -110,7 +145,7 @@ export const INTEGRATIONS: IntegrationDef[] = [
     label: "AI provider",
     group: "AI",
     what: "Drafts diagrams from descriptions, pictures and meetings, and answers questions about the model, with this workspace's own key. The fair-use limits in Settings → AI still apply.",
-    access: "An API key from the provider. Every provider listed has a free plan.",
+    access: "An API key from the provider. OpenAI bills its account per token; every other provider listed has a free plan.",
     use: "ai",
     fields: [
       { key: "provider", label: "Provider", required: true, env: "AI_PROVIDER", options: AI_PROVIDERS.map((p) => ({ value: p.id, label: p.label })) },
@@ -118,6 +153,15 @@ export const INTEGRATIONS: IntegrationDef[] = [
       { key: "accountId", label: "Cloudflare account ID", env: "AI_ACCOUNT_ID", when: { key: "provider", values: ["cloudflare"] }, placeholder: "32 letters and digits" },
       { key: "model", label: "Model", env: "AI_MODEL", hint: "The provider's suggested free model when empty. Load models lists what the key can use." },
       { key: "visionModel", label: "Model for pictures", env: "AI_VISION_MODEL", hint: "Optional: a model that reads images, for drafting from a picture." },
+      {
+        key: "reasoningEffort",
+        label: "Reasoning effort",
+        env: "AI_REASONING_EFFORT",
+        when: { key: "provider", values: ["openai"] },
+        optional: true,
+        options: OPENAI_EFFORTS.map((e) => ({ value: e, label: { low: "Low: fastest, cheapest", medium: "Medium", high: "High", xhigh: "Extra high: slowest, most thorough" }[e] ?? e })),
+        hint: "How long the model thinks before answering. Low keeps drafts quick; higher is slower and costs more. Not set leaves the model's own default.",
+      },
     ],
   },
   {
@@ -371,7 +415,7 @@ export function missingFields(id: IntegrationId, values: Record<string, string>,
   const def = integrationOf(id);
   if (!def) return [];
   const has = (f: IntegrationField) => !!(values[f.key] ?? "").trim() || (!!f.secret && keptSecrets.includes(f.key));
-  const missing = def.fields.filter((f) => fieldShown(f, values) && (f.required || f.when) && !has(f) && !(f.key === "region"));
+  const missing = def.fields.filter((f) => fieldShown(f, values) && (f.required || (f.when && !f.optional)) && !has(f) && !(f.key === "region"));
   // ServiceNow takes either a token or a user name and password.
   if (id === "servicenow") {
     const field = (k: string) => def.fields.find((f) => f.key === k)!;

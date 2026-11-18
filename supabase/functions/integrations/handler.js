@@ -561,7 +561,45 @@ var w = 5e3, T = (e, t) => (e[t] ?? "").trim(), E = (e, t, n) => n ? [`Stopped a
 			};
 		}
 	}
-], de = (e) => ue.find((t) => t.id === e), k = [
+], de = (e) => ue.find((t) => t.id === e), fe = [
+	{
+		id: "gpt-6-astra",
+		label: "GPT-6 Astra",
+		note: "Most capable, for the hardest work. $10 / $50."
+	},
+	{
+		id: "gpt-6.1-sol",
+		label: "GPT-6.1 Sol",
+		note: "Near Astra at a fifth of the price; the balanced choice. $2 / $10."
+	},
+	{
+		id: "gpt-6.1-terra",
+		label: "GPT-6.1 Terra",
+		note: "Fast and efficient, good with pictures. $1 / $5."
+	},
+	{
+		id: "gpt-6-luna",
+		label: "GPT-6 Luna",
+		note: "Fastest and cheapest, for simple drafts. $0.10 / $0.50."
+	}
+], k = [
+	"low",
+	"medium",
+	"high",
+	"xhigh"
+], A = [
+	{
+		id: "openai",
+		label: "OpenAI (ChatGPT)",
+		baseUrl: "https://api.openai.com/v1",
+		model: "gpt-6.1-sol",
+		visionModel: "gpt-6.1-sol",
+		free: "Paid: billed per token to your OpenAI account, with no free plan. The newest GPT models, GPT-6 Astra, GPT-6.1 Sol, Terra and GPT-6 Luna.",
+		keyUrl: "https://platform.openai.com/api-keys",
+		paid: !0,
+		picks: fe,
+		efforts: k
+	},
 	{
 		id: "groq",
 		label: "Groq",
@@ -630,22 +668,22 @@ var w = 5e3, T = (e, t) => (e[t] ?? "").trim(), E = (e, t, n) => n ? [`Stopped a
 		free: "10,000 neurons a day free. Needs the account ID and an API token with Workers AI access.",
 		keyUrl: "https://dash.cloudflare.com/profile/api-tokens"
 	}
-], A = (e) => k.find((t) => t.id === e);
+], j = (e) => A.find((t) => t.id === e);
 /** The chat address of an AI integration's provider, or null. */
-function fe(e) {
-	let t = A(e.provider);
+function pe(e) {
+	let t = j(e.provider);
 	if (!t) return null;
 	if (!t.baseUrl.includes("{account}")) return t.baseUrl;
 	let n = typeof e.accountId == "string" ? e.accountId.trim() : "";
 	return /^[a-f0-9]{32}$/i.test(n) ? t.baseUrl.replace("{account}", n) : null;
 }
-var pe = [
+var me = [
 	{
 		id: "ai",
 		label: "AI provider",
 		group: "AI",
 		what: "Drafts diagrams from descriptions, pictures and meetings, and answers questions about the model, with this workspace's own key. The fair-use limits in Settings → AI still apply.",
-		access: "An API key from the provider. Every provider listed has a free plan.",
+		access: "An API key from the provider. OpenAI bills its account per token; every other provider listed has a free plan.",
 		use: "ai",
 		fields: [
 			{
@@ -653,7 +691,7 @@ var pe = [
 				label: "Provider",
 				required: !0,
 				env: "AI_PROVIDER",
-				options: k.map((e) => ({
+				options: A.map((e) => ({
 					value: e.id,
 					label: e.label
 				}))
@@ -686,6 +724,26 @@ var pe = [
 				label: "Model for pictures",
 				env: "AI_VISION_MODEL",
 				hint: "Optional: a model that reads images, for drafting from a picture."
+			},
+			{
+				key: "reasoningEffort",
+				label: "Reasoning effort",
+				env: "AI_REASONING_EFFORT",
+				when: {
+					key: "provider",
+					values: ["openai"]
+				},
+				optional: !0,
+				options: k.map((e) => ({
+					value: e,
+					label: {
+						low: "Low: fastest, cheapest",
+						medium: "Medium",
+						high: "High",
+						xhigh: "Extra high: slowest, most thorough"
+					}[e] ?? e
+				})),
+				hint: "How long the model thinks before answering. Low keeps drafts quick; higher is slower and costs more. Not set leaves the model's own default."
 			}
 		]
 	},
@@ -1266,10 +1324,10 @@ var pe = [
 			}
 		]
 	}
-], j = (e) => pe.find((t) => t.id === e);
+], M = (e) => me.find((t) => t.id === e);
 /** The server settings an integration stands for, from what is kept: for the connectors. */
-function me(e, t, n) {
-	let r = j(e), i = {};
+function he(e, t, n) {
+	let r = M(e), i = {};
 	for (let e of r?.fields ?? []) {
 		let r = e.secret ? n[e.key] : t[e.key];
 		typeof r == "string" && r.trim() && (i[e.env] = r.trim());
@@ -1277,47 +1335,83 @@ function me(e, t, n) {
 	return i;
 }
 // src/lib/integrations/connectors.ts
-var M = (e) => typeof e == "string" ? e.trim() : "", he = (e) => {
+var N = (e) => typeof e == "string" ? e.trim() : "", ge = (e) => {
 	let t = "";
 	for (let n of new TextEncoder().encode(e)) t += String.fromCharCode(n);
 	return btoa(t);
-}, N = (e, t) => `Basic ${he(`${e}:${t}`)}`, P = (e) => e.replace(/[&<>"']/g, (e) => ({
+}, P = (e, t) => `Basic ${ge(`${e}:${t}`)}`, F = (e) => e.replace(/[&<>"']/g, (e) => ({
 	"&": "&amp;",
 	"<": "&lt;",
 	">": "&gt;",
 	"\"": "&quot;",
 	"'": "&#39;"
-})[e]), F = (e) => new f(400, "bad_settings", e);
+})[e]), I = (e) => new f(400, "bad_settings", e);
 /** A plain https address from a setting, without a trailing slash, or an error naming the field. */
-function I(e, t) {
+function L(e, t) {
 	try {
 		let t = new URL(e.trim()), n = t.protocol === "http:" && (t.hostname === "127.0.0.1" || t.hostname === "localhost");
 		if (t.protocol !== "https:" && !n || t.username || t.password || t.search || t.hash) throw Error();
 		return t.toString().replace(/\/+$/, "");
 	} catch {
-		throw F(`${t} is not a plain https address.`);
+		throw I(`${t} is not a plain https address.`);
 	}
 }
-function L(e, t) {
-	let n = A(e.provider);
-	if (!n) throw F("Choose an AI provider.");
-	let r = fe(e);
-	if (!r) throw F("Give the Cloudflare account ID: 32 letters and digits, from the Workers AI page of the dashboard.");
-	if (!M(t.apiKey)) throw F("Give the provider's API key.");
+var _e = /* @__PURE__ */ new Set([
+	"none",
+	"minimal",
+	"low",
+	"medium",
+	"high",
+	"xhigh",
+	"max"
+]);
+function R(e, t) {
+	let n = j(e.provider);
+	if (!n) throw I("Choose an AI provider.");
+	let r = pe(e);
+	if (!r) throw I("Give the Cloudflare account ID: 32 letters and digits, from the Workers AI page of the dashboard.");
+	if (!N(t.apiKey)) throw I("Give the provider's API key.");
+	let i = n.id === "openai" && _e.has(N(e.reasoningEffort)) ? N(e.reasoningEffort) : "";
 	return {
+		provider: n.id,
 		base: r,
-		key: M(t.apiKey),
-		model: M(e.model) || n.model,
-		visionModel: M(e.visionModel) || n.visionModel || "",
-		label: n.label
+		key: N(t.apiKey),
+		model: N(e.model) || n.model,
+		visionModel: N(e.visionModel) || n.visionModel || "",
+		label: n.label,
+		reasoningEffort: i
 	};
 }
-async function R(e, t, n) {
-	let r = L(e, t), i = await n.json(`${r.base}/models`, { headers: { authorization: `Bearer ${r.key}` } }), a = Array.isArray(i) ? i : i?.data ?? i?.models ?? [];
-	return [...new Set(a.map((e) => M(e.id) || M(e.name).replace(/^models\//, "")).filter(Boolean))].sort().slice(0, 500);
+/**
+* A chat request in the form the provider takes. OpenAI's current models think before they
+* answer: they take max_completion_tokens, which counts that thinking too, so the ceiling is
+* raised, and the reasoning effort the owner chose.
+*/
+function ve(e, t, n) {
+	let r = {
+		...t,
+		model: n,
+		stream: !1
+	};
+	if (e.provider !== "openai") return r;
+	let i = typeof r.max_tokens == "number" ? r.max_tokens : null;
+	return delete r.max_tokens, delete r.temperature, delete r.top_p, i !== null && (r.max_completion_tokens = Math.min(32e3, Math.max(12e3, i * 3))), e.reasoningEffort && (r.reasoning_effort = e.reasoningEffort), r;
 }
-async function ge(e, t, n) {
-	let r = L(e, t), i = await n.json(`${r.base}/chat/completions`, {
+/** An older OpenAI model that takes no reasoning effort says so; the request is sent again without it. */
+var ye = (e, t) => e === 400 && /reasoning/i.test(t), be = /^(gpt-|chatgpt-|chat-latest|o\d)/, xe = /(audio|realtime|tts|transcribe|whisper|embedding|image|dall-e|moderation|search|davinci|babbage|instruct|codex|computer-use|deep-research|cyber)/;
+async function Se(e, t, n) {
+	let r = R(e, t), i = await n.json(`${r.base}/models`, { headers: { authorization: `Bearer ${r.key}` } }), a = Array.isArray(i) ? i : i?.data ?? i?.models ?? [];
+	if (r.provider === "openai") {
+		let e = a.map((e) => ({
+			id: N(e.id),
+			created: typeof e.created == "number" ? e.created : 0
+		})).filter((e) => be.test(e.id) && !xe.test(e.id)).sort((e, t) => t.created - e.created || (e.id < t.id ? -1 : 1));
+		return [...new Set(e.map((e) => e.id))].slice(0, 500);
+	}
+	return [...new Set(a.map((e) => N(e.id) || N(e.name).replace(/^models\//, "")).filter(Boolean))].sort().slice(0, 500);
+}
+async function Ce(e, t, n) {
+	let r = R(e, t), i = r.provider === "openai" ? { max_completion_tokens: 2e3 } : { max_tokens: 16 }, a = await n.json(`${r.base}/chat/completions`, {
 		method: "POST",
 		headers: {
 			"content-type": "application/json",
@@ -1329,23 +1423,23 @@ async function ge(e, t, n) {
 				role: "user",
 				content: "Reply with the single word OK."
 			}],
-			max_tokens: 16
+			...i
 		})
 	});
-	if (!Array.isArray(i?.choices)) throw new f(502, "source_failed", `${r.label} answered, but not with a chat reply. Check the model name.`);
+	if (!Array.isArray(a?.choices)) throw new f(502, "source_failed", `${r.label} answered, but not with a chat reply. Check the model name.`);
 	return `Connected to ${r.label}: ${r.model} answered.`;
 }
-var _e = /\.(tf|tf\.json|tfstate|hcl|bicep|ya?ml|json)$/i, ve = 150, ye = 4e6;
+var we = /\.(tf|tf\.json|tfstate|hcl|bicep|ya?ml|json)$/i, Te = 150, Ee = 4e6;
 function z(e) {
-	return e.url ? I(e.url, "The GitHub Enterprise address") : "https://api.github.com";
+	return e.url ? L(e.url, "The GitHub Enterprise address") : "https://api.github.com";
 }
 var B = (e) => ({
-	authorization: `Bearer ${M(e.token)}`,
+	authorization: `Bearer ${N(e.token)}`,
 	"x-github-api-version": "2022-11-28",
 	"user-agent": "ArchONE-Diagrams"
 });
-async function be(e, t, n) {
-	let r = z(e), i = M(e.repository);
+async function De(e, t, n) {
+	let r = z(e), i = N(e.repository);
 	if (i) {
 		let e = await n.json(`${r}/repos/${i}`, { headers: B(t) });
 		return `Connected: ${e.full_name ?? i} can be read (default branch ${e.default_branch ?? "unknown"}).`;
@@ -1353,16 +1447,16 @@ async function be(e, t, n) {
 	return `Connected as ${(await n.json(`${r}/user`, { headers: B(t) })).login ?? "the token's user"}.`;
 }
 /** The infrastructure files under a folder of a repository: at most 150 files and 4 MB. */
-async function xe(e, t, n, r) {
-	let i = z(e), a = M(r.repository) || M(e.repository);
-	if (!/^[\w.-]+\/[\w.-]+$/.test(a)) throw F("Give the repository as owner/name.");
-	let o = M(r.path).replace(/^\/+|\/+$/g, "");
-	if (o.includes("..")) throw F("The folder cannot contain '..'.");
-	let s = M(r.ref);
-	if (s ||= (await n.json(`${i}/repos/${a}`, { headers: B(t) })).default_branch ?? "main", !/^[\w./-]{1,200}$/.test(s)) throw F("The branch or tag name is not valid.");
-	let c = await n.json(`${i}/repos/${a}/git/trees/${encodeURIComponent(s)}?recursive=1`, { headers: B(t) }), l = (c.tree ?? []).filter((e) => e.type === "blob" && typeof e.path == "string" && (!o || e.path === o || e.path.startsWith(`${o}/`)) && _e.test(e.path) && !/(^|\/)(node_modules|\.terraform|\.github)\//.test(e.path) && !/package(-lock)?\.json$|tsconfig.*\.json$/.test(e.path)), u = [], d = 0, f = [];
+async function Oe(e, t, n, r) {
+	let i = z(e), a = N(r.repository) || N(e.repository);
+	if (!/^[\w.-]+\/[\w.-]+$/.test(a)) throw I("Give the repository as owner/name.");
+	let o = N(r.path).replace(/^\/+|\/+$/g, "");
+	if (o.includes("..")) throw I("The folder cannot contain '..'.");
+	let s = N(r.ref);
+	if (s ||= (await n.json(`${i}/repos/${a}`, { headers: B(t) })).default_branch ?? "main", !/^[\w./-]{1,200}$/.test(s)) throw I("The branch or tag name is not valid.");
+	let c = await n.json(`${i}/repos/${a}/git/trees/${encodeURIComponent(s)}?recursive=1`, { headers: B(t) }), l = (c.tree ?? []).filter((e) => e.type === "blob" && typeof e.path == "string" && (!o || e.path === o || e.path.startsWith(`${o}/`)) && we.test(e.path) && !/(^|\/)(node_modules|\.terraform|\.github)\//.test(e.path) && !/package(-lock)?\.json$|tsconfig.*\.json$/.test(e.path)), u = [], d = 0, f = [];
 	for (let e of l) {
-		if (u.length >= ve || d + (e.size ?? 0) > ye || !n.hasTime) {
+		if (u.length >= Te || d + (e.size ?? 0) > Ee || !n.hasTime) {
 			f.push(`Stopped after ${u.length} files: choose a smaller folder to read the rest`);
 			break;
 		}
@@ -1384,14 +1478,14 @@ async function xe(e, t, n, r) {
 	};
 }
 var V = 5e3, H = 200;
-async function Se(e, t, n) {
-	if (!/^[A-Za-z0-9.-]{3,100}$/.test(M(e.tenantId))) throw F("The tenant ID is not valid.");
+async function ke(e, t, n) {
+	if (!/^[A-Za-z0-9.-]{3,100}$/.test(N(e.tenantId))) throw I("The tenant ID is not valid.");
 	let r = new URLSearchParams({
 		grant_type: "client_credentials",
-		client_id: M(e.clientId),
-		client_secret: M(t.clientSecret),
+		client_id: N(e.clientId),
+		client_secret: N(t.clientSecret),
 		scope: "https://graph.microsoft.com/.default"
-	}), i = await n.json(`https://login.microsoftonline.com/${encodeURIComponent(M(e.tenantId))}/oauth2/v2.0/token`, {
+	}), i = await n.json(`https://login.microsoftonline.com/${encodeURIComponent(N(e.tenantId))}/oauth2/v2.0/token`, {
 		method: "POST",
 		headers: { "content-type": "application/x-www-form-urlencoded" },
 		body: r.toString()
@@ -1410,27 +1504,27 @@ async function U(e, t, n, r) {
 	}
 	return i.slice(0, r);
 }
-async function Ce(e, t, n, r = !1) {
-	let i = await Se(e, t, n), a = (await U("https://graph.microsoft.com/v1.0/users?$select=id,displayName,mail,userPrincipalName,jobTitle,department,accountEnabled&$top=999", i, n, r ? 1 : V)).filter((e) => e.accountEnabled !== !1).map((e) => ({
-		id: M(e.id),
-		name: M(e.displayName),
-		email: M(e.mail) || M(e.userPrincipalName),
-		title: M(e.jobTitle),
-		department: M(e.department)
+async function Ae(e, t, n, r = !1) {
+	let i = await ke(e, t, n), a = (await U("https://graph.microsoft.com/v1.0/users?$select=id,displayName,mail,userPrincipalName,jobTitle,department,accountEnabled&$top=999", i, n, r ? 1 : V)).filter((e) => e.accountEnabled !== !1).map((e) => ({
+		id: N(e.id),
+		name: N(e.displayName),
+		email: N(e.mail) || N(e.userPrincipalName),
+		title: N(e.jobTitle),
+		department: N(e.department)
 	})).filter((e) => e.name);
 	if (r) return {
 		people: a,
 		groups: []
 	};
-	let o = M(e.groupFilter).replace(/'/g, "''"), s = await U(`https://graph.microsoft.com/v1.0/groups?$select=id,displayName,description&$top=999${o ? `&$filter=${encodeURIComponent(`startswith(displayName,'${o}')`)}` : ""}`, i, n, H), c = [];
+	let o = N(e.groupFilter).replace(/'/g, "''"), s = await U(`https://graph.microsoft.com/v1.0/groups?$select=id,displayName,description&$top=999${o ? `&$filter=${encodeURIComponent(`startswith(displayName,'${o}')`)}` : ""}`, i, n, H), c = [];
 	for (let e of s) {
 		if (!n.hasTime) break;
-		let t = await U(`https://graph.microsoft.com/v1.0/groups/${M(e.id)}/members?$select=id&$top=999`, i, n, 1e3);
+		let t = await U(`https://graph.microsoft.com/v1.0/groups/${N(e.id)}/members?$select=id&$top=999`, i, n, 1e3);
 		c.push({
-			id: M(e.id),
-			name: M(e.displayName),
-			description: M(e.description),
-			members: t.map((e) => M(e.id)).filter(Boolean)
+			id: N(e.id),
+			name: N(e.displayName),
+			description: N(e.description),
+			members: t.map((e) => N(e.id)).filter(Boolean)
 		});
 	}
 	return {
@@ -1443,31 +1537,31 @@ async function W(e, t, n, r, i) {
 	for (; a.length < r && n.hasTime;) {
 		let r = await n.json(`${e}${e.includes("?") ? "&" : "?"}limit=200${o ? `&after=${encodeURIComponent(o)}` : ""}`, { headers: { authorization: `SSWS ${t}` } });
 		if (!Array.isArray(r) || !r.length || (a.push(...r), r.length < 200)) break;
-		o = M(r[r.length - 1].id);
+		o = N(r[r.length - 1].id);
 	}
 	return a.slice(0, r);
 }
-async function we(e, t, n, r = !1) {
-	let i = I(e.url, "The Okta address"), a = M(t.token), o = await W(`${i}/api/v1/users?filter=status%20eq%20%22ACTIVE%22`, a, n, r ? 1 : V, i), s = (e) => e.profile && typeof e.profile == "object" ? e.profile : {}, c = o.map((e) => ({
-		id: M(e.id),
-		name: [M(s(e).firstName), M(s(e).lastName)].filter(Boolean).join(" ") || M(s(e).login),
-		email: M(s(e).email),
-		title: M(s(e).title),
-		department: M(s(e).department)
+async function je(e, t, n, r = !1) {
+	let i = L(e.url, "The Okta address"), a = N(t.token), o = await W(`${i}/api/v1/users?filter=status%20eq%20%22ACTIVE%22`, a, n, r ? 1 : V, i), s = (e) => e.profile && typeof e.profile == "object" ? e.profile : {}, c = o.map((e) => ({
+		id: N(e.id),
+		name: [N(s(e).firstName), N(s(e).lastName)].filter(Boolean).join(" ") || N(s(e).login),
+		email: N(s(e).email),
+		title: N(s(e).title),
+		department: N(s(e).department)
 	})).filter((e) => e.name);
 	if (r) return {
 		people: c,
 		groups: []
 	};
-	let l = M(e.groupFilter), u = await W(`${i}/api/v1/groups${l ? `?q=${encodeURIComponent(l)}` : ""}`, a, n, H, i), d = [];
+	let l = N(e.groupFilter), u = await W(`${i}/api/v1/groups${l ? `?q=${encodeURIComponent(l)}` : ""}`, a, n, H, i), d = [];
 	for (let e of u) {
 		if (!n.hasTime) break;
-		let t = await W(`${i}/api/v1/groups/${M(e.id)}/users`, a, n, 1e3, i);
+		let t = await W(`${i}/api/v1/groups/${N(e.id)}/users`, a, n, 1e3, i);
 		d.push({
-			id: M(e.id),
-			name: M(s(e).name),
-			description: M(s(e).description),
-			members: t.map((e) => M(e.id)).filter(Boolean)
+			id: N(e.id),
+			name: N(s(e).name),
+			description: N(s(e).description),
+			members: t.map((e) => N(e.id)).filter(Boolean)
 		});
 	}
 	return {
@@ -1475,8 +1569,8 @@ async function we(e, t, n, r = !1) {
 		groups: d
 	};
 }
-async function Te(e, t, n) {
-	let r = I(e.webhookUrl ?? "", "The workflow webhook address"), i = {
+async function Me(e, t, n) {
+	let r = L(e.webhookUrl ?? "", "The workflow webhook address"), i = {
 		type: "AdaptiveCard",
 		$schema: "http://adaptivecards.io/schemas/adaptive-card.json",
 		version: "1.4",
@@ -1509,8 +1603,8 @@ async function Te(e, t, n) {
 		})
 	});
 }
-async function Ee(e, t, n) {
-	let r = I(e.webhookUrl ?? "", "The incoming webhook address"), i = `*${t.title}*\n${t.text}${t.link ? `\n<${t.link}|${t.linkText ?? "Open"}>` : ""}`;
+async function Ne(e, t, n) {
+	let r = L(e.webhookUrl ?? "", "The incoming webhook address"), i = `*${t.title}*\n${t.text}${t.link ? `\n<${t.link}|${t.linkText ?? "Open"}>` : ""}`;
 	await n.send(r, {
 		method: "POST",
 		headers: { "content-type": "application/json" },
@@ -1518,12 +1612,12 @@ async function Ee(e, t, n) {
 	});
 }
 var G = /^[^\s@<>,]+@[^\s@<>,]+\.[^\s@<>,]+$/;
-async function De(e, t, n, r) {
-	let i = M(e.to).split(/[\s,;]+/).filter(Boolean);
-	if (!i.length || i.length > 20 || !i.every((e) => G.test(e))) throw F("Recipients must be 1 to 20 email addresses, separated by commas.");
-	let a = M(e.from), o = a.match(/<([^>]+)>/)?.[1] ?? a;
-	if (!G.test(o)) throw F("The sender is not an email address.");
-	let s = M(t.apiKey), c = `${n.text}${n.link ? `\n\n${n.linkText ?? "Open"}: ${n.link}` : ""}`, l = `<p><strong>${P(n.title)}</strong></p><p>${P(n.text).replace(/\n/g, "<br>")}</p>${n.link ? `<p><a href="${P(n.link)}">${P(n.linkText ?? "Open")}</a></p>` : ""}`, u = n.title.slice(0, 200);
+async function Pe(e, t, n, r) {
+	let i = N(e.to).split(/[\s,;]+/).filter(Boolean);
+	if (!i.length || i.length > 20 || !i.every((e) => G.test(e))) throw I("Recipients must be 1 to 20 email addresses, separated by commas.");
+	let a = N(e.from), o = a.match(/<([^>]+)>/)?.[1] ?? a;
+	if (!G.test(o)) throw I("The sender is not an email address.");
+	let s = N(t.apiKey), c = `${n.text}${n.link ? `\n\n${n.linkText ?? "Open"}: ${n.link}` : ""}`, l = `<p><strong>${F(n.title)}</strong></p><p>${F(n.text).replace(/\n/g, "<br>")}</p>${n.link ? `<p><a href="${F(n.link)}">${F(n.linkText ?? "Open")}</a></p>` : ""}`, u = n.title.slice(0, 200);
 	switch (e.service) {
 		case "resend":
 			await r.json("https://api.resend.com/emails", {
@@ -1568,8 +1662,8 @@ async function De(e, t, n, r) {
 			return;
 		}
 		case "mailgun": {
-			let t = M(e.domain);
-			if (!/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(t)) throw F("Give the Mailgun sending domain.");
+			let t = N(e.domain);
+			if (!/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(t)) throw I("Give the Mailgun sending domain.");
 			let n = new URLSearchParams({
 				from: a,
 				to: i.join(","),
@@ -1581,7 +1675,7 @@ async function De(e, t, n, r) {
 				method: "POST",
 				headers: {
 					"content-type": "application/x-www-form-urlencoded",
-					authorization: N("api", s)
+					authorization: P("api", s)
 				},
 				body: n.toString()
 			});
@@ -1604,15 +1698,15 @@ async function De(e, t, n, r) {
 				})
 			});
 			return;
-		default: throw F("Choose the email service.");
+		default: throw I("Choose the email service.");
 	}
 }
-async function Oe(e, t, n) {
-	let r = I(e.url, "The Jira address"), i = { authorization: N(M(e.email), M(t.token)) }, a = await n.json(`${r}/rest/api/3/project/${encodeURIComponent(M(e.project))}`, { headers: i });
+async function Fe(e, t, n) {
+	let r = L(e.url, "The Jira address"), i = { authorization: P(N(e.email), N(t.token)) }, a = await n.json(`${r}/rest/api/3/project/${encodeURIComponent(N(e.project))}`, { headers: i });
 	return `Connected: issues will be created in ${a.name ?? e.project} (${a.key ?? e.project}).`;
 }
-async function ke(e, t, n, r) {
-	let i = I(e.url, "The Jira address"), a = (e) => ({
+async function Ie(e, t, n, r) {
+	let i = L(e.url, "The Jira address"), a = (e) => ({
 		type: "paragraph",
 		content: e ? [{
 			type: "text",
@@ -1634,12 +1728,12 @@ async function ke(e, t, n, r) {
 		method: "POST",
 		headers: {
 			"content-type": "application/json",
-			authorization: N(M(e.email), M(t.token))
+			authorization: P(N(e.email), N(t.token))
 		},
 		body: JSON.stringify({ fields: {
-			project: { key: M(e.project) },
+			project: { key: N(e.project) },
 			summary: n.title.slice(0, 250),
-			issuetype: { name: M(e.issueType) || "Task" },
+			issuetype: { name: N(e.issueType) || "Task" },
 			description: {
 				type: "doc",
 				version: 1,
@@ -1654,18 +1748,18 @@ async function ke(e, t, n, r) {
 	};
 }
 var K = (e) => {
-	if (!/^[\w.-]{1,100}$/.test(M(e.organization))) throw F("The organization name is not valid.");
-	return `https://dev.azure.com/${encodeURIComponent(M(e.organization))}`;
+	if (!/^[\w.-]{1,100}$/.test(N(e.organization))) throw I("The organization name is not valid.");
+	return `https://dev.azure.com/${encodeURIComponent(N(e.organization))}`;
 };
-async function Ae(e, t, n) {
-	return `Connected: work items will be created in ${(await n.json(`${K(e)}/_apis/projects/${encodeURIComponent(M(e.project))}?api-version=7.1`, { headers: { authorization: N("", M(t.token)) } })).name ?? e.project}.`;
+async function Le(e, t, n) {
+	return `Connected: work items will be created in ${(await n.json(`${K(e)}/_apis/projects/${encodeURIComponent(N(e.project))}?api-version=7.1`, { headers: { authorization: P("", N(t.token)) } })).name ?? e.project}.`;
 }
-async function je(e, t, n, r) {
-	let i = M(e.workItemType) || "Task", a = `${n.description.split(/\n{2,}/).map((e) => `<p>${P(e).replace(/\n/g, "<br>")}</p>`).join("")}${n.link ? `<p><a href="${P(n.link)}">Open in ArchONE</a></p>` : ""}`, o = await r.json(`${K(e)}/${encodeURIComponent(M(e.project))}/_apis/wit/workitems/$${encodeURIComponent(i)}?api-version=7.1`, {
+async function Re(e, t, n, r) {
+	let i = N(e.workItemType) || "Task", a = `${n.description.split(/\n{2,}/).map((e) => `<p>${F(e).replace(/\n/g, "<br>")}</p>`).join("")}${n.link ? `<p><a href="${F(n.link)}">Open in ArchONE</a></p>` : ""}`, o = await r.json(`${K(e)}/${encodeURIComponent(N(e.project))}/_apis/wit/workitems/$${encodeURIComponent(i)}?api-version=7.1`, {
 		method: "POST",
 		headers: {
 			"content-type": "application/json-patch+json",
-			authorization: N("", M(t.token))
+			authorization: P("", N(t.token))
 		},
 		body: JSON.stringify([{
 			op: "add",
@@ -1680,17 +1774,17 @@ async function je(e, t, n, r) {
 	if (!o.id) throw new f(502, "source_failed", "Azure DevOps did not say which work item it created.");
 	return {
 		key: `#${o.id}`,
-		url: o._links?.html?.href ?? `${K(e)}/${encodeURIComponent(M(e.project))}/_workitems/edit/${o.id}`
+		url: o._links?.html?.href ?? `${K(e)}/${encodeURIComponent(N(e.project))}/_workitems/edit/${o.id}`
 	};
 }
-var q = (e, t) => ({ authorization: N(M(e.email), M(t.token)) });
-async function Me(e, t, n) {
-	let r = I(e.url, "The Confluence address");
-	return `Connected: pages will be added to the space ${(await n.json(`${r}/rest/api/space/${encodeURIComponent(M(e.space))}`, { headers: q(e, t) })).name ?? e.space}.`;
+var q = (e, t) => ({ authorization: P(N(e.email), N(t.token)) });
+async function ze(e, t, n) {
+	let r = L(e.url, "The Confluence address");
+	return `Connected: pages will be added to the space ${(await n.json(`${r}/rest/api/space/${encodeURIComponent(N(e.space))}`, { headers: q(e, t) })).name ?? e.space}.`;
 }
 /** A page with the diagram's picture and the table of what is on it. */
 async function J(e, t, n, r) {
-	let i = I(e.url, "The Confluence address"), a = n.rows.length ? `<table><tbody><tr>${n.rows[0].map((e) => `<th>${P(e)}</th>`).join("")}</tr>${n.rows.slice(1, 1e3).map((e) => `<tr>${e.map((e) => `<td>${P(e)}</td>`).join("")}</tr>`).join("")}</tbody></table>` : "", o = `<p>${P(n.summary)}</p>${n.png ? "<p><ac:image ac:width=\"1200\"><ri:attachment ri:filename=\"diagram.png\" /></ac:image></p>" : ""}${a}${n.link ? `<p><a href="${P(n.link)}">Open in ArchONE</a></p>` : ""}`, s = await r.json(`${i}/rest/api/content`, {
+	let i = L(e.url, "The Confluence address"), a = n.rows.length ? `<table><tbody><tr>${n.rows[0].map((e) => `<th>${F(e)}</th>`).join("")}</tr>${n.rows.slice(1, 1e3).map((e) => `<tr>${e.map((e) => `<td>${F(e)}</td>`).join("")}</tr>`).join("")}</tbody></table>` : "", o = `<p>${F(n.summary)}</p>${n.png ? "<p><ac:image ac:width=\"1200\"><ri:attachment ri:filename=\"diagram.png\" /></ac:image></p>" : ""}${a}${n.link ? `<p><a href="${F(n.link)}">Open in ArchONE</a></p>` : ""}`, s = await r.json(`${i}/rest/api/content`, {
 		method: "POST",
 		headers: {
 			"content-type": "application/json",
@@ -1699,8 +1793,8 @@ async function J(e, t, n, r) {
 		body: JSON.stringify({
 			type: "page",
 			title: n.title.slice(0, 250),
-			space: { key: M(e.space) },
-			...M(e.parentId) ? { ancestors: [{ id: M(e.parentId) }] } : {},
+			space: { key: N(e.space) },
+			...N(e.parentId) ? { ancestors: [{ id: N(e.parentId) }] } : {},
 			body: { storage: {
 				value: o,
 				representation: "storage"
@@ -1741,7 +1835,7 @@ function Q(e, t) {
 	for (let e of t.fields) n = n.split(e.env).join(`"${e.label}"`);
 	return n.replace(/DISCOVERY_[A-Z0-9_]+/g, "the integration's settings");
 }
-function Ne(e, n = fetch, r = 5e4) {
+function Be(e, n = fetch, r = 5e4) {
 	return async function(i) {
 		if (i.method === "OPTIONS") return new Response(null, {
 			status: 204,
@@ -1803,26 +1897,26 @@ function Ne(e, n = fetch, r = 5e4) {
 					error: "not_connected",
 					message: "This workspace has no AI provider connected."
 				});
-				let s = L(o.settings, o.secrets), c = await i.text();
+				let s = R(o.settings, o.secrets), c = await i.text();
 				if (c.length > 8e6) return X(413, {
 					error: "too_large",
 					message: "The request is too large."
 				});
-				let l = JSON.parse(c), u = l.model === s.visionModel && s.visionModel ? s.visionModel : s.model, d = await n(`${s.base}/chat/completions`, {
+				let l = JSON.parse(c), u = l.model === s.visionModel && s.visionModel ? s.visionModel : s.model, d = (e) => n(`${s.base}/chat/completions`, {
 					method: "POST",
 					redirect: "error",
 					headers: {
 						"content-type": "application/json",
 						authorization: `Bearer ${s.key}`
 					},
-					body: JSON.stringify({
-						...l,
-						model: u,
-						stream: !1
-					})
-				});
-				return new Response(await d.text(), {
-					status: d.status,
+					body: JSON.stringify(e)
+				}), f = ve(s, l, u), m = await d(f), h = await m.text();
+				if ("reasoning_effort" in f && ye(m.status, h)) {
+					let { reasoning_effort: e, ...t } = f;
+					m = await d(t), h = await m.text();
+				}
+				return new Response(h, {
+					status: m.status,
 					headers: {
 						...Y,
 						"content-type": "application/json"
@@ -1843,7 +1937,7 @@ function Ne(e, n = fetch, r = 5e4) {
 					message: "The request could not be read."
 				});
 			}
-			let a = String(e.action ?? ""), o = e.workspaceId, s = j(e.provider);
+			let a = String(e.action ?? ""), o = e.workspaceId, s = M(e.provider);
 			if (!t(o)) return X(400, {
 				error: "bad_request",
 				message: "Open a workspace kept in the cloud."
@@ -1854,17 +1948,17 @@ function Ne(e, n = fetch, r = 5e4) {
 				message: "You are not a member of this workspace, or your sign-in has expired."
 			});
 			if (a === "notify") {
-				let t = await Fe(e, o, c, (e) => d(e, {}, "service")), r = s ? [s] : [
-					j("teams"),
-					j("slack"),
-					j("email")
+				let t = await He(e, o, c, (e) => d(e, {}, "service")), r = s ? [s] : [
+					M("teams"),
+					M("slack"),
+					M("email")
 				], i = [];
 				for (let a of r) {
 					let r = await g(o, a.id);
 					if (!r?.enabled) continue;
 					let s = new m(a.label, "its settings", n, 15e3);
 					try {
-						a.id === "teams" ? await Te(r.secrets, t, s) : a.id === "slack" ? await Ee(r.secrets, t, s) : await De(r.settings, r.secrets, t, s), i.push({
+						a.id === "teams" ? await Me(r.secrets, t, s) : a.id === "slack" ? await Ne(r.secrets, t, s) : await Pe(r.settings, r.secrets, t, s), i.push({
 							provider: a.id,
 							ok: !0,
 							message: "Sent."
@@ -1899,7 +1993,7 @@ function Ne(e, n = fetch, r = 5e4) {
 			});
 			let u = new m(s.label, `the ${s.label} settings`, n, r);
 			try {
-				let t = await Pe(s, a, l, e, u);
+				let t = await Ve(s, a, l, e, u);
 				return (a === "test" || a === "discover" || a === "apm" || a === "directory" || a === "repository") && await _(o, s.id, !0, t.message), X(200, t.body);
 			} catch (e) {
 				let t = Q(e instanceof f || e instanceof Error && /^(No |Give |Choose |The |Only )/.test(e.message) ? e.message : `Connecting to ${s.label} failed.`, s);
@@ -1920,10 +2014,10 @@ function Ne(e, n = fetch, r = 5e4) {
 	};
 }
 /** What each action does with an integration's settings, and the line kept as its status. */
-async function Pe(e, t, n, i, a) {
+async function Ve(e, t, n, i, a) {
 	let s = n.settings, c = n.secrets;
 	if (e.use === "discover") {
-		let n = de(e.id), r = me(e.id, s, c);
+		let n = de(e.id), r = he(e.id, s, c);
 		if (!n.configured(r)) throw new f(400, "bad_settings", `Fill in the required settings of ${e.label}.`);
 		let i = await n.fetch(r, a), o = `Connected. Read ${i.count.toLocaleString("en")} records from ${i.label}.`;
 		if (t === "test") return {
@@ -1959,7 +2053,7 @@ async function Pe(e, t, n, i, a) {
 	}
 	if (e.use === "ai") {
 		if (t === "test") {
-			let e = await ge(s, c, a);
+			let e = await Ce(s, c, a);
 			return {
 				body: {
 					ok: !0,
@@ -1969,7 +2063,7 @@ async function Pe(e, t, n, i, a) {
 			};
 		}
 		if (t === "models") {
-			let e = await R(s, c, a);
+			let e = await Se(s, c, a);
 			return {
 				body: { models: e },
 				message: `${e.length} models.`
@@ -1978,7 +2072,7 @@ async function Pe(e, t, n, i, a) {
 	}
 	if (e.use === "repository") {
 		if (t === "test") {
-			let e = await be(s, c, a);
+			let e = await De(s, c, a);
 			return {
 				body: {
 					ok: !0,
@@ -1988,7 +2082,7 @@ async function Pe(e, t, n, i, a) {
 			};
 		}
 		if (t === "repository") {
-			let e = await xe(s, c, a, {
+			let e = await Oe(s, c, a, {
 				repository: i.repository,
 				path: i.path,
 				ref: i.ref
@@ -2000,7 +2094,7 @@ async function Pe(e, t, n, i, a) {
 		}
 	}
 	if (e.use === "directory") {
-		let n = e.id === "entra" ? Ce : we;
+		let n = e.id === "entra" ? Ae : je;
 		if (t === "test") {
 			await n(s, c, a, !0);
 			let e = "Connected: the directory can be read.";
@@ -2022,7 +2116,7 @@ async function Pe(e, t, n, i, a) {
 	}
 	if (e.use === "issues") {
 		if (t === "test") {
-			let t = e.id === "jira" ? await Oe(s, c, a) : await Ae(s, c, a);
+			let t = e.id === "jira" ? await Fe(s, c, a) : await Le(s, c, a);
 			return {
 				body: {
 					ok: !0,
@@ -2038,7 +2132,7 @@ async function Pe(e, t, n, i, a) {
 				link: $(i.link)
 			};
 			if (!t.title) throw new f(400, "bad_request", "Give the issue a title.");
-			let n = e.id === "jira" ? await ke(s, c, t, a) : await je(s, c, t, a);
+			let n = e.id === "jira" ? await Ie(s, c, t, a) : await Re(s, c, t, a);
 			return {
 				body: n,
 				message: `Created ${n.key}.`
@@ -2047,7 +2141,7 @@ async function Pe(e, t, n, i, a) {
 	}
 	if (e.use === "publish") {
 		if (t === "test") {
-			let e = await Me(s, c, a);
+			let e = await ze(s, c, a);
 			return {
 				body: {
 					ok: !0,
@@ -2082,7 +2176,7 @@ function $(e) {
 	}
 }
 /** The message for an event, from the workspace's own records: the caller chooses only which. */
-async function Fe(e, n, r, i) {
+async function He(e, n, r, i) {
 	let a = String(e.event ?? ""), o = $(e.appUrl)?.replace(/\/+$/, ""), s = async (e) => {
 		let t = await i(e);
 		return (t.ok ? await t.json() : [])[0] ?? null;
@@ -2128,4 +2222,4 @@ async function Fe(e, n, r, i) {
 	}
 	throw new f(400, "bad_request", "Unknown notification.");
 }
-export { Ne as createIntegrationsHandler };
+export { Be as createIntegrationsHandler };

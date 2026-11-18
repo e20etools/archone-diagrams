@@ -32,28 +32,75 @@ function httpsBase(raw: string, field: string): string {
 
 /* ---------- AI provider ---------- */
 
-export function aiTarget(s: Kept, k: Kept): { base: string; key: string; model: string; visionModel: string; label: string } {
+const EFFORTS = new Set(["none", "minimal", "low", "medium", "high", "xhigh", "max"]);
+
+export interface AiTarget {
+  provider: string;
+  base: string;
+  key: string;
+  model: string;
+  visionModel: string;
+  label: string;
+  /** OpenAI only: how long the model thinks before answering, or empty for its own default. */
+  reasoningEffort: string;
+}
+
+export function aiTarget(s: Kept, k: Kept): AiTarget {
   const provider = aiProviderOf(s.provider);
   if (!provider) throw bad("Choose an AI provider.");
   const base = aiBaseUrl(s);
   if (!base) throw bad("Give the Cloudflare account ID: 32 letters and digits, from the Workers AI page of the dashboard.");
   if (!str(k.apiKey)) throw bad("Give the provider's API key.");
-  return { base, key: str(k.apiKey), model: str(s.model) || provider.model, visionModel: str(s.visionModel) || provider.visionModel || "", label: provider.label };
+  const effort = provider.id === "openai" && EFFORTS.has(str(s.reasoningEffort)) ? str(s.reasoningEffort) : "";
+  return { provider: provider.id, base, key: str(k.apiKey), model: str(s.model) || provider.model, visionModel: str(s.visionModel) || provider.visionModel || "", label: provider.label, reasoningEffort: effort };
 }
+
+/**
+ * A chat request in the form the provider takes. OpenAI's current models think before they
+ * answer: they take max_completion_tokens, which counts that thinking too, so the ceiling is
+ * raised, and the reasoning effort the owner chose.
+ */
+export function chatBody(t: AiTarget, body: Record<string, unknown>, model: string): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...body, model, stream: false };
+  if (t.provider !== "openai") return out;
+  const ceiling = typeof out.max_tokens === "number" ? out.max_tokens : null;
+  delete out.max_tokens;
+  delete out.temperature;
+  delete out.top_p;
+  if (ceiling !== null) out.max_completion_tokens = Math.min(32_000, Math.max(12_000, ceiling * 3));
+  if (t.reasoningEffort) out.reasoning_effort = t.reasoningEffort;
+  return out;
+}
+
+/** An older OpenAI model that takes no reasoning effort says so; the request is sent again without it. */
+export const refusesEffort = (status: number, text: string) => status === 400 && /reasoning/i.test(text);
+
+/** OpenAI lists every kind of model; only those that chat in text are offered, newest first. */
+const OPENAI_CHAT = /^(gpt-|chatgpt-|chat-latest|o\d)/;
+const OPENAI_NOT_CHAT = /(audio|realtime|tts|transcribe|whisper|embedding|image|dall-e|moderation|search|davinci|babbage|instruct|codex|computer-use|deep-research|cyber)/;
 
 export async function aiModels(s: Kept, k: Kept, remote: Remote): Promise<string[]> {
   const t = aiTarget(s, k);
   const answer = (await remote.json(`${t.base}/models`, { headers: { authorization: `Bearer ${t.key}` } })) as { data?: { id?: unknown }[]; models?: { id?: unknown; name?: unknown }[] } | unknown[];
   const list = Array.isArray(answer) ? answer : (answer?.data ?? answer?.models ?? []);
+  if (t.provider === "openai") {
+    const chat = (list as Record<string, unknown>[])
+      .map((m) => ({ id: str(m.id), created: typeof m.created === "number" ? m.created : 0 }))
+      .filter((m) => OPENAI_CHAT.test(m.id) && !OPENAI_NOT_CHAT.test(m.id))
+      .sort((a, b) => b.created - a.created || (a.id < b.id ? -1 : 1));
+    return [...new Set(chat.map((m) => m.id))].slice(0, 500);
+  }
   return [...new Set((list as Record<string, unknown>[]).map((m) => str(m.id) || str(m.name).replace(/^models\//, "")).filter(Boolean))].sort().slice(0, 500);
 }
 
 export async function aiTest(s: Kept, k: Kept, remote: Remote): Promise<string> {
   const t = aiTarget(s, k);
+  // A thinking model spends tokens before it answers, so OpenAI is given room for both.
+  const ceiling = t.provider === "openai" ? { max_completion_tokens: 2000 } : { max_tokens: 16 };
   const answer = (await remote.json(`${t.base}/chat/completions`, {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${t.key}` },
-    body: JSON.stringify({ model: t.model, messages: [{ role: "user", content: "Reply with the single word OK." }], max_tokens: 16 }),
+    body: JSON.stringify({ model: t.model, messages: [{ role: "user", content: "Reply with the single word OK." }], ...ceiling }),
   })) as { choices?: unknown[] };
   if (!Array.isArray(answer?.choices)) throw new DiscoverError(502, "source_failed", `${t.label} answered, but not with a chat reply. Check the model name.`);
   return `Connected to ${t.label}: ${t.model} answered.`;

@@ -8,6 +8,8 @@ import {
   adoWorkItem,
   aiModels,
   aiTarget,
+  chatBody,
+  refusesEffort,
   aiTest,
   confluencePublish,
   confluenceTest,
@@ -111,13 +113,23 @@ export function createIntegrationsHandler(getEnv: () => IntegrationsEnv, fetchIm
         const body = JSON.parse(raw) as Record<string, unknown>;
         // Only the models the owner chose, whatever the caller asks for.
         const model = body.model === target.visionModel && target.visionModel ? target.visionModel : target.model;
-        const answer = await fetchImpl(`${target.base}/chat/completions`, {
-          method: "POST",
-          redirect: "error",
-          headers: { "content-type": "application/json", authorization: `Bearer ${target.key}` },
-          body: JSON.stringify({ ...body, model, stream: false }),
-        });
-        return new Response(await answer.text(), { status: answer.status, headers: { ...CORS, "content-type": "application/json" } });
+        const send = (payload: Record<string, unknown>) =>
+          fetchImpl(`${target.base}/chat/completions`, {
+            method: "POST",
+            redirect: "error",
+            headers: { "content-type": "application/json", authorization: `Bearer ${target.key}` },
+            body: JSON.stringify(payload),
+          });
+        const payload = chatBody(target, body, model);
+        let answer = await send(payload);
+        let text = await answer.text();
+        // A model that takes no reasoning effort is asked again without it.
+        if ("reasoning_effort" in payload && refusesEffort(answer.status, text)) {
+          const { reasoning_effort: _effort, ...plain } = payload;
+          answer = await send(plain);
+          text = await answer.text();
+        }
+        return new Response(text, { status: answer.status, headers: { ...CORS, "content-type": "application/json" } });
       }
 
       let body: Record<string, unknown>;

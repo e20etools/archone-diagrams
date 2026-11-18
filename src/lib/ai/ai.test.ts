@@ -183,6 +183,23 @@ describe("AI endpoint (AI-01, AI-02)", () => {
     expect((await handleAiRequest({ mode: "process", text: "Refunds" }, { AI_PROVIDER: "groq", AI_API_KEY: "gsk_test" }, garbage)).body.error).toBe("bad_response");
   });
 
+  it("uses OpenAI's newest model with the reasoning effort the server sets, and no length ceiling", async () => {
+    const env = { AI_PROVIDER: "openai", AI_API_KEY: "sk-test", AI_MODEL: "gpt-6.1-sol", AI_REASONING_EFFORT: "low" };
+    expect(aiStatus(env)).toEqual({ configured: true, engine: "openai:gpt-6.1-sol" });
+    const seen: any[] = [];
+    const fake = (async (url: string, init: RequestInit) => {
+      seen.push({ url, body: JSON.parse(String(init.body)) });
+      return new Response(JSON.stringify({ choices: [{ message: { content: draftJson } }], usage: { total_tokens: 2000 } }), { status: 200 });
+    }) as unknown as typeof fetch;
+    const result = await handleAiRequest({ mode: "prompt", text: "mobile app calls core api" }, env, fake);
+    expect(result).toMatchObject({ status: 200, tokens: 2000, body: { engine: "openai:gpt-6.1-sol" } });
+    expect(seen[0].url).toBe("https://api.openai.com/v1/chat/completions");
+    expect(seen[0].body).toMatchObject({ model: "gpt-6.1-sol", reasoning_effort: "low" });
+    expect(seen[0].body.max_tokens).toBeUndefined();
+    // An effort the models do not know is left out.
+    expect(resolveProvider({ ...env, AI_REASONING_EFFORT: "turbo" })?.reasoningEffort).toBeUndefined();
+  });
+
   it("uses Groq's free models with only a key, and a picture model for images", async () => {
     const env = { AI_PROVIDER: "groq", AI_API_KEY: "gsk_test" };
     const provider = resolveProvider(env);

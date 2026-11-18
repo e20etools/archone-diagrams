@@ -233,17 +233,42 @@ function IntegrationForm({ def, info, onClose, onSaved }: { def: IntegrationDef;
           {def.what} <span className="font-medium text-ink">Access to give it:</span> {def.access}
         </p>
         {def.id === "ai" && (
-          <div className="grid gap-1.5 sm:grid-cols-2" role="radiogroup" aria-label="Free AI providers" data-ai-providers>
+          <div className="grid gap-1.5 sm:grid-cols-2" role="radiogroup" aria-label="AI providers" data-ai-providers>
             {AI_PROVIDERS.map((p) => (
-              <label key={p.id} className={`flex cursor-pointer gap-2 rounded-md border px-2.5 py-2 text-[13px] ${values.provider === p.id ? "border-blueprint bg-blueprint-soft/50" : "border-line"}`}>
-                <input type="radio" name="ai-provider" className="mt-0.5" checked={values.provider === p.id} onChange={() => setValues((v) => ({ ...v, provider: p.id, model: "", visionModel: "" }))} data-ai-provider={p.id} />
+              <label key={p.id} className={`flex cursor-pointer gap-2 rounded-md border px-2.5 py-2 text-[13px] ${values.provider === p.id ? "border-blueprint bg-blueprint-soft/50" : "border-line"} ${p.paid ? "sm:col-span-2" : ""}`}>
+                <input
+                  type="radio"
+                  name="ai-provider"
+                  className="mt-0.5"
+                  checked={values.provider === p.id}
+                  onChange={() => setValues((v) => ({ ...v, provider: p.id, model: "", visionModel: "", reasoningEffort: p.efforts ? "low" : "" }))}
+                  data-ai-provider={p.id}
+                />
                 <span>
-                  <span className="font-medium">{p.label}</span>
+                  <span className="font-medium">{p.label}</span> {p.paid ? <Badge tone="amber">Paid</Badge> : <Badge tone="green">Free plan</Badge>}
                   <span className="block text-ink-soft">{p.free}</span>
                 </span>
               </label>
             ))}
           </div>
+        )}
+        {provider?.picks && (
+          <fieldset className="space-y-1.5" data-ai-model-picks>
+            <legend className="mb-1 text-xs text-ink-soft">Model: one of the newest, or type another below</legend>
+            {provider.picks.map((m) => {
+              const chosen = (values.model || provider.model) === m.id;
+              return (
+                <label key={m.id} className={`flex cursor-pointer items-start gap-2 rounded-md border px-2.5 py-1.5 text-[13px] ${chosen ? "border-blueprint bg-blueprint-soft/50" : "border-line"}`}>
+                  <input type="radio" name="ai-model" className="mt-0.5" checked={chosen} onChange={() => setValues((v) => ({ ...v, model: m.id, visionModel: "" }))} data-ai-model={m.id} />
+                  <span>
+                    <span className="font-medium">{m.label}</span> <code className="text-[12px] text-ink-soft">{m.id}</code>
+                    {m.id === provider.model && <span className="ml-1 text-xs text-ink-faint">suggested</span>}
+                    <span className="block text-ink-soft">{m.note}</span>
+                  </span>
+                </label>
+              );
+            })}
+          </fieldset>
         )}
         {provider && (
           <p className="text-[13px]">

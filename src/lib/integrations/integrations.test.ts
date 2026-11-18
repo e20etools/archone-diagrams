@@ -126,6 +126,69 @@ describe("the integrations function", () => {
     expect((await ask(TICKET)).status).toBe(403);
   });
 
+  it("sends OpenAI's newest models what they take: room to think, the chosen effort, and no effort to a model that takes none", async () => {
+    const run = async (answers: { status: number; body: unknown }[], maxTokens: number) => {
+      const w = world({ ai: { settings: { provider: "openai", model: "gpt-6-astra", reasoningEffort: "low" }, secrets: { apiKey: "sk-test" } } }, [
+        (c) => {
+          if (c.url !== "https://api.openai.com/v1/chat/completions") return undefined;
+          const next = answers.shift()!;
+          return ok(next.body, next.status);
+        },
+      ]);
+      const response = await w.handler(
+        new Request("https://db.example/functions/v1/integrations/v1/chat/completions", {
+          method: "POST",
+          headers: { authorization: "Bearer editor", "x-archone-workspace": WS, "x-archone-usage": "41", "x-archone-ticket": TICKET },
+          body: JSON.stringify({ model: "anything", max_tokens: maxTokens, temperature: 0.2, messages: [{ role: "user", content: "hi" }] }),
+        }),
+      );
+      return { status: response.status, sent: w.calls.filter((c) => c.url.includes("api.openai.com")).map((c) => JSON.parse(c.body)) };
+    };
+    const first = await run([{ status: 200, body: { choices: [{ message: { content: "{}" } }], usage: { total_tokens: 900 } } }], 4096);
+    expect(first.status).toBe(200);
+    expect(first.sent).toHaveLength(1);
+    expect(first.sent[0]).toMatchObject({ model: "gpt-6-astra", max_completion_tokens: 12_288, reasoning_effort: "low", stream: false });
+    expect(first.sent[0].max_tokens).toBeUndefined();
+    expect(first.sent[0].temperature).toBeUndefined();
+    // An older model refuses the effort: the same request goes again without it.
+    const older = await run(
+      [
+        { status: 400, body: { error: { message: "Unsupported parameter: 'reasoning_effort' is not supported with this model." } } },
+        { status: 200, body: { choices: [{ message: { content: "{}" } }] } },
+      ],
+      100,
+    );
+    expect(older.status).toBe(200);
+    expect(older.sent.map((b) => b.reasoning_effort)).toEqual(["low", undefined]);
+    expect(older.sent[1].max_completion_tokens).toBe(12_000);
+  });
+
+  it("lists OpenAI's chat models newest first, and tests the key with room to think", async () => {
+    const w = world({ ai: { settings: { provider: "openai" }, secrets: { apiKey: "sk-test" } } }, [
+      (c) =>
+        c.url === "https://api.openai.com/v1/models"
+          ? ok({
+              data: [
+                { id: "gpt-5.5", created: 1_780_000_000 },
+                { id: "text-embedding-3-large", created: 1_790_000_000 },
+                { id: "gpt-6-astra", created: 1_788_000_000 },
+                { id: "gpt-6.1-terra", created: 1_793_000_000 },
+                { id: "gpt-realtime-2", created: 1_794_000_000 },
+                { id: "gpt-image-2.6-flare", created: 1_795_000_000 },
+                { id: "chat-latest", created: 1_791_000_000 },
+                { id: "whisper-1", created: 1_600_000_000 },
+              ],
+            })
+          : undefined,
+      (c) => (c.url === "https://api.openai.com/v1/chat/completions" ? ok({ choices: [{ message: { content: "OK" } }] }) : undefined),
+    ]);
+    expect((await w.post({ action: "models", provider: "ai" })).data.models).toEqual(["gpt-6.1-terra", "chat-latest", "gpt-6-astra", "gpt-5.5"]);
+    expect((await w.post({ action: "test", provider: "ai" })).data.message).toBe("Connected to OpenAI (ChatGPT): gpt-6.1-sol answered.");
+    const test = JSON.parse(w.calls.filter((c) => c.url.endsWith("/chat/completions")).at(-1)!.body);
+    expect(test).toMatchObject({ model: "gpt-6.1-sol", max_completion_tokens: 2000 });
+    expect(test.max_tokens).toBeUndefined();
+  });
+
   it("lists the AI models a key can use, and tests it with a short question", async () => {
     const w = world({ ai: { settings: { provider: "gemini" }, secrets: { apiKey: "g-1" } } }, [
       (c) => (c.url.endsWith("/v1beta/openai/models") ? ok({ data: [{ id: "models/gemini-flash-latest" }, { id: "gemini-pro" }] }) : undefined),

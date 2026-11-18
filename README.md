@@ -1190,7 +1190,7 @@ next to the service.
 
 | Group | Services | What the app does with it |
 |---|---|---|
-| AI | Groq, Google Gemini (AI Studio), OpenRouter, Cerebras, Mistral, GitHub Models, SambaNova, Cloudflare Workers AI | AI drafting and questions with the workspace's own key. Every request is still counted by the fair-use limits, and reaches the provider only with a ticket from that count. "Load models" lists what the key can use. |
+| AI | OpenAI (ChatGPT, paid), Groq, Google Gemini (AI Studio), OpenRouter, Cerebras, Mistral, GitHub Models, SambaNova, Cloudflare Workers AI | AI drafting and questions with the workspace's own key. Every request is still counted by the fair-use limits, and reaches the provider only with a ticket from that count. "Load models" lists what the key can use (for OpenAI, its chat models, newest first). |
 | Cloud providers | AWS, Azure, Google Cloud | Import → Discover what is running |
 | Discovery and CMDB | ServiceNow, BMC Helix Discovery, Device42 | Import → Discover what is running |
 | Application portfolio | APM & Landscape | Import → From APM & Landscape, without pasting a token |
@@ -1509,10 +1509,10 @@ build does not reload.
 ## Check it
 
 ```bash
-npm test                   # 589 tests: model, the component library, flows, links, protected live links, decisions, arranging, health, CALM, scenario merging, the trust page, the document, your own rules, large models, templates, the pull-request gate, the APM import, AI, questions, checks, MCP, import readers, sync engine, comparison, and the database rules and the API on a real Postgres
+npm test                   # 593 tests: model, the component library, flows, links, protected live links, decisions, arranging, health, CALM, scenario merging, the trust page, the document, your own rules, large models, templates, the pull-request gate, the APM import, AI, questions, checks, MCP, import readers, sync engine, comparison, and the database rules and the API on a real Postgres
 npm run build              # type-check and production build into dist/
 npm run test:browser       # 241 end-to-end checks of browser-only mode (run after a build)
-npm run test:browser:cloud # 123 end-to-end checks of hosted mode with several people
+npm run test:browser:cloud # 124 end-to-end checks of hosted mode with several people
 ```
 
 `test:browser` serves the production build, including `api/ai.js`, and walks through the
@@ -1577,7 +1577,7 @@ The dev server already uses the host and port Lovable's preview expects (`::`, 8
 | `AI_PROVIDER` | Needs | Notes |
 | --- | --- | --- |
 | `anthropic` | `AI_API_KEY` | `AI_MODEL` optional |
-| `openai` | `AI_API_KEY`, `AI_MODEL` | |
+| `openai` | `AI_API_KEY`, `AI_MODEL` | For example `gpt-6.1-sol`. `AI_REASONING_EFFORT` optional: `low`, `medium`, `high` or `xhigh` |
 | `groq` | `AI_API_KEY` (or `GROQ_API_KEY`) | Free plan for training. Defaults: `llama-3.3-70b-versatile` for text, `qwen/qwen3.8-27b` for pictures (`AI_MODEL`, `AI_VISION_MODEL` to change) |
 | `lovable` | `AI_API_KEY` (or `LOVABLE_API_KEY`), `AI_MODEL` | Lovable AI gateway |
 | `openai-compatible` | `AI_API_KEY`, `AI_MODEL`, `AI_BASE_URL` | any endpoint that speaks `/chat/completions` |
@@ -1611,6 +1611,25 @@ key is shared fairly and nobody can use more than their share.
   and what is left in the draft dialog and on the Ask page. Owners also see use by person
   (24 hours, 7 days, 30 days, tokens, last used) and requests by day for the last 14 days.
 - In the browser-only copy nobody is counted; `AI_ACCESS_CODE` keeps others off the key.
+
+### OpenAI (ChatGPT) with a workspace's own key
+
+Settings → Integrations → AI provider → **OpenAI (ChatGPT)**, then the key from
+https://platform.openai.com/api-keys, then **Save and test**. OpenAI bills its account per token;
+there is no free plan.
+
+- **Models.** The newest four are offered to pick from (November 2026), from the most capable:
+  GPT-6 Astra (`gpt-6-astra`), GPT-6.1 Sol (`gpt-6.1-sol`, the balanced one, chosen at first),
+  GPT-6.1 Terra (`gpt-6.1-terra`) and GPT-6 Luna (`gpt-6-luna`). All read pictures. Any other
+  model can be typed in; **Load models** lists the chat models the key can use, newest first,
+  so a model OpenAI releases later shows up there without a change to the app.
+- **Reasoning effort.** These models think before they answer. Low (the first choice) keeps
+  drafts quick and cheap; medium, high and extra high are slower and cost more; "Not set"
+  leaves the model's own default. An older model that takes no effort is asked again without it.
+- The app sends OpenAI `max_completion_tokens` instead of `max_tokens`, with room for the
+  thinking, and leaves out `temperature`, which these models do not take.
+- The key is kept encrypted in the database's vault and only the integrations function reads
+  it. The fair-use limits in Settings → AI apply as for every provider.
 
 ### Free AI for training (Groq)
 

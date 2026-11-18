@@ -4991,7 +4991,8 @@ function resolveProvider(env) {
 					key,
 					model: env.AI_MODEL,
 					visionModel: env.AI_VISION_MODEL,
-					baseUrl: env.AI_BASE_URL || "https://api.openai.com/v1"
+					baseUrl: env.AI_BASE_URL || "https://api.openai.com/v1",
+					.../^(none|minimal|low|medium|high|xhigh|max)$/.test(env.AI_REASONING_EFFORT?.trim() ?? "") ? { reasoningEffort: env.AI_REASONING_EFFORT.trim() } : {}
 				} : null;
 			}
 			case "groq": {
@@ -5134,7 +5135,8 @@ async function callOpenAiStyle(p, request, fetchImpl) {
 				role: "user",
 				content
 			}],
-			...p.maxTokens ? { max_tokens: Math.min(p.maxTokens, maxTokens) } : {}
+			...p.maxTokens ? { max_tokens: Math.min(p.maxTokens, maxTokens) } : {},
+			...p.reasoningEffort ? { reasoning_effort: p.reasoningEffort } : {}
 		})
 	});
 }
@@ -5375,7 +5377,51 @@ async function finishUse(service, token, ticket, tokens, ok, fetchImpl) {
 	} catch {}
 }
 // src/lib/integrations/catalog.ts
+/**
+* OpenAI's current models (November 2026), from the most capable down. All read pictures and
+* answer through the Chat Completions API. Prices are per million input and output tokens.
+*/
+var OPENAI_MODELS = [
+	{
+		id: "gpt-6-astra",
+		label: "GPT-6 Astra",
+		note: "Most capable, for the hardest work. $10 / $50."
+	},
+	{
+		id: "gpt-6.1-sol",
+		label: "GPT-6.1 Sol",
+		note: "Near Astra at a fifth of the price; the balanced choice. $2 / $10."
+	},
+	{
+		id: "gpt-6.1-terra",
+		label: "GPT-6.1 Terra",
+		note: "Fast and efficient, good with pictures. $1 / $5."
+	},
+	{
+		id: "gpt-6-luna",
+		label: "GPT-6 Luna",
+		note: "Fastest and cheapest, for simple drafts. $0.10 / $0.50."
+	}
+];
+var OPENAI_EFFORTS = [
+	"low",
+	"medium",
+	"high",
+	"xhigh"
+];
 var AI_PROVIDERS = [
+	{
+		id: "openai",
+		label: "OpenAI (ChatGPT)",
+		baseUrl: "https://api.openai.com/v1",
+		model: "gpt-6.1-sol",
+		visionModel: "gpt-6.1-sol",
+		free: "Paid: billed per token to your OpenAI account, with no free plan. The newest GPT models, GPT-6 Astra, GPT-6.1 Sol, Terra and GPT-6 Luna.",
+		keyUrl: "https://platform.openai.com/api-keys",
+		paid: true,
+		picks: OPENAI_MODELS,
+		efforts: OPENAI_EFFORTS
+	},
 	{
 		id: "groq",
 		label: "Groq",
@@ -5449,6 +5495,14 @@ var aiProviderOf = (id) => AI_PROVIDERS.find((p) => p.id === id);
 AI_PROVIDERS.map((p) => ({
 	value: p.id,
 	label: p.label
+})), OPENAI_EFFORTS.map((e) => ({
+	value: e,
+	label: {
+		low: "Low: fastest, cheapest",
+		medium: "Medium",
+		high: "High",
+		xhigh: "Extra high: slowest, most thorough"
+	}[e] ?? e
 }));
 // src/lib/ai/signin.ts
 /** The accounts service to check sign-ins against, or null when the app runs without accounts. */
