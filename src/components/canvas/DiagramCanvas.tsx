@@ -23,7 +23,8 @@ import {
   type NodeChange,
   type NodeProps,
 } from "@xyflow/react";
-import { ChevronDown, Cable, SquareDashed, MessageSquare, Lock, LockOpen, CircleHelp, ShieldCheck } from "lucide-react";
+import { ChevronDown, Cable, SquareDashed, MessageSquare, Lock, LockOpen, CircleHelp, ShieldCheck, Pause, Play, RotateCcw, SkipForward, X } from "lucide-react";
+import { buildStages, stageTime, type BuildStage } from "@/lib/buildShow";
 import { memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type DragEvent, type Ref } from "react";
 import { TypeIcon } from "@/components/icons";
 import { LIFECYCLE_INFO, RELATION_KIND_INFO, objectType, ownerColor, typeColor } from "@/lib/catalog";
@@ -53,6 +54,8 @@ export interface CanvasHandle {
    * for the whole diagram and wait; afterwards hand it back.
    */
   whole: (on: boolean) => Promise<void>;
+  /** Plays the build animation: the diagram rises from the bottom up. False when there is nothing to build. */
+  build: () => boolean;
 }
 
 /** From this many boxes on, only what is in view is drawn. */
@@ -80,6 +83,8 @@ interface Props {
   renderAll?: boolean;
   /** "security": lines coloured by whether they are encrypted, boxes with what the checks find, zones by trust. */
   lens?: "normal" | "security";
+  /** Told when the build animation starts and ends. */
+  onBuild?: (playing: boolean) => void;
   onSelect?: (selection: CanvasSelection) => void;
   /** A Shift-click on a box. */
   onPick?: (objectId: string) => void;
@@ -251,7 +256,7 @@ const LabelledEdge = memo(function LabelledEdge({
   data,
   selected,
   interactionWidth,
-}: EdgeProps<Edge<{ slot: number; dim?: boolean; title?: string; network?: string; networkColor?: string; protection?: Protection; lock?: boolean; traffic?: "out" | "in" | "both" }>>) {
+}: EdgeProps<Edge<{ slot: number; dim?: boolean; title?: string; network?: string; networkColor?: string; protection?: Protection; lock?: boolean; traffic?: "out" | "in" | "both"; arriving?: boolean }>>) {
   const [path] = getSmoothStepPath({ sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition, borderRadius: 8 });
   const slot = data?.slot ?? 0;
   const vertical = targetPosition === Position.Top;
@@ -271,6 +276,7 @@ const LabelledEdge = memo(function LabelledEdge({
             data-selected={selected || undefined}
             data-network={data?.network}
             data-protection={data?.lock ? data.protection : undefined}
+            data-arriving={data?.arriving || undefined}
             title={data?.title}
             style={{ transform, opacity: data?.dim ? 0.25 : undefined, ...(data?.networkColor ? { ["--network-color" as string]: data.networkColor } : {}) }}
           >
@@ -387,6 +393,7 @@ function Inner({
   minimap,
   renderAll,
   lens = "normal",
+  onBuild,
   onSelect,
   onPick,
   onMove,
@@ -614,6 +621,113 @@ function Inner({
     if (kept.length) setNodes((current) => applyNodeChanges(kept, current));
   }, []);
 
+  /* ---------- the build animation: the diagram rises from the bottom up ---------- */
+  const [show, setShow] = useState<BuildShow | null>(null);
+  const onBuildRef = useRef(onBuild);
+  onBuildRef.current = onBuild;
+  const startBuild = useCallback((): boolean => {
+    const stages = buildStages(ws, diagram, zoneIds);
+    if (!stages.length) return false;
+    const still = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+    setShow({ stages, stage: -1, revealed: [], phase: "intro", settled: false, paused: false, still, run: Date.now() });
+    onBuildRef.current?.(true);
+    // The camera starts close on the bottom row, and pulls back as the diagram rises.
+    // It waits a moment for the panels around the canvas to fold away.
+    window.setTimeout(() => void flow.fitView({ nodes: stages[0].ids.map((id) => ({ id })), padding: { top: "160px", bottom: "200px", x: "30%" }, maxZoom: 1.3, includeHiddenNodes: true, duration: still ? 0 : 500 }), 60);
+    return true;
+  }, [ws, diagram, zoneIds, flow]);
+  const endBuild = useCallback(() => {
+    setShow(null);
+    onBuildRef.current?.(false);
+    window.setTimeout(() => void flow.fitView({ padding: 0.08, duration: 400 }), 60);
+  }, [flow]);
+  // The next stage, or the end.
+  useEffect(() => {
+    if (!show || show.paused) return;
+    const wait = show.phase === "intro" ? (show.still ? 150 : 900) : show.phase === "stage" ? stageTime(show.stages[show.stage].ids.length, show.still) : show.still ? 1500 : 3200;
+    const timer = window.setTimeout(() => {
+      if (show.phase === "outro") return endBuild();
+      setShow((s) => {
+        if (!s) return s;
+        const stage = s.stage + 1;
+        if (stage >= s.stages.length) return { ...s, phase: "outro", settled: true };
+        return { ...s, stage, phase: "stage", settled: false, revealed: [...s.revealed, ...s.stages[stage].ids] };
+      });
+    }, wait);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [show?.phase, show?.stage, show?.paused, show?.run, endBuild]);
+  // The lines of a stage finish drawing, then take their arrowheads and labels.
+  useEffect(() => {
+    if (!show || show.phase !== "stage" || show.settled) return;
+    const timer = window.setTimeout(() => setShow((s) => (s ? { ...s, settled: true } : s)), show.still ? 0 : 1650);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [show?.stage, show?.phase, show?.run]);
+  // The camera follows what stands so far; at the end it takes in the whole diagram.
+  useEffect(() => {
+    if (!show || show.phase === "intro") return;
+    const ease = (t: number) => 1 - Math.pow(1 - t, 3);
+    // Room is kept for the bars at the top and bottom.
+    if (show.phase === "outro") void flow.fitView({ padding: { top: "84px", bottom: "136px", x: "5%" }, duration: show.still ? 0 : 1800, ease, includeHiddenNodes: true });
+    else void flow.fitView({ nodes: show.revealed.map((id) => ({ id })), padding: { top: "110px", bottom: "164px", x: "14%" }, maxZoom: 1.15, duration: show.still ? 0 : 1300, ease, includeHiddenNodes: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [show?.stage, show?.phase, show?.run]);
+  // Esc ends it; the space bar pauses it.
+  useEffect(() => {
+    if (!show) return;
+    // It listens first, so that a page around it (a presentation) does not also take the key.
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.stopPropagation();
+        endBuild();
+      } else if (event.key === " " && !(event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement)) {
+        event.preventDefault();
+        event.stopPropagation();
+        setShow((s) => (s ? { ...s, paused: !s.paused } : s));
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [show !== null, endBuild]);
+  // A diagram changed under the animation ends it rather than show half of it.
+  useEffect(() => {
+    if (show) endBuild();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [diagram.id]);
+
+  const shownNodes = useMemo<Node[]>(() => {
+    if (!show) return allNodes;
+    const revealed = new Set(show.phase === "outro" ? show.stages.flatMap((st) => st.ids) : show.revealed);
+    const current = show.phase === "stage" ? show.stages[show.stage].ids : [];
+    const order = new Map(current.map((id, i) => [id, i]));
+    const zoneVisible = new Map(zones.map((z) => [z.id, z.members.some((m) => revealed.has(m))]));
+    return allNodes.map((n) => {
+      if (n.id === BOUNDARY_ID) return [...members].some((m) => revealed.has(m)) ? { ...n, className: "build-frame" } : { ...n, hidden: true };
+      if (n.type === "zone") return zoneVisible.get(n.id) ? { ...n, className: "build-frame" } : { ...n, hidden: true };
+      if (!revealed.has(n.id)) return { ...n, hidden: true };
+      if (order.has(n.id)) return { ...n, className: [n.className, "build-arrive"].filter(Boolean).join(" "), style: { ...n.style, ["--build-delay" as string]: `${order.get(n.id)! * 110}ms` } };
+      return n;
+    });
+  }, [allNodes, show, zones, members]);
+
+  const shownEdges = useMemo<Edge[]>(() => {
+    if (!show || show.phase === "outro" || show.settled) return edges;
+    // Lines of this stage draw themselves in; their heads and labels come once they are drawn.
+    const current = new Set(show.phase === "stage" ? show.stages[show.stage].ids : []);
+    return edges.map((e, i) =>
+      current.has(e.source) || current.has(e.target)
+        ? { ...e, className: [e.className, "build-draw"].filter(Boolean).join(" "), markerEnd: undefined, markerStart: undefined, label: undefined, style: { ...e.style, ["--build-delay" as string]: `${420 + (i % 6) * 70}ms` } }
+        : e,
+    );
+  }, [edges, show]);
+  // Labels of lines drawn this stage fade in once they are drawn.
+  const arrivingEdges = useMemo(() => (show?.phase === "stage" && show.settled ? new Set(show.stages[show.stage].ids) : null), [show]);
+  const finalEdges = useMemo<Edge[]>(
+    () => (arrivingEdges ? shownEdges.map((e) => (arrivingEdges.has(e.source) || arrivingEdges.has(e.target) ? { ...e, data: { ...e.data, arriving: true } } : e)) : shownEdges),
+    [shownEdges, arrivingEdges],
+  );
+
   useImperativeHandle(
     canvasRef,
     () => ({
@@ -631,8 +745,9 @@ function Inner({
         while (Date.now() - started < 5000 && (wrapper.current?.querySelectorAll(".react-flow__node").length ?? 0) < count);
         await new Promise((done) => setTimeout(done, 120));
       },
+      build: startBuild,
     }),
-    [flow],
+    [flow, startBuild],
   );
 
   const handleDrop = (event: DragEvent) => {
@@ -650,11 +765,11 @@ function Inner({
   };
 
   return (
-    <div ref={wrapper} className="size-full" onDrop={handleDrop} onDragOver={(e) => !readOnly && e.preventDefault()}>
+    <div ref={wrapper} className={`size-full relative ${show ? "is-building" : ""}`} onDrop={handleDrop} onDragOver={(e) => !readOnly && e.preventDefault()}>
       <ReactFlow
         className={`${readOnly ? "read-only" : ""} ${connecting ? "connecting" : ""}`}
-        nodes={allNodes}
-        edges={edges}
+        nodes={shownNodes}
+        edges={finalEdges}
         onlyRenderVisibleElements={allNodes.length > LARGE_DIAGRAM && !whole && !renderAll}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
@@ -704,6 +819,98 @@ function Inner({
         )}
         {minimap && <MiniMap pannable zoomable position="bottom-right" nodeColor={(n) => (n.id === BOUNDARY_ID ? "transparent" : "var(--color-dots)")} maskColor="color-mix(in srgb, var(--color-canvas) 72%, transparent)" />}
       </ReactFlow>
+      {show && (
+        <BuildOverlay
+          show={show}
+          ws={ws}
+          diagramName={diagram.name}
+          lines={edges.length}
+          onPause={() => setShow((s) => (s ? { ...s, paused: !s.paused } : s))}
+          onSkip={() => setShow((s) => (s ? { ...s, phase: "outro", stage: s.stages.length - 1, settled: true, paused: false, revealed: s.stages.flatMap((st) => st.ids) } : s))}
+          onReplay={() => void startBuild()}
+          onClose={endBuild}
+        />
+      )}
+    </div>
+  );
+}
+
+interface BuildShow {
+  stages: BuildStage[];
+  /** The stage on screen; -1 before the first. */
+  stage: number;
+  /** Every box standing so far. */
+  revealed: string[];
+  phase: "intro" | "stage" | "outro";
+  /** The stage's lines are drawn and carry their heads and labels. */
+  settled: boolean;
+  paused: boolean;
+  /** For people who ask their system for less motion: no camera moves, quick fades. */
+  still: boolean;
+  /** Changes on each replay, to start the timeline again. */
+  run: number;
+}
+
+/** Letterbox bars, the caption of each layer as it rises, and the controls. */
+function BuildOverlay({ show, ws, diagramName, lines, onPause, onSkip, onReplay, onClose }: { show: BuildShow; ws: Workspace; diagramName: string; lines: number; onPause: () => void; onSkip: () => void; onReplay: () => void; onClose: () => void }) {
+  const total = show.stages.length;
+  const stage = show.phase === "stage" ? show.stages[show.stage] : null;
+  const boxes = show.stages.reduce((n, st) => n + st.ids.length, 0);
+  const names = stage ? stage.ids.map((id) => ws.objects[id]?.name).filter(Boolean) : [];
+  const shown = names.slice(0, 4).join(" · ") + (names.length > 4 ? ` · ${names.length - 4} more` : "");
+  return (
+    <div className="build-show" data-build-show data-build-phase={show.phase} data-build-stage={show.stage} data-still={show.still || undefined} aria-live="polite">
+      <div className="build-show__bar build-show__bar--top" aria-hidden />
+      <div className="build-show__vignette" aria-hidden />
+      <div className="build-show__bar build-show__bar--bottom">
+        <div className="build-show__caption" key={`${show.phase}-${show.stage}`}>
+          {show.phase === "intro" && (
+            <>
+              <span className="build-show__step">Building, from the bottom up</span>
+              <span className="build-show__title">{diagramName}</span>
+            </>
+          )}
+          {stage && (
+            <>
+              <span className="build-show__step">
+                Layer {show.stage + 1} of {total}
+              </span>
+              <span className="build-show__title">{stage.title}</span>
+              <span className="build-show__names">{shown}</span>
+            </>
+          )}
+          {show.phase === "outro" && (
+            <>
+              <span className="build-show__step">Built</span>
+              <span className="build-show__title">{diagramName}</span>
+              <span className="build-show__names">
+                {boxes} {boxes === 1 ? "component" : "components"}, {lines} {lines === 1 ? "connection" : "connections"}, in {total} {total === 1 ? "layer" : "layers"}
+              </span>
+            </>
+          )}
+        </div>
+        <div className="build-show__right">
+          <ol className="build-show__progress" aria-label={`Layer ${Math.max(0, show.stage + 1)} of ${total}`}>
+            {show.stages.map((_, i) => (
+              <li key={i} data-done={i < show.stage || show.phase === "outro" || undefined} data-now={(i === show.stage && show.phase === "stage") || undefined} />
+            ))}
+          </ol>
+          <div className="build-show__controls">
+            <button type="button" onClick={onPause} aria-label={show.paused ? "Play (space)" : "Pause (space)"} title={show.paused ? "Play (space)" : "Pause (space)"} disabled={show.phase === "outro"} data-build-pause>
+              {show.paused ? <Play size={16} /> : <Pause size={16} />}
+            </button>
+            <button type="button" onClick={onSkip} aria-label="Skip to the end" title="Skip to the end" disabled={show.phase === "outro"} data-build-skip>
+              <SkipForward size={16} />
+            </button>
+            <button type="button" onClick={onReplay} aria-label="Play again" title="Play again" data-build-replay>
+              <RotateCcw size={16} />
+            </button>
+            <button type="button" onClick={onClose} aria-label="Stop (Esc)" title="Stop (Esc)" data-build-close>
+              <X size={16} />
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

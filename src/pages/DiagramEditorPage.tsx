@@ -1,7 +1,7 @@
 import { DiagramFilesButton } from "@/components/DiagramFiles";
 import { NOTATION_INFO } from "@/lib/notation";
 import { NOTATIONS, type Notation } from "@/lib/types";
-import { Zap, Workflow, ListTree, Archive, BookmarkPlus, AlignCenterHorizontal, AlignCenterVertical, AlignEndHorizontal, AlignEndVertical, AlignHorizontalSpaceAround, AlignStartHorizontal, AlignStartVertical, AlignVerticalSpaceAround, ChevronRight, EyeOff, LayoutDashboard, Presentation, ListOrdered, MessageSquare, BadgeCheck, PanelLeftClose, PanelLeftOpen, Search, Share2, ShieldAlert, ShieldCheck, Shuffle, SlidersHorizontal, Sparkles, Trash2, Waypoints, X, ZoomIn } from "lucide-react";
+import { Zap, Workflow, ListTree, Archive, BookmarkPlus, AlignCenterHorizontal, AlignCenterVertical, AlignEndHorizontal, AlignEndVertical, AlignHorizontalSpaceAround, AlignStartHorizontal, AlignStartVertical, AlignVerticalSpaceAround, ChevronRight, EyeOff, LayoutDashboard, Clapperboard, Presentation, ListOrdered, MessageSquare, BadgeCheck, PanelLeftClose, PanelLeftOpen, Search, Share2, ShieldAlert, ShieldCheck, Shuffle, SlidersHorizontal, Sparkles, Trash2, Waypoints, X, ZoomIn } from "lucide-react";
 import { checkCopy } from "@/lib/freshness";
 import { alignNodes, distributeNodes, type AlignMode } from "@/lib/arrange";
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from "react";
@@ -657,6 +657,7 @@ function Editor({ ws, diagram }: { ws: Workspace; diagram: Diagram }) {
   const selectionRef = useRef(selection);
   selectionRef.current = selection;
   const [dialog, setDialog] = useState<"ai" | "share" | null>(null);
+  const [building, setBuilding] = useState(false);
   // The Security view stays on for this person until they switch it off.
   const [securityView, setSecurityViewOnly] = useState(() => {
     try {
@@ -955,6 +956,8 @@ function Editor({ ws, diagram }: { ws: Workspace; diagram: Diagram }) {
       case "processes":
         panel(() => setProcessesOpen(true));
         return done("Opened the linked processes");
+      case "build":
+        return canvas.current?.build() ? done("Playing the build animation: the diagram rises from the bottom up") : answer({ ok: false, text: "The diagram has no boxes to build" });
       case "security":
         setSecurityView(true);
         return done("Switched the Security view on: lines by encryption, what the checks find on each box");
@@ -1127,6 +1130,16 @@ function Editor({ ws, diagram }: { ws: Workspace; diagram: Diagram }) {
             Draft with AI
           </Button>
           <ExportMenu ws={ws} diagram={diagram} canvas={canvas} approval={approval.record} onNotice={notify} ask={exportAsk} onAskTaken={() => setExportAsk(null)} />
+          <Button
+            icon={<Clapperboard size={15} />}
+            title="Watch the diagram build itself, from the bottom up (Esc stops it, space pauses it)"
+            aria-pressed={building}
+            disabled={empty}
+            onClick={() => (building ? undefined : canvas.current?.build())}
+            data-build-play={building ? "playing" : "ready"}
+          >
+            Build
+          </Button>
           <Button icon={<Presentation size={15} />} title="Show this diagram full screen, without the tools around it" onClick={() => navigate(`/present/${diagramId}`)}>
             Present
           </Button>
@@ -1169,6 +1182,8 @@ function Editor({ ws, diagram }: { ws: Workspace; diagram: Diagram }) {
         </div>
       )}
       <div className="min-h-0 flex-1 flex">
+        {/* While the diagram builds itself the canvas takes the whole width; the panels keep what is typed in them. */}
+        <div className={building ? "hidden" : "contents"}>
         {!canEdit ? null : paletteOpen ? (
           <Palette ws={ws} diagram={diagram} onAddType={addType} onAddComponent={addComponent} onAddObject={addExisting} onAddDiagram={addDiagram} onPickProtocol={pickProtocol} onCollapse={() => togglePalette(false)} />
         ) : (
@@ -1178,6 +1193,7 @@ function Editor({ ws, diagram }: { ws: Workspace; diagram: Diagram }) {
             </IconButton>
           </div>
         )}
+        </div>
         <div className="relative min-w-0 flex-1">
           <DiagramCanvas
             ws={ws}
@@ -1189,6 +1205,7 @@ function Editor({ ws, diagram }: { ws: Workspace; diagram: Diagram }) {
             comments={commentMarks}
             spotlight={flows.spotlight}
             lens={securityView ? "security" : "normal"}
+            onBuild={setBuilding}
             readOnly={!canEdit}
             onSelect={onCanvasSelect}
             onMove={onMove}
@@ -1199,7 +1216,7 @@ function Editor({ ws, diagram }: { ws: Workspace; diagram: Diagram }) {
             onRemove={onRemove}
             canvasRef={canvas}
           />
-          {canEdit && pickedHere.length >= 2 && (
+          {!building && canEdit && pickedHere.length >= 2 && (
             <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-0.5 rounded-lg border border-line bg-surface shadow-md px-2 py-1" role="toolbar" aria-label="Arrange the picked boxes" data-arrange>
               <span className="px-1.5 text-[13px] text-ink-soft whitespace-nowrap">{pickedHere.length} picked</span>
               {ALIGN_BUTTONS.map(({ mode, label, icon: Icon }) => (
@@ -1220,8 +1237,8 @@ function Editor({ ws, diagram }: { ws: Workspace; diagram: Diagram }) {
               </IconButton>
             </div>
           )}
-          {(flowsOpen || flows.flow) && !(canEdit && pickedHere.length >= 2) && <FlowBar ws={ws} diagram={diagram} cursor={flows.cursor} onCursor={flows.setCursor} />}
-          <DiagramTitleBlock ws={ws} diagram={diagram} record={approval.record} />
+          {!building && (flowsOpen || flows.flow) && !(canEdit && pickedHere.length >= 2) && <FlowBar ws={ws} diagram={diagram} cursor={flows.cursor} onCursor={flows.setCursor} />}
+          {!building && <DiagramTitleBlock ws={ws} diagram={diagram} record={approval.record} />}
           {empty && (
             <div className="absolute inset-0 grid place-items-center pointer-events-none">
               <div className="pointer-events-auto rounded-lg border border-dashed border-ink-faint bg-surface/90 px-6 py-5 text-center max-w-sm">
@@ -1234,6 +1251,7 @@ function Editor({ ws, diagram }: { ws: Workspace; diagram: Diagram }) {
             </div>
           )}
         </div>
+        <div className={building ? "hidden" : "contents"}>
         {processesOpen ? (
           <aside className="w-[340px] shrink-0 bg-surface border-l border-line" aria-label="Processes">
             <DiagramProcessesPanel ws={ws} diagram={diagram} canEdit={canEditProcesses} onClose={() => setProcessesOpen(false)} />
@@ -1273,6 +1291,7 @@ function Editor({ ws, diagram }: { ws: Workspace; diagram: Diagram }) {
           </aside>
           )
         )}
+        </div>
       </div>
       {dialog === "ai" && <AiDraftDialog ws={ws} targetDiagram={diagram} onClose={() => setDialog(null)} />}
       {dialog === "share" && <ShareDialog ws={ws} diagram={diagram} approval={approval.record} onClose={() => setDialog(null)} />}

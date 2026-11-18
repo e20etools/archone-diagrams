@@ -125,7 +125,7 @@ export const editOpSchema = z.discriminatedUnion("op", [
   z.object({ op: z.literal("export"), format: z.enum(EXPORT_FORMATS) }),
   z.object({ op: z.literal("share"), kind: loose(["live", "snapshot"]), days: z.number().int().min(1).max(365).optional() }),
   z.object({ op: z.literal("present") }),
-  z.object({ op: z.literal("open"), what: z.enum(["share", "export", "approval", "comments", "files", "settings", "flows", "processes", "security", "usual"]) }),
+  z.object({ op: z.literal("open"), what: z.enum(["share", "export", "approval", "comments", "files", "settings", "flows", "processes", "security", "usual", "build"]) }),
   z.object({ op: z.literal("link_file"), file: ref }),
   z.object({ op: z.literal("unlink_file"), file: ref }),
 ]);
@@ -837,7 +837,7 @@ export function describeOp(ws: Workspace, op: EditOp, plan: EditOp[] = []): stri
     case "present":
       return "Present the diagram full screen";
     case "open":
-      return `Open ${OPEN_LABEL[op.what]}`;
+      return op.what === "build" ? "Play the build animation" : `Open ${OPEN_LABEL[op.what]}`;
     case "link_file":
       return `Link the file ${op.file} to the diagram`;
     case "unlink_file":
@@ -879,6 +879,7 @@ export const OPEN_LABEL: Record<Extract<EditOp, { op: "open" }>["what"], string>
   processes: "the linked processes",
   security: "the Security view",
   usual: "the usual view",
+  build: "the build animation",
 };
 
 /* ---------- what the checks say about a change ---------- */

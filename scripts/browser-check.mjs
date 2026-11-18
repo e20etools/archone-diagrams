@@ -243,6 +243,63 @@ try {
     check("boxes have an icon tile and no coloured stripe, lines are solid with their traffic moving along them, and outside systems are dashed", look.stripe === "1px" && look.radius === "12px" && look.solid && look.moving > 0 && look.outside, JSON.stringify(look));
   }
 
+  // The build animation: the diagram rises from the bottom up, a layer at a time, under a caption, with controls.
+  {
+    const diagramId = decodeURIComponent(new URL(page.url()).pathname.split("/diagram/")[1] ?? "");
+    const placed = (await stored()).diagrams[diagramId]?.nodes ?? {};
+    const lowest = Math.max(...Object.values(placed).map((n) => n.y));
+    const total = await count(page, ".object-node");
+    await page.click("[data-build-play]");
+    await page.waitForSelector("[data-build-show]");
+    const panelsAway = await page.evaluate(() => !document.querySelector('[data-build-show]') || ![...document.querySelectorAll("aside")].some((a) => a.offsetParent !== null && a.getBoundingClientRect().width > 100 && !a.closest("[data-assistant-dock]")));
+    await page.waitForSelector('[data-build-show][data-build-phase="stage"]', { timeout: 8000 });
+    await sleep(500);
+    const first = await page.evaluate(() => ({
+      shown: document.querySelectorAll(".object-node").length,
+      arriving: [...document.querySelectorAll(".react-flow__node.build-arrive")].map((n) => n.getAttribute("data-id")),
+      step: document.querySelector(".build-show__step")?.textContent,
+      title: document.querySelector(".build-show__title")?.textContent,
+      layers: document.querySelectorAll(".build-show__progress li").length,
+      button: document.querySelector("[data-build-play]")?.getAttribute("data-build-play"),
+    }));
+    await shot(page, "02a-build");
+    const bottomFirst = first.arriving.length > 0 && first.arriving.every((id) => Math.abs((placed[id]?.y ?? -1e9) - lowest) <= 40);
+    check(
+      "Build plays the diagram from the bottom up: the bottom row comes first, under a caption naming the layer, with the panels folded away",
+      panelsAway && first.shown > 0 && first.shown < total && bottomFirst && /^Layer 1 of \d+$/.test(first.step ?? "") && first.title && first.layers >= 2 && first.button === "playing",
+      JSON.stringify({ ...first, total, lowest, panelsAway }),
+    );
+    // The next layer rises on top of the first, and its lines draw themselves in.
+    await page.waitForSelector('[data-build-show][data-build-stage="1"]', { timeout: 8000 });
+    await sleep(300);
+    const second = await page.evaluate(() => ({ shown: document.querySelectorAll(".object-node").length, drawing: document.querySelectorAll(".react-flow__edge.build-draw").length, step: document.querySelector(".build-show__step")?.textContent }));
+    // The space bar pauses it, and the layer stays.
+    await page.keyboard.press(" ");
+    await sleep(2600);
+    const paused = await page.evaluate(() => ({ stage: document.querySelector("[data-build-show]")?.getAttribute("data-build-stage"), label: document.querySelector("[data-build-pause]")?.getAttribute("aria-label") }));
+    await page.keyboard.press(" ");
+    check(
+      "the next layer rises on the one before with its lines drawing in, and the space bar pauses it",
+      second.shown > first.shown && second.drawing > 0 && second.step?.startsWith("Layer 2 of") && paused.stage === "1" && paused.label === "Play (space)",
+      JSON.stringify({ second, paused }),
+    );
+    // Skip goes to the end: everything stands, with a closing caption; Esc ends it and the editor comes back as it was.
+    await page.click("[data-build-skip]");
+    await page.waitForSelector('[data-build-show][data-build-phase="outro"]');
+    await sleep(400);
+    const end = await page.evaluate(() => ({ shown: document.querySelectorAll(".object-node").length, step: document.querySelector(".build-show__step")?.textContent, said: document.querySelector(".build-show__names")?.textContent }));
+    await shot(page, "02a-build-end");
+    await page.keyboard.press("Escape");
+    await page.waitForFunction(() => !document.querySelector("[data-build-show]"));
+    await sleep(500);
+    const after = await page.evaluate(() => ({ shown: document.querySelectorAll(".object-node").length, edges: document.querySelectorAll(".react-flow__edge").length, hidden: document.querySelectorAll(".react-flow__node.build-arrive, .react-flow__edge.build-draw").length, palette: [...document.querySelectorAll("aside")].some((a) => a.offsetParent !== null && a.getBoundingClientRect().width > 200), button: document.querySelector("[data-build-play]")?.getAttribute("data-build-play") }));
+    check(
+      "skipping shows the whole diagram with a closing caption, and Esc gives the editor back as it was",
+      end.shown === total && end.step === "Built" && new RegExp(`^${total} components, \\d+ connections, in \\d+ layers$`).test(end.said ?? "") && after.shown === total && after.edges === sampleEdges && after.hidden === 0 && after.palette && after.button === "ready",
+      JSON.stringify({ end, after, total }),
+    );
+  }
+
   // A connection: which way it goes, moving on the canvas, and its protocols and ports.
   {
     const movingBefore = await count(page, ".react-flow__edge.traffic-out");
@@ -957,6 +1014,14 @@ try {
   await page.keyboard.press("ArrowLeft");
   await sleep(300);
   check("the arrow keys walk through the diagrams", secondShown !== firstShown && (await presented()) === firstShown);
+  // B plays the build animation in a presentation too; Esc stops it and the presentation stays.
+  await page.keyboard.press("b");
+  await page.waitForSelector("[data-build-show]");
+  const presentBuild = await page.evaluate(() => ({ phase: document.querySelector("[data-build-show]")?.getAttribute("data-build-phase"), button: !!document.querySelector("[data-build-play]"), shown: document.querySelectorAll(".object-node").length }));
+  await page.keyboard.press("Escape");
+  await page.waitForFunction(() => !document.querySelector("[data-build-show]"));
+  await sleep(300);
+  check("in a presentation, B plays the build animation and Esc stops it without leaving", ["intro", "stage"].includes(presentBuild.phase) && presentBuild.button && page.url().includes("/present/") && (await count(page, ".object-node")) > presentBuild.shown, JSON.stringify(presentBuild));
   await page.keyboard.press("Escape");
   await page.waitForSelector('nav[aria-label="Main"]');
   check("Escape returns to the editor", page.url().endsWith(`/diagram/${landscapeId}`));

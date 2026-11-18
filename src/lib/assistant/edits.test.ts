@@ -259,11 +259,12 @@ describe("making the assistant's changes", () => {
           { op: "share", kind: "live", days: 30 },
           { op: "present" },
           { op: "open", what: "share" },
+          { op: "open", what: "build" },
           { op: "link_file", file: "Firewall datasheet" },
         ],
       }),
     );
-    expect(plan?.apply.map((op) => op.op)).toEqual(["comment", "send_for_approval", "export", "share", "present", "open", "link_file"]);
+    expect(plan?.apply.map((op) => op.op)).toEqual(["comment", "send_for_approval", "export", "share", "present", "open", "open", "link_file"]);
     expect(plan!.apply.every(isAction)).toBe(true);
     const ws = demoWorkspace("Khaled");
     const diagram = diagramNamed(ws, "Inside Online store");
@@ -272,6 +273,7 @@ describe("making the assistant's changes", () => {
     expect(done.lines).toEqual([]);
     expect(describeOp(ws, plan!.apply[2])).toBe("Export the diagram as PDF");
     expect(describeOp(ws, plan!.apply[0])).toBe('Write a comment on the diagram: "Ready for review"');
+    expect(describeOp(ws, plan!.apply[6])).toBe("Play the build animation");
   });
 
   it("deletes the diagram, its objects staying in the model, once a person said yes", () => {

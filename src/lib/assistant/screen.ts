@@ -7,7 +7,7 @@ import type { ExportFormat } from "./edits";
  */
 export const SCREEN_REQUEST = "archone:assistant-screen";
 
-export type ScreenAsk = { kind: "export"; format: ExportFormat } | { kind: "present" } | { kind: "open"; what: "share" | "export" | "approval" | "comments" | "files" | "settings" | "flows" | "processes" | "security" | "usual" };
+export type ScreenAsk = { kind: "export"; format: ExportFormat } | { kind: "present" } | { kind: "open"; what: "share" | "export" | "approval" | "comments" | "files" | "settings" | "flows" | "processes" | "security" | "usual" | "build" };
 
 export interface ScreenRequest {
   diagramId: string;

@@ -162,7 +162,7 @@ export async function runActions(diagramId: string, ops: ActionOp[]): Promise<Ac
           break;
       }
     } catch (e) {
-      const what = op.op === "export" ? `Export as ${EXPORT_LABEL[op.format]}` : op.op === "open" ? `Open ${OPEN_LABEL[op.what]}` : op.op.replace(/_/g, " ");
+      const what = op.op === "export" ? `Export as ${EXPORT_LABEL[op.format]}` : op.op === "open" ? (op.what === "build" ? "Play the build animation" : `Open ${OPEN_LABEL[op.what]}`) : op.op.replace(/_/g, " ");
       out.problems.push(`${what.replace(/^./, (c) => c.toUpperCase())}: ${errorText(e)}`);
     }
   }

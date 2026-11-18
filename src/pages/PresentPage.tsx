@@ -1,4 +1,4 @@
-import { ArrowLeft, ArrowRight, Maximize2, Minimize2, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, Clapperboard, Maximize2, Minimize2, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { DiagramCanvas, type CanvasHandle } from "@/components/canvas/DiagramCanvas";
@@ -29,6 +29,7 @@ export function PresentPage() {
   // While a flow is open the arrow keys walk its steps; with none open they move between diagrams.
   useFlowKeys(!!flows.flow, flows.move, () => flows.setCursor(NO_FLOW));
   const canvas = useRef<CanvasHandle>(null);
+  const building = useRef(false);
   const frame = useRef<HTMLDivElement>(null);
   const [full, setFull] = useState(false);
   // Where "back" returns to after opening the inside of a box.
@@ -66,6 +67,13 @@ export function PresentPage() {
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       if (e.ctrlKey || e.metaKey || e.altKey) return;
+      // While the diagram builds itself, Esc and the space bar belong to the animation.
+      if (building.current) return;
+      if (e.key === "b" || e.key === "B") {
+        canvas.current?.build();
+        e.preventDefault();
+        return;
+      }
       if (e.key === "ArrowRight" || e.key === "PageDown" || e.key === " ") step(1);
       else if (e.key === "ArrowLeft" || e.key === "PageUp") step(-1);
       else if (e.key === "Backspace") back();
@@ -132,6 +140,9 @@ export function PresentPage() {
             <ArrowRight size={17} />
           </IconButton>
           <span className="mx-1 h-5 w-px bg-line" />
+          <Button size="sm" icon={<Clapperboard size={14} />} title="Watch the diagram build itself, from the bottom up (B)" onClick={() => canvas.current?.build()} data-build-play="ready">
+            Build
+          </Button>
           <IconButton label={full ? "Leave full screen (F)" : "Full screen (F)"} onClick={toggleFull}>
             {full ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
           </IconButton>
@@ -141,7 +152,7 @@ export function PresentPage() {
         </div>
       </header>
       <div className="relative min-h-0 flex-1">
-        <DiagramCanvas ws={ws} diagram={diagram} readOnly canvasRef={canvas} onOpen={inside} spotlight={flows.spotlight} />
+        <DiagramCanvas ws={ws} diagram={diagram} readOnly canvasRef={canvas} onOpen={inside} spotlight={flows.spotlight} onBuild={(on) => (building.current = on)} />
         <FlowBar ws={ws} diagram={diagram} cursor={flows.cursor} onCursor={flows.setCursor} />
         <DiagramTitleBlock ws={ws} diagram={diagram} record={approval.record} />
       </div>

@@ -1257,3 +1257,229 @@ html[data-motion="off"] .insight { animation: none; }
 [data-assistant-room] .react-flow__minimap.bottom.right {
   margin-right: 80px;
 }
+
+/* ---------- The build animation: the diagram rises from the bottom up ---------- */
+.is-building .react-flow__panel,
+.is-building .react-flow__minimap,
+.is-building .react-flow__controls,
+.is-building .react-flow__attribution {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 400ms ease;
+}
+.is-building .edge-traffic {
+  display: none;
+}
+/* A box rises into place: up from below, out of a blur. Its wrapper keeps the position. */
+.react-flow__node.build-arrive > * {
+  animation: build-rise 900ms cubic-bezier(0.16, 1, 0.3, 1) var(--build-delay, 0ms) both;
+}
+@keyframes build-rise {
+  from {
+    opacity: 0;
+    transform: translateY(34px) scale(0.94);
+    filter: blur(7px);
+  }
+  55% {
+    filter: blur(0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+}
+/* Zones and the frame of what the diagram shows the inside of open around their boxes. */
+.react-flow__node.build-frame > * {
+  animation: build-frame 1100ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@keyframes build-frame {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+/* A line draws itself from one box to the other once both stand; its head and label follow. */
+.react-flow__edge.build-draw .react-flow__edge-path {
+  stroke-dasharray: 2400 !important;
+  stroke-dashoffset: 2400;
+  animation: build-draw 1100ms cubic-bezier(0.65, 0, 0.35, 1) var(--build-delay, 400ms) forwards;
+}
+@keyframes build-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+.edge-label[data-arriving] {
+  animation: build-label 600ms ease both;
+}
+@keyframes build-label {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+.build-show {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  pointer-events: none;
+  color: #ffffff;
+}
+.build-show__bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  background: rgba(7, 11, 19, 0.92);
+  backdrop-filter: blur(6px);
+  animation: build-bar-top 800ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.build-show__bar--top {
+  top: 0;
+  height: 52px;
+}
+.build-show__bar--bottom {
+  bottom: 0;
+  min-height: 104px;
+  box-sizing: border-box;
+  padding: 18px 28px;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  pointer-events: auto;
+  animation-name: build-bar-bottom;
+}
+@keyframes build-bar-top {
+  from {
+    transform: translateY(-100%);
+  }
+}
+@keyframes build-bar-bottom {
+  from {
+    transform: translateY(100%);
+  }
+}
+.build-show__vignette {
+  position: absolute;
+  inset: 52px 0 104px;
+  background: radial-gradient(ellipse at center, transparent 58%, rgba(7, 11, 19, 0.2));
+  animation: build-fade 1200ms ease both;
+}
+@keyframes build-fade {
+  from {
+    opacity: 0;
+  }
+}
+.build-show__caption {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  animation: build-caption 800ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@keyframes build-caption {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+    filter: blur(4px);
+  }
+}
+.build-show__step {
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  color: #9fb0cc;
+}
+.build-show__title {
+  font-size: 22px;
+  line-height: 28px;
+  font-weight: 600;
+  color: #ffffff;
+}
+.build-show__names {
+  font-size: 13px;
+  color: #c9d3e3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.build-show__right {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+[data-assistant-room] .build-show__right {
+  margin-right: 68px;
+}
+.build-show__progress {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  gap: 5px;
+}
+.build-show__progress li {
+  width: 18px;
+  height: 3px;
+  border-radius: 2px;
+  background: #34405a;
+  transition: background 500ms ease;
+}
+.build-show__progress li[data-done],
+.build-show__progress li[data-now] {
+  background: #8aa2ff;
+}
+.build-show__controls {
+  display: flex;
+  gap: 6px;
+}
+.build-show__controls button {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.09);
+  color: #ffffff;
+  cursor: pointer;
+  transition: background 150ms ease;
+}
+.build-show__controls button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.18);
+}
+.build-show__controls button:focus-visible {
+  outline: 2px solid #8aa2ff;
+  outline-offset: 2px;
+}
+.build-show__controls button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+/* Less motion: things appear with a quick fade, the camera does not move. */
+.is-building:has([data-still]) .react-flow__node.build-arrive > *,
+.is-building:has([data-still]) .react-flow__node.build-frame > * {
+  animation: build-fade 240ms ease both;
+}
+.is-building:has([data-still]) .react-flow__edge.build-draw .react-flow__edge-path {
+  animation: none;
+  stroke-dashoffset: 0;
+}
+.build-show[data-still] .build-show__bar,
+.build-show[data-still] .build-show__caption {
+  animation: build-fade 240ms ease both;
+}
+@media (max-width: 640px) {
+  .build-show__bar--bottom {
+    flex-wrap: wrap;
+    padding: 14px 16px;
+  }
+  .build-show__title {
+    font-size: 18px;
+  }
+}
