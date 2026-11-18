@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { buildAskSystemPrompt, buildAskText, buildSystemPrompt, buildUserText } from "./prompt";
+import { buildAskSystemPrompt, buildAskText, buildChatSystemPrompt, buildSystemPrompt, buildUserText } from "./prompt";
 import { normalizeDraft } from "./schema";
 import { normalizeProcessDraft, PROCESS_SYSTEM_PROMPT, processUserText } from "../bpm/draft";
 
@@ -43,6 +43,11 @@ const IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp", "image/gif"] as co
 
 export const MAX_QUESTION = 1000;
 export const MAX_CONTEXT = 240_000;
+/** A conversation with the assistant: its last turns, each of a bounded length. */
+export const MAX_CHAT_TURNS = 16;
+export const MAX_CHAT_TEXT = 6000;
+
+const chatTurnSchema = z.object({ role: z.enum(["user", "assistant"]), content: z.string().trim().min(1).max(MAX_CHAT_TEXT) });
 
 const requestSchema = z.discriminatedUnion("mode", [
   z.object({ mode: z.literal("prompt"), text: z.string().trim().min(3).max(MAX_TEXT) }),
@@ -55,6 +60,18 @@ const requestSchema = z.discriminatedUnion("mode", [
   z.object({ mode: z.literal("ask"), question: z.string().trim().min(3).max(MAX_QUESTION), context: z.string().max(MAX_CONTEXT) }),
   // A business process described in words, drafted as BPMN steps and flows.
   z.object({ mode: z.literal("process"), text: z.string().trim().min(3).max(MAX_TEXT) }),
+  // A conversation with the assistant. What the workspace holds travels with every turn, as text; the server keeps none of it.
+  z.object({
+    mode: z.literal("chat"),
+    messages: z
+      .array(chatTurnSchema)
+      .min(1)
+      .max(MAX_CHAT_TURNS)
+      .refine((turns) => turns[turns.length - 1]?.role === "user", "The last turn is the person's."),
+    context: z.string().max(MAX_CONTEXT),
+    /** Where in the app the person is, in words. */
+    page: z.string().max(300).optional(),
+  }),
 ]);
 export type AiRequest = z.infer<typeof requestSchema>;
 
@@ -173,46 +190,71 @@ export function extractJson(text: string): unknown {
   }
 }
 
-/** What is sent to the model: the instruction, and the person's text (with a picture, when drafting from one). */
-function messageFor(request: AiRequest): { system: string; text: string; maxTokens: number } {
-  if (request.mode === "ask") return { system: buildAskSystemPrompt(), text: buildAskText(request.question, request.context), maxTokens: 1500 };
-  if (request.mode === "process") return { system: PROCESS_SYSTEM_PROMPT, text: processUserText(request.text), maxTokens: 8000 };
-  return { system: buildSystemPrompt(), text: buildUserText(request.mode, request.text ?? ""), maxTokens: 8000 };
+interface Turn {
+  role: "user" | "assistant";
+  text: string;
+}
+
+/**
+ * A conversation as the providers take it: it opens with the person, and two turns of the same
+ * side in a row (a question whose answer failed) become one.
+ */
+export function chatTurns(messages: { role: "user" | "assistant"; content: string }[]): Turn[] {
+  const turns: Turn[] = [];
+  for (const m of messages) {
+    if (!turns.length && m.role !== "user") continue;
+    const last = turns[turns.length - 1];
+    if (last && last.role === m.role) last.text = `${last.text}\n\n${m.content}`;
+    else turns.push({ role: m.role, text: m.content });
+  }
+  return turns;
+}
+
+/** What is sent to the model: the instruction, and the turns of the conversation (one, except in a chat). */
+function messageFor(request: AiRequest): { system: string; turns: Turn[]; maxTokens: number } {
+  const one = (text: string): Turn[] => [{ role: "user", text }];
+  if (request.mode === "chat") return { system: buildChatSystemPrompt(request.context, request.page ?? ""), turns: chatTurns(request.messages), maxTokens: 2500 };
+  if (request.mode === "ask") return { system: buildAskSystemPrompt(), turns: one(buildAskText(request.question, request.context)), maxTokens: 1500 };
+  if (request.mode === "process") return { system: PROCESS_SYSTEM_PROMPT, turns: one(processUserText(request.text)), maxTokens: 8000 };
+  return { system: buildSystemPrompt(), turns: one(buildUserText(request.mode, request.text ?? "")), maxTokens: 8000 };
 }
 
 async function callAnthropic(p: Provider, request: AiRequest, fetchImpl: typeof fetch): Promise<Response> {
-  const { system, text, maxTokens } = messageFor(request);
-  const content: unknown[] = [];
-  if (request.mode === "image") {
-    content.push({ type: "image", source: { type: "base64", media_type: request.image.mime, data: request.image.data } });
-  }
-  content.push({ type: "text", text });
+  const { system, turns, maxTokens } = messageFor(request);
+  const messages = turns.map((turn, i) => {
+    const content: unknown[] = [];
+    if (request.mode === "image" && i === turns.length - 1) {
+      content.push({ type: "image", source: { type: "base64", media_type: request.image.mime, data: request.image.data } });
+    }
+    content.push({ type: "text", text: turn.text });
+    return { role: turn.role, content };
+  });
   return fetchImpl(`${p.baseUrl.replace(/\/$/, "")}/v1/messages`, {
     method: "POST",
     headers: { "content-type": "application/json", "x-api-key": p.key, "anthropic-version": "2023-06-01" },
-    body: JSON.stringify({ model: p.model, max_tokens: maxTokens, system, messages: [{ role: "user", content }] }),
+    body: JSON.stringify({ model: p.model, max_tokens: maxTokens, system, messages }),
   });
 }
 
 async function callOpenAiStyle(p: Provider, request: AiRequest, fetchImpl: typeof fetch): Promise<Response> {
-  const { system, text, maxTokens } = messageFor(request);
+  const { system, turns, maxTokens } = messageFor(request);
   // Plain text for text requests: some OpenAI-style hosts accept a list of parts only for vision models.
-  const content: unknown =
-    request.mode === "image"
-      ? [
-          { type: "text", text },
-          { type: "image_url", image_url: { url: `data:${request.image.mime};base64,${request.image.data}` } },
-        ]
-      : text;
+  const messages = turns.map((turn, i) => ({
+    role: turn.role,
+    content:
+      request.mode === "image" && i === turns.length - 1
+        ? [
+            { type: "text", text: turn.text },
+            { type: "image_url", image_url: { url: `data:${request.image.mime};base64,${request.image.data}` } },
+          ]
+        : turn.text,
+  }));
   return fetchImpl(`${p.baseUrl.replace(/\/$/, "")}/chat/completions`, {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${p.key}`, ...p.headers },
     body: JSON.stringify({
       model: modelFor(p, request),
-      messages: [
-        { role: "system", content: system },
-        { role: "user", content },
-      ],
+      messages: [{ role: "system", content: system }, ...messages],
       ...(p.maxTokens ? { max_tokens: Math.min(p.maxTokens, maxTokens) } : {}),
       ...(p.reasoningEffort ? { reasoning_effort: p.reasoningEffort } : {}),
     }),
@@ -239,14 +281,17 @@ function answerText(provider: Provider, payload: unknown): string {
 export type AiKind = "text" | "image" | "ask";
 
 const badRequest = (body: unknown): AiResult => {
-  const asking = (body as { mode?: unknown } | null)?.mode === "ask";
+  const mode = (body as { mode?: unknown } | null)?.mode;
   return {
     status: 400,
     body: {
       error: "bad_request",
-      message: asking
-        ? "Send a question of 3 to 1000 characters. If the model is very large, it may not fit in one question."
-        : "Send a description of at least three characters, or a PNG, JPEG, WebP or GIF image under 5 MB.",
+      message:
+        mode === "ask"
+          ? "Send a question of 3 to 1000 characters. If the model is very large, it may not fit in one question."
+          : mode === "chat"
+            ? `Send a message of up to ${MAX_CHAT_TEXT} characters. If the workspace is very large, it may not fit in one message.`
+            : "Send a description of at least three characters, or a PNG, JPEG, WebP or GIF image under 5 MB.",
     },
   };
 };
@@ -255,7 +300,9 @@ const badRequest = (body: unknown): AiResult => {
 export function checkAiRequest(body: unknown): { ok: true; kind: AiKind } | { ok: false; result: AiResult } {
   const parsed = requestSchema.safeParse(body);
   if (!parsed.success) return { ok: false, result: badRequest(body) };
-  return { ok: true, kind: parsed.data.mode === "prompt" || parsed.data.mode === "process" ? "text" : parsed.data.mode };
+  // A chat with the assistant is asking questions, and counts as such against the workspace's limits.
+  const mode = parsed.data.mode;
+  return { ok: true, kind: mode === "prompt" || mode === "process" ? "text" : mode === "chat" ? "ask" : mode };
 }
 
 /**
@@ -317,8 +364,8 @@ export async function handleAiRequest(body: unknown, env: AiEnv, fetchImpl: type
     return { status: 502, body: { error: "bad_response", message: "The AI provider sent an answer that could not be read." } };
   }
   const tokens = usedTokens(provider, payload);
-  if (parsed.data.mode === "ask") {
-    const answer = answerText(provider, payload).trim().slice(0, 8000);
+  if (parsed.data.mode === "ask" || parsed.data.mode === "chat") {
+    const answer = answerText(provider, payload).trim().slice(0, parsed.data.mode === "chat" ? 12_000 : 8000);
     if (!answer) return { status: 502, body: { error: "bad_response", message: "The AI model sent an empty answer. Try again." }, tokens };
     return { status: 200, body: { answer, engine: `${provider.id}:${modelFor(provider, parsed.data)}` }, tokens };
   }

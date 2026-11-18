@@ -1,6 +1,7 @@
 import { BadgeCheck, FileBarChart, FolderOpen, Network, Zap, Boxes, Workflow, Pickaxe, ClipboardCheck, FileText, GitBranch, HeartPulse, History, GalleryThumbnails, LayoutGrid, MessageCircleQuestion, Redo2, Scale, ScrollText, Search, Settings, Shapes, ShieldCheck, Sparkles, Undo2, Waypoints } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
+import { AssistantDock } from "@/components/assistant/AssistantDock";
 import { CloudHeader, ReadOnlyBanner } from "@/components/cloud/CloudHeader";
 import { TypeIcon } from "@/components/icons";
 import { IconButton, countOf, cx } from "@/components/ui";
@@ -243,7 +244,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, [undo, redo]);
 
   return (
-    <div className="h-full flex">
+    <div className="h-full flex" data-assistant-room>
       <div className="ambient" data-ambient={look.theme.ambient} aria-hidden>
         <span />
         <span />
@@ -313,6 +314,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         {cloudEnabled && <ReadOnlyBanner />}
         <main className="min-h-0 flex-1 overflow-auto">{children}</main>
       </div>
+      <AssistantDock />
     </div>
   );
 }

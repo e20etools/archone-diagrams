@@ -378,7 +378,7 @@ export function ProposalReviewPage() {
       </section>
 
       {pending && (
-        <div className="fixed bottom-0 right-0 left-[212px] z-30 border-t border-line bg-surface/95 backdrop-blur px-6 py-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+        <div className="fixed bottom-0 right-0 left-[212px] z-30 border-t border-line bg-surface/95 backdrop-blur pl-6 pr-20 py-3 flex flex-wrap items-center gap-x-4 gap-y-2">
           <p className="text-sm">
             <span className="font-semibold tabular-nums">{acceptedObjects}</span> of {proposal.objects.length} objects and{" "}
             <span className="font-semibold tabular-nums">{readyRelationships}</span> of {proposal.relationships.length} relationships will be saved to{" "}

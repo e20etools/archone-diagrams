@@ -918,6 +918,46 @@ try {
   await waitText(ana, "Approval settings saved.");
   await visit(ben, diagramUrl, ".object-node");
 
+  /* ---------- the assistant knows who made a diagram and what its approvers said ---------- */
+  {
+    const chats = [];
+    const onRequest = (req) => {
+      if (new URL(req.url()).pathname !== "/api/ai") return void req.continue();
+      if (req.method() === "GET") return void req.respond({ status: 200, contentType: "application/json", body: JSON.stringify({ configured: true, engine: "stand-in:model", needsCode: false }) });
+      const body = JSON.parse(req.postData() ?? "{}");
+      chats.push(body);
+      const id = /^DIAGRAM \[\[d:(\S+?)\]\]/m.exec(body.context ?? "")?.[1] ?? "missing";
+      req.respond({ status: 200, contentType: "application/json", body: JSON.stringify({ answer: `Cybersecurity returned [[d:${id}]] once, then approved it.`, engine: "stand-in:model" }) });
+    };
+    await ben.setRequestInterception(true);
+    ben.on("request", onRequest);
+    await visit(ben, diagramUrl, ".object-node");
+    await tap(ben, "[data-assistant-launcher]");
+    await waitFor(ben, "[data-assistant-ai-on]");
+    await tap(ben, "[data-assistant-ai-on]");
+    await typeIn(ben, "[data-assistant-input]", "What did Cybersecurity say about this diagram?");
+    await ben.keyboard.press("Enter");
+    await waitFor(ben, '[data-assistant-kind="ai"] [data-assistant-diagram]', { timeout: 15000 });
+    const sent = chats.at(-1)?.context ?? "";
+    check(
+      "the assistant is given who made the diagram, its approvers, and the notes of Cybersecurity, with the workspace's approval queue",
+      chats.at(-1)?.mode === "chat" &&
+        /- Made by \S[^;]*; last changed by \S/.test(sent) &&
+        sent.includes("Label the link to the database with its protocol.") &&
+        sent.includes("Approvers: Enterprise Architecture: Ana Owner; Cybersecurity: Vera Viewer") &&
+        sent.includes("Changed and approved (Cybersecurity) by Vera Viewer") &&
+        sent.includes("== APPROVAL OF DIAGRAMS") &&
+        /== PEOPLE in the workspace ==\n[^\n]*Ana Owner/.test(sent) &&
+        !sent.includes("@example.com"),
+      sent.slice(sent.indexOf("DIAGRAM [[d:"), sent.indexOf("DIAGRAM [[d:") + 300),
+    );
+    await shot(ben, "36-assistant-approvals");
+    await ben.keyboard.press("Escape");
+    ben.off("request", onRequest);
+    await ben.setRequestInterception(false);
+    await visit(ben, diagramUrl, ".object-node");
+  }
+
   /* ---------- offline edits are kept and saved later ---------- */
   await ben.bringToFront();
   await ben.setOfflineMode(true);

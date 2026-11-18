@@ -6,7 +6,7 @@ import { visibleEdges } from "../views";
 import { draftFromText } from "./heuristic";
 import { applyProposal, draftToProposal, proposalCounts, saveProposal, setAllDecisions, updateProposal } from "./proposals";
 import { normalizeDraft } from "./schema";
-import { aiStatus, checkAiRequest, extractJson, handleAiRequest, resolveProvider } from "./server-core";
+import { aiStatus, chatTurns, checkAiRequest, extractJson, handleAiRequest, resolveProvider } from "./server-core";
 
 const names = (d: ReturnType<typeof draftFromText>) => d.objects.map((o) => o.name);
 const edges = (d: ReturnType<typeof draftFromText>) => {
@@ -236,6 +236,52 @@ describe("AI endpoint (AI-01, AI-02)", () => {
 
     // Chosen models win over the defaults.
     expect(aiStatus({ ...env, AI_MODEL: "openai/gpt-oss-120b" }).engine).toBe("groq:openai/gpt-oss-120b");
+  });
+
+  it("holds a conversation: the workspace in the instruction, the turns in order, counted as a question", async () => {
+    const messages = [
+      { role: "assistant", content: "Hello, ask me anything." },
+      { role: "user", content: "من صمم مخطط Payments؟" },
+      { role: "assistant", content: "صممه Sara." },
+      { role: "user", content: "And who approved it?" },
+      { role: "user", content: "For Cybersecurity, I mean." },
+    ];
+    const request = { mode: "chat", messages, context: "DIAGRAMS\n[[d:dg_1]] Payments | made by Sara", page: "the diagram Payments" };
+    expect(checkAiRequest(request)).toEqual({ ok: true, kind: "ask" });
+    expect(chatTurns(messages as any).map((t) => t.role)).toEqual(["user", "assistant", "user"]);
+
+    const seen: any[] = [];
+    const openai = (async (_url: string, init: RequestInit) => {
+      seen.push(JSON.parse(String(init.body)));
+      return new Response(JSON.stringify({ choices: [{ message: { content: "Cybersecurity approved [[d:dg_1]]." } }], usage: { total_tokens: 900 } }), { status: 200 });
+    }) as unknown as typeof fetch;
+    const answer = await handleAiRequest(request, { AI_PROVIDER: "groq", AI_API_KEY: "gsk_test" }, openai);
+    expect(answer).toMatchObject({ status: 200, tokens: 900, body: { answer: "Cybersecurity approved [[d:dg_1]].", engine: "groq:llama-3.3-70b-versatile" } });
+    const sent = seen[0];
+    expect(sent.messages.map((m: any) => m.role)).toEqual(["system", "user", "assistant", "user"]);
+    expect(sent.messages[0].content).toContain("WORKSPACE DATA\nDIAGRAMS\n[[d:dg_1]] Payments | made by Sara\nEND WORKSPACE DATA");
+    expect(sent.messages[0].content).toContain("The person is on: the diagram Payments");
+    expect(sent.messages[0].content).toContain("Answer in the language of the person's last message");
+    expect(sent.messages[3].content).toBe("And who approved it?\n\nFor Cybersecurity, I mean.");
+    expect(sent.max_tokens).toBe(2500);
+
+    const anthropicSeen: any[] = [];
+    const anthropic = (async (_url: string, init: RequestInit) => {
+      anthropicSeen.push(JSON.parse(String(init.body)));
+      return new Response(JSON.stringify({ content: [{ type: "text", text: "Approved." }], usage: { input_tokens: 10, output_tokens: 2 } }), { status: 200 });
+    }) as unknown as typeof fetch;
+    await handleAiRequest(request, { ANTHROPIC_API_KEY: "sk-ant" }, anthropic);
+    expect(anthropicSeen[0].system).toContain("[[d:dg_1]] Payments");
+    expect(anthropicSeen[0].messages.map((m: any) => [m.role, m.content[0].text])).toEqual([
+      ["user", "من صمم مخطط Payments؟"],
+      ["assistant", "صممه Sara."],
+      ["user", "And who approved it?\n\nFor Cybersecurity, I mean."],
+    ]);
+
+    // The person speaks last, and every turn has a bounded length.
+    expect(checkAiRequest({ ...request, messages: [...messages, { role: "assistant", content: "x" }] }).ok).toBe(false);
+    expect(checkAiRequest({ ...request, messages: [{ role: "user", content: "x".repeat(6001) }] }).ok).toBe(false);
+    expect(checkAiRequest({ ...request, messages: [] }).ok).toBe(false);
   });
 
   it("explains a used-up free allowance and a refused key", async () => {

@@ -75,6 +75,18 @@ function fakeProvider(port) {
         res.end(JSON.stringify({ choices: [{ message: { content: `Nothing in the model says so.\n- [[${id}]] holds the bookings.\n- [[obj_invented]] is made up.` } }] }));
         return;
       }
+      // The assistant: answer from the workspace that came in the instruction, naming the diagram on screen and an object on it.
+      if (String(sent.messages?.[0]?.content ?? "").startsWith("You are the assistant inside ArchONE Diagrams")) {
+        const system = sent.messages[0].content;
+        const diagram = /^DIAGRAM \[\[d:(\S+?)\]\]/m.exec(system)?.[1] ?? /^\[\[d:(\S+?)\]\]/m.exec(system)?.[1] ?? "missing";
+        const object = /^\s*\[\[(\S+?)\]\] Booking service \|/m.exec(system)?.[1] ?? "missing";
+        const last = sent.messages.at(-1).content;
+        const content = /[؀-ۿ]/.test(last)
+          ? `يعرض المخطط [[d:${diagram}]] الخدمة [[${object}]].\n- **البروتوكولات**: غير مسجلة\n\n| Object | Owner |\n|---|---|\n| [[${object}]] | - |`
+          : `**[[d:${diagram}]]** shows [[${object}]] and two more objects.\n- Nothing records its protocols yet.\n- [[obj_invented]] is not real.`;
+        res.end(JSON.stringify({ choices: [{ message: { content } }], usage: { total_tokens: 1200 } }));
+        return;
+      }
       // A business process described in words: answer with steps, lanes and flows.
       if (String(sent.messages?.[0]?.content ?? "").startsWith("You turn a description of a business process")) {
         const process = {
@@ -688,6 +700,23 @@ try {
   await clickText(page, "Ask", "nav a, aside a, a");
   await page.waitForSelector("[data-answer]");
   check("the answers are still there after visiting the object", (await count(page, "[data-answer]")) === 4);
+
+  // The assistant in the corner, without an AI model: the built-in reader answers what it can.
+  await page.goto(base, { waitUntil: "networkidle0" });
+  await page.click("[data-assistant-launcher]");
+  await page.waitForSelector("[data-assistant-panel] [data-assistant-suggestions] button");
+  check("the assistant opens from the corner, says no AI model is set up, and offers questions it can answer", (await page.$eval("[data-assistant-engine]", (e) => e.textContent)) === "Reads the model; no AI model is set up" && (await hasText(page, "No AI model is set up, so only questions")));
+  await page.type("[data-assistant-input]", "Who owns Order service?");
+  await page.keyboard.press("Enter");
+  await page.waitForSelector('[data-assistant-kind="computed"]');
+  check("a question the built-in reader understands is answered from the model, with a link to the object", (await page.$eval('[data-assistant-kind="computed"]', (e) => e.innerText)).includes("Order service is owned by Digital team.") && (await count(page, '[data-assistant-kind="computed"] [data-assistant-object]')) === 1);
+  await page.type("[data-assistant-input]", "Is the payment flow PCI compliant?");
+  await page.keyboard.press("Enter");
+  await page.waitForSelector('[data-assistant-kind="search"]');
+  check("anything else gets the matching objects and says how to connect an AI model", (await page.$eval('[data-assistant-kind="search"]', (e) => e.innerText)).includes("Settings → Integrations"));
+  await page.keyboard.press("Escape");
+  await sleep(100);
+  check("Escape closes the assistant and the keyboard goes back to its button", !(await page.$("[data-assistant-panel]")) && (await page.evaluate(() => document.activeElement?.hasAttribute("data-assistant-launcher"))));
 
   // Checks and the data map.
   await page.goto(`${base}/checks`, { waitUntil: "networkidle0" });
@@ -2319,9 +2348,16 @@ try {
   const sentImage = seen[1]?.body?.messages?.[1]?.content?.some?.((part) => part.type === "image_url" && part.image_url.url.startsWith("data:image/png;base64,"));
   check("an uploaded picture is sent to the model and comes back as a draft to review", !!sentImage);
   await clickText(page2, "Accept all");
+  const saveClear = await page2.evaluate(() => {
+    const save = [...document.querySelectorAll("button")].find((b) => b.textContent.trim() === "Save accepted to the model").getBoundingClientRect();
+    const dock = document.querySelector("[data-assistant-launcher]").getBoundingClientRect();
+    return save.right <= dock.left || save.bottom <= dock.top;
+  });
+  check("the assistant's button leaves the draft's save button clear", saveClear);
   await clickText(page2, "Save accepted to the model");
   await page2.waitForSelector(".object-node");
   await sleep(500);
+  const importedDiagramUrl = page2.url();
   check("the imported diagram is drawn with its AI badge", (await count(page2, ".object-node")) === 3 && (await page2.evaluate(() => document.body.innerText.includes("AI draft"))));
   await shot(page2, "11-image-import");
 
@@ -2408,6 +2444,61 @@ try {
   const askCall = seen.at(-1).body;
   check("the question travels with the model as text, and one call is made", seen.length === callsBefore + 1 && String(askCall.messages[1].content).startsWith("MODEL\nWorkspace:") && String(askCall.messages[1].content).endsWith("Question: Is patient data encrypted at rest?"));
   await shot(page2, "13-ask-ai");
+
+  // The assistant with an AI model: the diagram on screen and the whole workspace go with each message.
+  await page2.goto(importedDiagramUrl, { waitUntil: "networkidle0" });
+  await page2.waitForSelector(".object-node");
+  const corner = await page2.evaluate(() => {
+    const dock = document.querySelector("[data-assistant-launcher]").getBoundingClientRect();
+    const map = document.querySelector(".react-flow__minimap")?.getBoundingClientRect();
+    return { dock: Math.round(dock.right) <= innerWidth && Math.round(dock.bottom) <= innerHeight && innerWidth - dock.right < 40, clear: !map || map.right <= dock.left || map.bottom <= dock.top };
+  });
+  check("the assistant waits in the bottom-right corner, and the diagram's minimap moves aside for it", corner.dock && corner.clear, JSON.stringify(corner));
+  await page2.click("[data-assistant-launcher]");
+  await page2.waitForSelector("[data-assistant-panel] [data-assistant-suggestions] button");
+  check("opened, it says which model answers and offers questions about the diagram on screen", (await page2.$eval("[data-assistant-engine]", (e) => e.textContent)).includes("openai-compatible:stand-in-model") && (await page2.evaluate(() => document.activeElement?.hasAttribute("data-assistant-input"))) && (await hasText(page2, "Summarise this diagram")));
+  const chatBefore = seen.length;
+  await page2.click("[data-assistant-suggestions] button");
+  await page2.waitForSelector('[data-assistant-kind="ai"]');
+  const firstChat = seen.at(-1).body;
+  const firstSystem = String(firstChat.messages[0].content);
+  const shownDiagram = importedDiagramUrl.split("/diagram/")[1];
+  check(
+    "a message goes to the AI model with the diagram on screen in full and the rest of the workspace",
+    seen.length === chatBefore + 1 && firstChat.messages.length === 2 && firstChat.messages[1].role === "user" && firstSystem.includes(`DIAGRAM [[d:${shownDiagram}]]`) && firstSystem.includes("The person is on: the editor of the diagram") && firstSystem.includes("== OBJECTS:") && firstSystem.includes("== CHECK FINDINGS"),
+    firstSystem.slice(0, 200),
+  );
+  const firstAnswer = await page2.$eval('[data-assistant-kind="ai"]', (e) => ({ diagram: e.querySelector("[data-assistant-diagram]")?.textContent, object: e.querySelector("[data-assistant-object]")?.textContent, bold: !!e.querySelector("strong [data-assistant-diagram]"), list: e.querySelectorAll("li li, ul li").length, text: e.innerText }));
+  check("the answer's tags become links to the diagram and the object, with its bold and list kept", !!firstAnswer.diagram && firstAnswer.object === "Booking service" && firstAnswer.bold && firstAnswer.text.includes("an object that is not in this workspace is not real") && !firstAnswer.text.includes("obj_invented"), JSON.stringify(firstAnswer));
+  await page2.type("[data-assistant-input]", "ما هي البروتوكولات المستخدمة؟");
+  await page2.keyboard.press("Enter");
+  await page2.waitForFunction(() => document.querySelectorAll('[data-assistant-kind="ai"]').length === 2);
+  const second = seen.at(-1).body;
+  const arabic = await page2.evaluate(() => {
+    const answers = document.querySelectorAll('[data-assistant-kind="ai"]');
+    const last = answers[answers.length - 1];
+    const p = last.querySelector("[data-assistant-answer] p");
+    return { dir: p?.getAttribute("dir"), rtl: getComputedStyle(p).direction, table: !!last.querySelector("table [data-assistant-object]"), user: [...document.querySelectorAll('[data-assistant-turn="user"] p')].at(-1).getAttribute("dir") };
+  });
+  check("a follow-up in Arabic carries the conversation, and the answer reads right to left with its table", second.messages.map((m) => m.role).join() === "system,user,assistant,user" && arabic.rtl === "rtl" && arabic.table && arabic.user === "auto", JSON.stringify(arabic));
+  await shot(page2, "48-assistant-ai");
+  await page2.click('[data-assistant-kind="ai"] [data-assistant-diagram]');
+  await sleep(300);
+  check("a diagram in an answer opens that diagram, and the conversation stays open beside it", page2.url().endsWith(`/diagram/${shownDiagram}`) && (await count(page2, "[data-assistant-turns] > li")) === 4);
+  await page2.click("[data-assistant-ai-off]");
+  const offBefore = seen.length;
+  await page2.type("[data-assistant-input]", "Which databases are there?");
+  await page2.keyboard.press("Enter");
+  await page2.waitForSelector('[data-assistant-kind="computed"]');
+  check("with AI switched off, nothing is sent and the built-in reader answers", seen.length === offBefore && (await hasText(page2, "Answer with AI?")));
+  await page2.reload({ waitUntil: "networkidle0" });
+  await page2.waitForSelector("[data-assistant-launcher]");
+  await page2.click("[data-assistant-launcher]");
+  await page2.waitForSelector("[data-assistant-turns]");
+  check("the conversation is still there after a reload", (await count(page2, "[data-assistant-turns] > li")) === 6);
+  await clickText(page2, "Answer with AI");
+  await page2.click('[aria-label="New conversation"]');
+  check("a new conversation starts empty", !(await page2.$("[data-assistant-turns]")) && !!(await page2.$("[data-assistant-suggestions]")));
   await page2.close();
 
   check("no errors in the browser console", errors.length === 0, errors.slice(0, 3).join(" | "));

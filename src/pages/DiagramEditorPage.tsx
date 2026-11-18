@@ -17,7 +17,7 @@ import { componentById, componentSubtitle, objectFromComponent, type LibraryComp
 import { addStep, flowsOf } from "@/lib/flows";
 import { TypeIcon } from "@/components/icons";
 import { ObjectEditor, ProvenanceNote, RelationshipEditor, RelationshipList, UsedIn, DecisionsAbout } from "@/components/ObjectPanel";
-import { Button, CommitInput, EmptyState, Field, IconButton, Input, Modal, Select, Tabs, useNotice, formatDateTime } from "@/components/ui";
+import { Button, CommitInput, cx, EmptyState, Field, IconButton, Input, Modal, Select, Tabs, useNotice, formatDateTime } from "@/components/ui";
 import { CATEGORY_INFO, OBJECT_TYPES, RELATION_KIND_INFO, VIEW_TYPE_INFO, objectType, type Category } from "@/lib/catalog";
 import {
   ancestorsOf,
@@ -884,7 +884,7 @@ function Editor({ ws, diagram }: { ws: Workspace; diagram: Diagram }) {
   return (
     <div className="h-full flex flex-col">
       <div className="shrink-0 flex items-center gap-2 h-12 px-3 bg-surface border-b border-line">
-        <nav aria-label="Location" className="min-w-0 flex items-center gap-1 text-[13px] text-ink-soft">
+        <nav aria-label="Location" className={cx("flex items-center gap-1 text-[13px] text-ink-soft", crumbs.length ? "min-w-0 overflow-hidden" : "shrink-0")}>
           <Link to="/diagrams" className="hover:text-ink hover:underline shrink-0" data-crumb-diagrams>
             Diagrams
           </Link>
@@ -903,9 +903,9 @@ function Editor({ ws, diagram }: { ws: Workspace; diagram: Diagram }) {
           value={diagram.name}
           onCommit={(name) => apply((w) => updateDiagram(w, diagramId, { name }))}
           title={diagram.name}
-          className="!w-72 !h-8 font-semibold !border-transparent hover:!border-line focus:!border-blueprint !bg-transparent"
+          className="!w-72 min-w-28 shrink !h-8 font-semibold !border-transparent hover:!border-line focus:!border-blueprint !bg-transparent"
         />
-        <div className="ml-auto flex items-center gap-1.5">
+        <div className="ml-auto flex shrink-0 items-center gap-1.5">
           <Button
             icon={<LayoutDashboard size={15} />}
             title="Arrange the boxes. Boxes you placed by hand stay where they are. To line up a few yourself, Shift-click them."

@@ -1399,6 +1399,38 @@ hours, 7 or 30 days, until a chosen date and time (at most a year), or until it 
 - An expired or switched-off link shows only that it no longer works. Copies are listed with how
   often they were opened.
 
+### The assistant in the corner
+
+A round button in the bottom-right corner of every page opens a conversation about the
+workspace. It answers in the language it is asked in (Arabic or English), and every object
+and diagram in an answer is a link.
+
+- **What it knows.** With an AI model, each message is sent with what the workspace holds
+  that the person can see. The diagram open on screen, and any diagram or object the
+  conversation names, come first and in full: who made the diagram and when, who changed it
+  last, its approval by Enterprise Architecture and Cybersecurity with every decision and
+  note, its approvers, its information box, every object on it with its basic information
+  (host name, IP address, operating system, classification, personal data...), every
+  connection with its protocols, ports, network, encryption and direction, its flows, what
+  the checks find on it (security baseline, privacy, PCI DSS, NCA ECC, AI agents and the
+  workspace's own rules), its comments and the decisions about it. The whole workspace
+  follows: every diagram, object and connection, the findings, the approval queue, the
+  approvers' notes on other diagrams, comments, decisions, rules, processes, model reviews
+  and the people's names.
+- **What it may not do.** It reads; it changes nothing. It answers from the workspace and
+  says when the workspace does not record something, rather than guess. It is told that
+  passing the checks is not a certificate of compliance.
+- **Only with the person's say-so.** The first question asks before anything is sent to the
+  AI provider, and the choice is shared with the Ask page. "Stop using AI" switches it off.
+  Without an AI model, or with it off, the built-in reader answers what it can work out (in
+  English) and the rest gets the objects that match.
+- **Size.** Up to about 150,000 characters of the workspace go with a message (about 22,000
+  for Groq's free plan); a larger workspace is cut section by section, the focus first, and
+  the answer says it rests on part of it. Each message counts as one question against the
+  workspace's AI limits.
+- **The conversation** keeps its last twelve turns as context, lasts for the browser tab
+  (a reload keeps it), and starts again with New conversation.
+
 ### The component library
 
 A library of 1,762 components to draw with, on its own page (Library) and in the panel on
@@ -1509,10 +1541,10 @@ build does not reload.
 ## Check it
 
 ```bash
-npm test                   # 593 tests: model, the component library, flows, links, protected live links, decisions, arranging, health, CALM, scenario merging, the trust page, the document, your own rules, large models, templates, the pull-request gate, the APM import, AI, questions, checks, MCP, import readers, sync engine, comparison, and the database rules and the API on a real Postgres
+npm test                   # 598 tests: model, the component library, flows, links, protected live links, decisions, arranging, health, CALM, scenario merging, the trust page, the document, your own rules, large models, templates, the pull-request gate, the APM import, AI, questions, checks, MCP, import readers, sync engine, comparison, and the database rules and the API on a real Postgres
 npm run build              # type-check and production build into dist/
-npm run test:browser       # 241 end-to-end checks of browser-only mode (run after a build)
-npm run test:browser:cloud # 124 end-to-end checks of hosted mode with several people
+npm run test:browser       # 255 end-to-end checks of browser-only mode (run after a build)
+npm run test:browser:cloud # 125 end-to-end checks of hosted mode with several people
 ```
 
 `test:browser` serves the production build, including `api/ai.js`, and walks through the

@@ -222,6 +222,29 @@ export async function askAi(question: string, context: string): Promise<{ answer
   throw new AiError("failed", String(result.data?.message ?? "The AI model did not answer. Try again."));
 }
 
+export interface ChatMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
+/** Asks the assistant the next turn of a conversation; what the workspace holds goes along as text. */
+export async function chatAi(messages: ChatMessage[], context: string, page: string): Promise<{ answer: string; engine: string }> {
+  let result: Awaited<ReturnType<typeof post>>;
+  try {
+    result = await post({ mode: "chat", messages, context, page });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") throw new AiError("failed", "The AI model took too long to answer. Try again, or ask a narrower question.");
+    throw new AiError("failed", "The server could not be reached. Check your connection and try again.");
+  }
+  if (notConfigured(result)) throw new AiError("not_configured", typeof result.data?.message === "string" ? result.data.message : "No AI model is configured on this server.");
+  const refused = denied(result) ?? limited(result);
+  if (refused) throw refused;
+  if (result.status === 200 && typeof result.data?.answer === "string" && result.data.answer.trim()) {
+    return { answer: result.data.answer, engine: typeof result.data.engine === "string" ? result.data.engine : "AI model" };
+  }
+  throw new AiError("failed", String(result.data?.message ?? "The AI model did not answer. Try again."));
+}
+
 type OwnAi = { provider: string; model: string; visionModel: string };
 let integrationLookup: (() => Promise<OwnAi | null>) | null = null;
 /** How the app learns that the open workspace has its own AI provider (Settings → Integrations). */

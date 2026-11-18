@@ -1137,3 +1137,8 @@ html[data-motion="off"] .insight { animation: none; }
 .djs-connection.bpm-heat-2 .djs-visual > path { stroke-width: 3px !important; }
 .djs-connection.bpm-heat-3 .djs-visual > path { stroke-width: 4.5px !important; stroke: #e07a2e !important; }
 .djs-connection.bpm-heat-4 .djs-visual > path { stroke-width: 6px !important; stroke: #c8412b !important; }
+
+/* The assistant sits in the bottom-right corner of the app: a canvas's minimap moves aside for it. */
+[data-assistant-room] .react-flow__minimap.bottom.right {
+  margin-right: 80px;
+}
