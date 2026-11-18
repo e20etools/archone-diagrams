@@ -82,14 +82,32 @@
   height: 78px;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 0 12px 0 14px;
+  gap: 12px;
+  padding: 0 14px;
   background: var(--color-surface);
   border: 1px solid var(--color-line);
+  border-radius: 12px;
+  box-shadow: 0 1px 2px rgba(22, 35, 58, 0.06), 0 6px 16px rgba(22, 35, 58, 0.05);
+  transition: box-shadow 120ms ease, opacity 120ms ease;
+}
+/* ArchiMate and BPMN keep the strip that says what layer or shape a box is. */
+.object-node[data-notation] {
+  gap: 10px;
+  padding: 0 12px 0 14px;
   border-left: 4px solid var(--node-color, var(--color-blueprint));
   border-radius: 6px;
   box-shadow: 0 1px 0 rgba(22, 35, 58, 0.04);
-  transition: box-shadow 120ms ease, opacity 120ms ease;
+}
+/* Something run outside the organisation: a dashed box. A person: rounded ends. */
+.object-node[data-kind="outside"]:not([data-notation]) {
+  border-style: dashed;
+  border-color: color-mix(in srgb, var(--color-ink-faint) 80%, transparent);
+  background: color-mix(in srgb, var(--color-paper) 70%, var(--color-surface));
+  box-shadow: none;
+}
+.object-node[data-kind="person"]:not([data-notation]) {
+  border-radius: 39px;
+  padding-left: 20px;
 }
 .react-flow__node.selected .object-node {
   outline: 2px solid var(--color-blueprint);
@@ -208,11 +226,11 @@
 
 .object-node__icon {
   flex: none;
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 36px;
   display: grid;
   place-items: center;
-  border-radius: 6px;
+  border-radius: 10px;
   color: var(--node-color, var(--color-blueprint));
   background: color-mix(in srgb, var(--node-color, var(--color-blueprint)) 11%, white);
 }
@@ -236,7 +254,7 @@
 }
 .object-node__tech {
   padding: 0 6px;
-  border-radius: 4px;
+  border-radius: 6px;
   background: var(--color-paper);
   border: 1px solid var(--color-line-soft);
   font-size: 11.5px;
@@ -246,9 +264,36 @@
 .object-node__corner {
   position: absolute;
   top: -9px;
-  right: 8px;
+  right: 10px;
   display: flex;
   gap: 4px;
+}
+/* In the Security view: what the checks find, and how the data is classified. */
+.object-node__risk,
+.object-node__class {
+  height: 18px;
+  padding: 0 7px;
+  border-radius: 9px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16px;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+.object-node__risk[data-risk="high"] {
+  background: #c2410c;
+  border-color: #c2410c;
+  color: #ffffff;
+}
+.object-node__risk[data-risk="medium"] {
+  background: var(--color-signal-soft);
+  border-color: color-mix(in srgb, var(--color-signal) 45%, transparent);
+  color: color-mix(in srgb, var(--color-signal) 78%, black);
+}
+.object-node__class {
+  background: var(--color-blueprint-soft);
+  border-color: color-mix(in srgb, var(--color-blueprint) 30%, transparent);
+  color: var(--color-blueprint-deep);
 }
 .object-node__inside {
   position: absolute;
@@ -272,9 +317,9 @@
   width: 100%;
   height: 100%;
   box-sizing: border-box;
-  border: 1.5px dashed #9aa5b5;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.45);
+  border: 1px solid color-mix(in srgb, var(--color-blueprint) 22%, var(--color-line));
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--color-blueprint) 3.5%, transparent);
 }
 .zone-node {
   width: 100%;
@@ -290,22 +335,45 @@
 }
 .zone-node__label {
   position: absolute;
-  top: 9px;
-  left: 50%;
-  transform: translateX(-50%);
+  top: -12px;
+  left: 16px;
+  height: 24px;
+  box-sizing: border-box;
+  padding: 0 10px;
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font-size: 12.5px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--zone-color) 38%, transparent);
+  background: color-mix(in srgb, var(--zone-color) 12%, var(--color-surface));
+  font-size: 12px;
   font-weight: 600;
-  color: var(--zone-color);
+  color: color-mix(in srgb, var(--zone-color) 82%, var(--color-ink));
   white-space: nowrap;
+}
+.zone-node__trust {
+  margin-left: 2px;
+  padding-left: 6px;
+  border-left: 1px solid color-mix(in srgb, var(--zone-color) 35%, transparent);
+  font-weight: 500;
+}
+.zone-node[data-trust] {
+  border-style: solid;
+  background: color-mix(in srgb, var(--zone-color) 8%, transparent);
 }
 .boundary-node__label {
   position: absolute;
-  top: 10px;
-  left: 14px;
-  font-size: 12.5px;
+  top: -12px;
+  left: 16px;
+  height: 24px;
+  box-sizing: border-box;
+  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 12px;
+  border: 1px solid var(--color-line);
+  background: var(--color-surface);
+  font-size: 12px;
   font-weight: 600;
   color: var(--color-ink-soft);
 }
@@ -335,7 +403,7 @@
 
 .react-flow__edge-path {
   stroke: #5b6b84;
-  stroke-width: 1.5;
+  stroke-width: 1.75;
 }
 .react-flow__edge.selected .react-flow__edge-path,
 .react-flow__edge:focus .react-flow__edge-path {
@@ -357,21 +425,48 @@
 }
 .edge-label {
   position: absolute;
-  max-width: 190px;
-  padding: 0 5px;
-  border-radius: 3px;
-  background: var(--color-paper);
+  max-width: 200px;
+  height: 20px;
+  box-sizing: border-box;
+  padding: 0 7px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 10px;
+  border: 1px solid var(--color-line);
+  background: var(--color-surface);
   color: var(--color-ink-soft);
-  font-size: 11.5px;
-  line-height: 17px;
+  font-size: 11px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  line-height: 18px;
   white-space: nowrap;
+  pointer-events: none;
+}
+.edge-label__text {
   overflow: hidden;
   text-overflow: ellipsis;
-  pointer-events: none;
+}
+.edge-label svg {
+  flex: none;
+}
+.edge-label[data-protection="encrypted"] svg {
+  color: #3e63dd;
+}
+.edge-label[data-protection="plain"] {
+  color: #9a3412;
+  background: #fff1e8;
+  border-color: #f0b58f;
+}
+.edge-label[data-protection="unknown"] {
+  color: var(--color-ink-soft);
+  background: var(--color-paper);
+  border-style: dashed;
 }
 .edge-label[data-selected] {
   color: var(--color-blueprint-deep);
   background: var(--color-blueprint-soft);
+  border-color: color-mix(in srgb, var(--color-blueprint) 35%, transparent);
 }
 .react-flow__attribution {
   background: transparent;
@@ -447,16 +542,23 @@
 .object-node[data-shape="data"] { border-radius: 2px 2px 14px 14px; }
 .object-node[data-shape="participant"] { border-style: dashed; }
 
-/* Connections move the way their traffic goes: out, in, or back and forth for both ways. */
-.react-flow__edge.traffic .react-flow__edge-path {
-  stroke-dasharray: 7 6;
+/* Connections move the way their traffic goes, out, in, or back and forth for both ways: light dashes run along a solid line. */
+.edge-traffic {
+  stroke: color-mix(in srgb, var(--color-surface) 78%, transparent);
+  stroke-width: 1;
+  stroke-dasharray: 1 15;
+  stroke-linecap: round;
+  pointer-events: none;
   animation: traffic-out 1.1s linear infinite;
 }
-.react-flow__edge.traffic-in .react-flow__edge-path {
+.edge-traffic--in {
   animation-name: traffic-in;
 }
-.react-flow__edge.traffic-both .react-flow__edge-path {
+.edge-traffic--both {
   animation: traffic-out 1.1s linear infinite alternate;
+}
+.react-flow__edge.security-edge .edge-traffic {
+  display: none;
 }
 @keyframes traffic-out {
   to {
@@ -469,13 +571,13 @@
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .react-flow__edge.traffic .react-flow__edge-path {
+  .edge-traffic {
     animation: none;
+    display: none;
   }
 }
-.archone-still .react-flow__edge.traffic .react-flow__edge-path {
-  animation: none;
-  stroke-dasharray: none;
+.archone-still .edge-traffic {
+  display: none;
 }
 
 /* ===================================================================================
@@ -1020,6 +1122,19 @@ html[data-motion="off"] .insight { animation: none; }
 /* A label on a line that runs over a known network carries that network's colour. */
 .edge-label[data-network] {
   border-left: 3px solid var(--network-color);
+}
+
+/* The Security view's key. */
+.security-legend li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.security-legend__findings {
+  margin: 0;
+  padding: 6px 9px 8px;
+  border-top: 1px solid var(--color-line-soft);
+  color: var(--color-ink-soft);
 }
 
 /* Which colour stands for which network. */

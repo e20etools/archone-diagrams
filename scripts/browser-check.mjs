@@ -227,6 +227,22 @@ try {
   const sampleEdges = await count(page, ".react-flow__edge");
   await shot(page, "02-editor");
 
+  // The look: boxes with a tile for their icon and no stripe, solid lines coloured by kind, the moving marks on top.
+  {
+    const look = await page.evaluate(() => {
+      const box = getComputedStyle(document.querySelector('.object-node:not([data-notation])'));
+      const line = document.querySelector(".react-flow__edge.traffic .react-flow__edge-path");
+      return {
+        stripe: box.borderLeftWidth,
+        radius: box.borderTopLeftRadius,
+        solid: getComputedStyle(line).strokeDasharray === "none",
+        moving: document.querySelectorAll(".react-flow__edge.traffic .edge-traffic").length,
+        outside: [...document.querySelectorAll('.object-node[data-kind="outside"]')].every((n) => getComputedStyle(n).borderTopStyle === "dashed"),
+      };
+    });
+    check("boxes have an icon tile and no coloured stripe, lines are solid with their traffic moving along them, and outside systems are dashed", look.stripe === "1px" && look.radius === "12px" && look.solid && look.moving > 0 && look.outside, JSON.stringify(look));
+  }
+
   // A connection: which way it goes, moving on the canvas, and its protocols and ports.
   {
     const movingBefore = await count(page, ".react-flow__edge.traffic-out");
@@ -252,6 +268,35 @@ try {
       movingBefore > 0 && rel.flow === "both" && rel.protocols?.map((p) => `${p.name}:${p.port}`).join(",") === "LDAPS:636,HTTP:80" && drawn.both && drawn.markers && labelText.includes("LDAPS 636/TCP") && warning,
       JSON.stringify({ movingBefore, flow: rel.flow, protocols: rel.protocols, drawn, warning }),
     );
+    // The Security view: lines by encryption, what the checks find on each box, and a key; it stays on.
+    await page.click("[data-security-view]");
+    await page.waitForSelector("[data-security-legend]");
+    const lens = await page.evaluate((id) => ({
+      plain: document.querySelector(`.react-flow__edge[data-id="${id}"]`)?.classList.contains("protection-plain"),
+      stroke: getComputedStyle(document.querySelector(`.react-flow__edge[data-id="${id}"] .react-flow__edge-path`)).stroke,
+      unknown: document.querySelectorAll(".react-flow__edge.protection-unknown").length,
+      risk: document.querySelectorAll(".object-node__risk").length,
+      high: document.querySelectorAll('.object-node__risk[data-risk="high"]').length,
+      counts: Object.fromEntries([...document.querySelectorAll("[data-protection-count]")].map((li) => [li.getAttribute("data-protection-count"), Number(li.querySelector(".network-legend__count").textContent)])),
+      findings: document.querySelector("[data-security-findings]")?.getAttribute("data-security-findings"),
+      lock: document.querySelectorAll('.edge-label[data-protection="plain"] svg').length,
+    }), edgeId);
+    await shot(page, "02c-security-view");
+    await page.reload({ waitUntil: "networkidle0" });
+    await page.waitForSelector(".object-node");
+    const kept = await page.$eval("[data-security-view]", (b) => b.getAttribute("data-security-view"));
+    check(
+      "the Security view colours a line with HTTP as not encrypted, marks the boxes the checks find, counts the lines in its key, and stays on",
+      lens.plain && lens.stroke === "rgb(234, 88, 12)" && lens.unknown > 0 && lens.high > 0 && lens.counts.plain >= 1 && lens.counts.unknown === lens.unknown && /^[1-9]\d*\/\d+\/\d+$/.test(lens.findings ?? "") && lens.lock > 0 && kept === "on",
+      JSON.stringify(lens),
+    );
+    await page.click("[data-security-view]");
+    await page.waitForFunction(() => !document.querySelector("[data-security-legend]"));
+    await page.evaluate((id) => {
+      const path = document.querySelector(`.react-flow__edge[data-id="${id}"] .react-flow__edge-interaction`) ?? document.querySelector(`.react-flow__edge[data-id="${id}"] path`);
+      path.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    }, edgeId);
+    await page.waitForSelector("[data-connection-properties]");
     // The network it runs over gives the line its colour, explained in a legend on the canvas.
     const runsOver = '[data-connection-properties] input[aria-label="Runs over"]';
     await page.click(runsOver);

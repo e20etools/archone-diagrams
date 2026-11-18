@@ -23,7 +23,7 @@ import {
   type NodeChange,
   type NodeProps,
 } from "@xyflow/react";
-import { ChevronDown, Cable, SquareDashed, MessageSquare } from "lucide-react";
+import { ChevronDown, Cable, SquareDashed, MessageSquare, Lock, LockOpen, CircleHelp, ShieldCheck } from "lucide-react";
 import { memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState, type DragEvent, type Ref } from "react";
 import { TypeIcon } from "@/components/icons";
 import { LIFECYCLE_INFO, RELATION_KIND_INFO, objectType, ownerColor, typeColor } from "@/lib/catalog";
@@ -33,6 +33,9 @@ import { protocolLabel } from "@/lib/library/protocols";
 import { componentSubtitle } from "@/lib/library";
 import { childrenOf, protocolsOf } from "@/lib/model";
 import { SHOW_CHANGES, type ShowChanges } from "@/lib/assistant/show";
+import { PACKS, runChecks, type PackId } from "@/lib/checks/checks";
+import { PROTECTION_INFO, TRUST_INFO, classificationOf, findingsByObject, protectionOf, trustOfZone, type BoxFindings, type Protection } from "@/lib/security";
+import type { RelationKind } from "@/lib/types";
 import type { Diagram, ModelObject, Workspace } from "@/lib/types";
 import { scopeMembers, visibleEdges } from "@/lib/views";
 import { familyLabel, networkLink, objectNetwork, type NetworkLink } from "@/lib/networkLinks";
@@ -75,6 +78,8 @@ interface Props {
   minimap?: boolean;
   /** Draw every box even on a large diagram, for a canvas that exists to be photographed. */
   renderAll?: boolean;
+  /** "security": lines coloured by whether they are encrypted, boxes with what the checks find, zones by trust. */
+  lens?: "normal" | "security";
   onSelect?: (selection: CanvasSelection) => void;
   /** A Shift-click on a box. */
   onPick?: (objectId: string) => void;
@@ -91,6 +96,8 @@ interface Props {
 type ObjectNodeData = {
   notation?: Notation;
   object: ModelObject;
+  /** In the Security view: what the checks find on the box, and how its data is classified. */
+  security?: { findings?: BoxFindings; classification: string | null };
   color: string;
   childCount: number;
   direction: "TB" | "LR";
@@ -100,10 +107,24 @@ type ObjectNodeData = {
 };
 
 const BOUNDARY_ID = "__boundary";
+
+/** Each kind of connection has its colour, readable on light and dark canvases alike; a known network wins. */
+const KIND_COLOR: Record<RelationKind, string> = {
+  calls: "#3e63dd",
+  depends_on: "#64748b",
+  reads_writes: "#0f8b8d",
+  hosted_on: "#94a3b8",
+  routes_to: "#5b5bd6",
+  replicates_to: "#8b5cf6",
+  flows_to: "#64748b",
+};
+const ALL_PACKS = PACKS.map((p) => p.id) as PackId[];
+/** Of several connections drawn as one line, the least protected says how the line is drawn. */
+const WORST: Protection[] = ["plain", "unknown", "encrypted"];
 const lifecycleTone = { planned: "#2447d6", active: "#1f8a4c", deprecated: "#c97a0a", retired: "#b4321f" } as const;
 
 const ObjectNode = memo(function ObjectNode({ data }: NodeProps<Node<ObjectNodeData>>) {
-  const { object, color, childCount, direction, highlight, comments, onOpen, notation } = data;
+  const { object, color, childCount, direction, highlight, comments, onOpen, notation, security } = data;
   const type = objectType(object.typeId);
   // A box made from the library says what it is ("Firewall"), not only its type ("Network device").
   const component = componentSubtitle(object);
@@ -111,7 +132,15 @@ const ObjectNode = memo(function ObjectNode({ data }: NodeProps<Node<ObjectNodeD
   const bpmn = notation === "bpmn" ? bpmnShape(object.typeId) : null;
   const drafted = object.provenance.origin === "ai-prompt" || object.provenance.origin === "ai-image";
   return (
-    <div className="object-node" data-highlight={highlight} data-notation={notation && notation !== "plain" ? notation : undefined} data-layer={archimate?.layer} data-shape={bpmn?.shape} style={{ ["--node-color" as string]: color }}>
+    <div
+      className="object-node"
+      data-highlight={highlight}
+      data-notation={notation && notation !== "plain" ? notation : undefined}
+      data-layer={archimate?.layer}
+      data-shape={bpmn?.shape}
+      data-kind={object.typeId === "external-system" ? "outside" : object.typeId === "actor" ? "person" : undefined}
+      style={{ ["--node-color" as string]: color }}
+    >
       <Handle type="target" position={direction === "TB" ? Position.Top : Position.Left} />
       <span className="object-node__icon">
         <TypeIcon typeId={object.typeId} componentId={object.componentId} size={17} />
@@ -126,6 +155,16 @@ const ObjectNode = memo(function ObjectNode({ data }: NodeProps<Node<ObjectNodeD
         </div>
       </div>
       <div className="object-node__corner">
+        {security?.findings && (security.findings.high > 0 || security.findings.medium > 0) && (
+          <span
+            className="object-node__risk"
+            data-risk={security.findings.high ? "high" : "medium"}
+            title={[security.findings.high && `${security.findings.high} high`, security.findings.medium && `${security.findings.medium} medium`, security.findings.low && `${security.findings.low} low`].filter(Boolean).join(", ") + " from the checks"}
+          >
+            {security.findings.high ? `${security.findings.high} high` : `${security.findings.medium} to check`}
+          </span>
+        )}
+        {security?.classification && <span className="object-node__class">{security.classification}</span>}
         {!!comments && (
           <span
             title={`${comments} open ${comments === 1 ? "comment" : "comments"}`}
@@ -212,7 +251,7 @@ const LabelledEdge = memo(function LabelledEdge({
   data,
   selected,
   interactionWidth,
-}: EdgeProps<Edge<{ slot: number; dim?: boolean; title?: string; network?: string; networkColor?: string }>>) {
+}: EdgeProps<Edge<{ slot: number; dim?: boolean; title?: string; network?: string; networkColor?: string; protection?: Protection; lock?: boolean; traffic?: "out" | "in" | "both" }>>) {
   const [path] = getSmoothStepPath({ sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition, borderRadius: 8 });
   const slot = data?.slot ?? 0;
   const vertical = targetPosition === Position.Top;
@@ -223,16 +262,22 @@ const LabelledEdge = memo(function LabelledEdge({
   return (
     <>
       <BaseEdge id={id} path={path} markerStart={markerStart} markerEnd={markerEnd} style={style} interactionWidth={interactionWidth} />
+      {/* Which way the traffic goes: light dashes running along the line, which stays solid. */}
+      {data?.traffic && <path d={path} className={`edge-traffic edge-traffic--${data.traffic}`} fill="none" aria-hidden />}
       {label && (
         <EdgeLabelRenderer>
           <div
             className="edge-label"
             data-selected={selected || undefined}
             data-network={data?.network}
+            data-protection={data?.lock ? data.protection : undefined}
             title={data?.title}
             style={{ transform, opacity: data?.dim ? 0.25 : undefined, ...(data?.networkColor ? { ["--network-color" as string]: data.networkColor } : {}) }}
           >
-            {label}
+            {data?.lock && data.protection === "encrypted" && <Lock size={10} strokeWidth={2.5} aria-label="Encrypted" />}
+            {data?.lock && data.protection === "plain" && <LockOpen size={10} strokeWidth={2.5} aria-label="Not encrypted" />}
+            {data?.lock && data.protection === "unknown" && <CircleHelp size={10} strokeWidth={2.5} aria-label="Not recorded" />}
+            <span className="edge-label__text">{label}</span>
           </div>
         </EdgeLabelRenderer>
       )}
@@ -241,13 +286,14 @@ const LabelledEdge = memo(function LabelledEdge({
 });
 
 /** A network zone drawn around what sits in it. It can be picked, and lines can reach it. */
-const ZoneNode = memo(function ZoneNode({ data, selected }: NodeProps<Node<{ label: string; color: string; direction: "TB" | "LR" }>>) {
+const ZoneNode = memo(function ZoneNode({ data, selected }: NodeProps<Node<{ label: string; color: string; direction: "TB" | "LR"; trust?: keyof typeof TRUST_INFO | null }>>) {
   return (
-    <div className="zone-node" data-selected={selected || undefined} style={{ ["--zone-color" as string]: data.color }}>
+    <div className="zone-node" data-selected={selected || undefined} data-trust={data.trust ?? undefined} style={{ ["--zone-color" as string]: data.color }}>
       <Handle type="target" position={data.direction === "TB" ? Position.Top : Position.Left} />
       <span className="zone-node__label">
         <SquareDashed size={12} aria-hidden />
         {data.label}
+        {data.trust && <span className="zone-node__trust">{TRUST_INFO[data.trust].label}</span>}
       </span>
       <Handle type="source" position={data.direction === "TB" ? Position.Bottom : Position.Right} />
     </div>
@@ -268,6 +314,40 @@ function nodeColor(o: ModelObject, colorBy: Diagram["colorBy"]): string {
 function edgeNetwork(ws: Workspace, relationshipIds: string[]): NetworkLink | null {
   const found = relationshipIds.map((id) => networkLink(ws.relationships[id]?.network));
   return found[0] && found.every((n) => n === found[0]) ? found[0] : null;
+}
+
+/** The Security view's key: how many lines are encrypted, not encrypted or not recorded, and what the checks find. */
+function SecurityLegend({ edges, findings }: { edges: Edge[]; findings: { severity: "high" | "medium" | "low" }[] }) {
+  const [open, setOpen] = useState(true);
+  const count = (p: Protection) => edges.filter((e) => (e.data as { protection?: Protection } | undefined)?.protection === p).length;
+  const by = (s: "high" | "medium" | "low") => findings.filter((f) => f.severity === s).length;
+  return (
+    <div className="network-legend security-legend nodrag nopan" data-security-legend>
+      <button type="button" className="network-legend__head" aria-expanded={open} onClick={() => setOpen(!open)}>
+        <ShieldCheck size={13} aria-hidden />
+        Security view
+        <ChevronDown size={13} aria-hidden className={open ? "rotate-180" : undefined} />
+      </button>
+      {open && (
+        <>
+          <ul>
+            {(["encrypted", "plain", "unknown"] as Protection[]).map((p) => (
+              <li key={p} data-protection-count={p} title={PROTECTION_INFO[p].hint}>
+                <svg width="26" height="8" aria-hidden>
+                  <line x1="1" y1="4" x2="25" y2="4" stroke={PROTECTION_INFO[p].color} strokeWidth={PROTECTION_INFO[p].width} strokeDasharray={PROTECTION_INFO[p].dash} strokeLinecap="round" />
+                </svg>
+                {PROTECTION_INFO[p].label}
+                <span className="network-legend__count">{count(p)}</span>
+              </li>
+            ))}
+          </ul>
+          <p className="security-legend__findings" data-security-findings={`${by("high")}/${by("medium")}/${by("low")}`}>
+            The checks find {by("high")} high, {by("medium")} medium and {by("low")} low here.
+          </p>
+        </>
+      )}
+    </div>
+  );
 }
 
 /** Which colour stands for which network, for the networks this diagram draws. */
@@ -306,6 +386,7 @@ function Inner({
   comments,
   minimap,
   renderAll,
+  lens = "normal",
   onSelect,
   onPick,
   onMove,
@@ -349,6 +430,10 @@ function Inner({
     };
   }, [flow, diagram.id]);
 
+  const secure = lens === "security";
+  // What the checks find on this diagram, per box, for the Security view.
+  const findings = useMemo(() => (secure ? runChecks(ws, diagram, ALL_PACKS) : []), [secure, ws, diagram]);
+  const perBox = useMemo(() => findingsByObject(findings), [findings]);
   // A zone holding boxes on this diagram is drawn around them rather than as a box.
   const zones = useMemo(() => zonesOf(ws, diagram), [ws, diagram]);
   const zoneIds = useMemo(() => new Set(zones.map((z) => z.id)), [zones]);
@@ -366,6 +451,7 @@ function Inner({
         highlight: spotlight ? (spotlight.nodes.includes(id) ? "focus" : "dim") : highlight?.[id],
         comments: comments?.[id],
         onOpen,
+        ...(secure ? { security: { findings: perBox[id], classification: classificationOf(object) } } : {}),
       };
       list.push({
         id,
@@ -380,7 +466,7 @@ function Inner({
       });
     }
     return list;
-  }, [ws, diagram, highlight, spotlight, comments, readOnly, selection?.objectId, picked, onOpen, zoneIds, flash]);
+  }, [ws, diagram, highlight, spotlight, comments, readOnly, selection?.objectId, picked, onOpen, zoneIds, flash, secure, perBox]);
 
   // React Flow owns positions while a node is being dragged; the store is updated when the drag ends.
   const [nodes, setNodes] = useState<Node[]>(derived);
@@ -408,7 +494,8 @@ function Inner({
         id: z.id,
         type: "zone",
         position: { x: frame.x, y: frame.y },
-        data: { label: z.name, color: z.color, direction: diagram.direction },
+        // In the Security view a zone takes the colour of how far it is trusted, when its name says.
+        data: { label: z.name, color: (secure && (() => { const t = trustOfZone(z.name); return t ? TRUST_INFO[t].color : null; })()) || z.color, direction: diagram.direction, trust: secure ? trustOfZone(z.name) : null },
         style: { width: frame.width, height: frame.height },
         width: frame.width,
         height: frame.height,
@@ -436,7 +523,7 @@ function Inner({
       zIndex: -1,
     };
     return [boundary, ...withZones];
-  }, [nodes, members, scopeName, zones, diagram.direction, selection?.objectId]);
+  }, [nodes, members, scopeName, zones, diagram.direction, selection?.objectId, secure]);
 
   const edges = useMemo<Edge[]>(() => {
     // Labelled arrows into the same box stack their labels instead of printing them on top of each other,
@@ -447,7 +534,11 @@ function Inner({
     return visibleEdges(ws, diagram).map((e) => {
         const inStep = lit?.has(e.id) ?? false;
         const network = edgeNetwork(ws, e.relationshipIds);
-        const color = inStep ? "#2447d6" : network ? network.color : e.implied ? "#93a0b4" : "#5b6b84";
+        // How well the line is protected: of several connections drawn as one, the least protected.
+        const behind = e.relationshipIds.map((id) => ws.relationships[id]).filter(Boolean);
+        const protection = behind.length ? WORST.find((p) => behind.some((r) => protectionOf(r) === p))! : "unknown";
+        const shield = PROTECTION_INFO[protection];
+        const color = inStep ? "#2447d6" : secure ? shield.color : network ? network.color : e.implied ? "#93a0b4" : KIND_COLOR[e.kind];
         // Which way traffic goes, and what it carries, from the relationship behind the line.
         const rel = e.implied ? undefined : ws.relationships[e.relationshipIds[0]];
         const flow = rel?.flow ?? "out";
@@ -455,7 +546,10 @@ function Inner({
         const carriedText = carried.slice(0, 2).map(protocolLabel).join(", ") + (carried.length > 2 ? ` +${carried.length - 2}` : "");
         // In a notation the line itself says what kind of relationship it is.
         const arrow = diagram.notation === "archimate" ? archimateArrow(e.kind) : diagram.notation === "bpmn" ? bpmnArrow(e.kind) : null;
-        let text = [e.label.trim() || (arrow ? arrow.name : e.kind === "calls" ? "" : RELATION_KIND_INFO[e.kind].verb), carriedText].filter(Boolean).join(" · ");
+        // The Security view says only what protects the line: its protocols, or that none is recorded.
+        let text = secure
+          ? carriedText || (protection === "unknown" ? "No protocol" : protection === "plain" ? "Not encrypted" : "Encrypted")
+          : [e.label.trim() || (arrow ? arrow.name : e.kind === "calls" ? "" : RELATION_KIND_INFO[e.kind].verb), carriedText].filter(Boolean).join(" · ");
         const repeat = `${e.targetId}|${text}`;
         if (text && !e.implied && said.has(repeat) && selection?.edgeId !== e.id) text = "";
         if (text && !e.implied) said.add(repeat);
@@ -470,21 +564,25 @@ function Inner({
           data: {
             slot,
             dim: !!lit && !inStep,
-            network: network?.name,
-            networkColor: network?.color,
+            network: secure ? undefined : network?.name,
+            networkColor: secure ? undefined : network?.color,
+            protection,
+            // A lock on the label where it names its protocols, or always in the Security view.
+            lock: secure || (!!carriedText && protection === "encrypted"),
+            traffic: !e.implied && !lit && !inStep ? flow : undefined,
             title: [RELATION_KIND_INFO[e.kind].label, flow === "both" ? "both ways" : flow === "in" ? "inbound" : "outbound", ...carried.map(protocolLabel), rel?.network ? `over ${rel.network}` : "", rel?.encrypted === "yes" ? "encrypted" : rel?.encrypted === "no" ? "not encrypted" : ""].filter(Boolean).join(" · "),
           },
-          className: [lit ? (inStep ? "flow-edge" : "dim-edge") : "", !e.implied && !lit ? `traffic traffic-${flow}` : "", network ? "network-edge" : ""].filter(Boolean).join(" ") || undefined,
+          className: [lit ? (inStep ? "flow-edge" : "dim-edge") : "", !e.implied && !lit ? `traffic traffic-${flow}` : "", network && !secure ? "network-edge" : "", secure ? `security-edge protection-${protection}` : ""].filter(Boolean).join(" ") || undefined,
           animated: inStep,
           ...(arrow
             ? {
                 [arrow.reversed ? "markerStart" : "markerEnd"]: { type: arrow.head === "open" ? MarkerType.Arrow : MarkerType.ArrowClosed, width: 16, height: 16, color },
-                style: { stroke: color, strokeDasharray: e.implied ? "6 4" : arrow.dashed ? "4 4" : undefined, ...(network ? { strokeWidth: 2.25 } : {}) },
+                style: { stroke: color, strokeDasharray: secure ? shield.dash : e.implied ? "6 4" : arrow.dashed ? "4 4" : undefined, strokeWidth: secure ? shield.width : network ? 2.25 : 1.75 },
               }
             : {
                 ...(flow !== "in" ? { markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16, color } } : {}),
                 ...(flow !== "out" ? { markerStart: { type: MarkerType.ArrowClosed, width: 16, height: 16, color } } : {}),
-                style: { stroke: color, strokeDasharray: e.implied ? "6 4" : undefined, ...(network ? { strokeWidth: 2.25 } : {}) },
+                style: { stroke: color, strokeDasharray: secure ? shield.dash : e.implied ? "6 4" : e.kind === "hosted_on" ? "2 4" : undefined, strokeWidth: secure ? shield.width : network ? 2.25 : 1.75 },
               }),
           selected: selection?.edgeId === e.id,
           deletable: false,
@@ -492,7 +590,7 @@ function Inner({
           interactionWidth: 18,
         };
       });
-  }, [ws, diagram, selection?.edgeId, spotlight]);
+  }, [ws, diagram, selection?.edgeId, spotlight, secure]);
 
   // The networks drawn here, by lines that run over them or boxes that stand for them, for the legend.
   const networks = useMemo(() => {
@@ -593,10 +691,16 @@ function Inner({
       >
         <Background variant={BackgroundVariant.Dots} gap={24} size={1.2} color="var(--color-dots)" />
         <Controls showInteractive={false} position="bottom-left" />
-        {networks.length > 0 && (
+        {secure ? (
           <Panel position="bottom-left" style={{ marginLeft: 56 }}>
-            <NetworkLegend networks={networks} />
+            <SecurityLegend edges={edges} findings={findings} />
           </Panel>
+        ) : (
+          networks.length > 0 && (
+            <Panel position="bottom-left" style={{ marginLeft: 56 }}>
+              <NetworkLegend networks={networks} />
+            </Panel>
+          )
         )}
         {minimap && <MiniMap pannable zoomable position="bottom-right" nodeColor={(n) => (n.id === BOUNDARY_ID ? "transparent" : "var(--color-dots)")} maskColor="color-mix(in srgb, var(--color-canvas) 72%, transparent)" />}
       </ReactFlow>

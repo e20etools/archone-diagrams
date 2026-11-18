@@ -114,7 +114,7 @@ const CLEAR_TEXT = /^(http|ftp|telnet|smtp|ldap|amqp|mqtt|redis|tcp|udp|jdbc|odb
 const CLEAR_BY_DESIGN = new Set(["HTTP", "HTTP alternate", "WebSocket", "Telnet", "FTP", "FTP data", "TFTP", "POP3", "IMAP", "LDAP", "VNC", "WinRM HTTP", "NetBIOS session", "NetBIOS name service", "PPTP (legacy)", "LPD", "Raw printing (JetDirect)", "rsync"]);
 
 /** The protocols of a connection that send in clear text: the catalogue's clear-by-design ones, or the usual short names. */
-function clearTextOf(r: Relationship): string[] {
+export function clearTextOf(r: Relationship): string[] {
   return protocolsOf(r)
     .map((p) => ({ p, known: protocolByName(p.name) }))
     .filter(({ p, known }) => (known ? CLEAR_BY_DESIGN.has(known.name) : CLEAR_TEXT.test(p.name.trim())))

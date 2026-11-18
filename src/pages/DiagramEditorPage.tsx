@@ -1,7 +1,7 @@
 import { DiagramFilesButton } from "@/components/DiagramFiles";
 import { NOTATION_INFO } from "@/lib/notation";
 import { NOTATIONS, type Notation } from "@/lib/types";
-import { Zap, Workflow, ListTree, Archive, BookmarkPlus, AlignCenterHorizontal, AlignCenterVertical, AlignEndHorizontal, AlignEndVertical, AlignHorizontalSpaceAround, AlignStartHorizontal, AlignStartVertical, AlignVerticalSpaceAround, ChevronRight, EyeOff, LayoutDashboard, Presentation, ListOrdered, MessageSquare, BadgeCheck, PanelLeftClose, PanelLeftOpen, Search, Share2, ShieldCheck, Shuffle, SlidersHorizontal, Sparkles, Trash2, Waypoints, X, ZoomIn } from "lucide-react";
+import { Zap, Workflow, ListTree, Archive, BookmarkPlus, AlignCenterHorizontal, AlignCenterVertical, AlignEndHorizontal, AlignEndVertical, AlignHorizontalSpaceAround, AlignStartHorizontal, AlignStartVertical, AlignVerticalSpaceAround, ChevronRight, EyeOff, LayoutDashboard, Presentation, ListOrdered, MessageSquare, BadgeCheck, PanelLeftClose, PanelLeftOpen, Search, Share2, ShieldAlert, ShieldCheck, Shuffle, SlidersHorizontal, Sparkles, Trash2, Waypoints, X, ZoomIn } from "lucide-react";
 import { checkCopy } from "@/lib/freshness";
 import { alignNodes, distributeNodes, type AlignMode } from "@/lib/arrange";
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from "react";
@@ -626,6 +626,8 @@ function EdgeInspector({ ws, diagram, edgeId, onSelect }: { ws: Workspace; diagr
   );
 }
 
+const SECURITY_VIEW_KEY = "archone.diagram.securityView";
+
 /* ---------- page ---------- */
 
 function Editor({ ws, diagram }: { ws: Workspace; diagram: Diagram }) {
@@ -655,6 +657,22 @@ function Editor({ ws, diagram }: { ws: Workspace; diagram: Diagram }) {
   const selectionRef = useRef(selection);
   selectionRef.current = selection;
   const [dialog, setDialog] = useState<"ai" | "share" | null>(null);
+  // The Security view stays on for this person until they switch it off.
+  const [securityView, setSecurityViewOnly] = useState(() => {
+    try {
+      return localStorage.getItem(SECURITY_VIEW_KEY) === "on";
+    } catch {
+      return false;
+    }
+  });
+  const setSecurityView = (on: boolean) => {
+    setSecurityViewOnly(on);
+    try {
+      localStorage.setItem(SECURITY_VIEW_KEY, on ? "on" : "off");
+    } catch {
+      // Not remembered; it still applies to this visit.
+    }
+  };
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(() => {
     try {
@@ -937,6 +955,12 @@ function Editor({ ws, diagram }: { ws: Workspace; diagram: Diagram }) {
       case "processes":
         panel(() => setProcessesOpen(true));
         return done("Opened the linked processes");
+      case "security":
+        setSecurityView(true);
+        return done("Switched the Security view on: lines by encryption, what the checks find on each box");
+      case "usual":
+        setSecurityView(false);
+        return done("Switched back to the usual view");
     }
   };
   useEffect(() => {
@@ -982,6 +1006,17 @@ function Editor({ ws, diagram }: { ws: Workspace; diagram: Diagram }) {
             }}
           >
             Tidy layout
+          </Button>
+          <Button
+            size="sm"
+            icon={<ShieldAlert size={14} />}
+            aria-pressed={securityView}
+            className={securityView ? "!bg-blueprint-soft !text-blueprint-deep !border-transparent" : undefined}
+            title={securityView ? "Back to the usual view" : "Colour the lines by encryption and show what the checks find on each box"}
+            onClick={() => setSecurityView(!securityView)}
+            data-security-view={securityView ? "on" : "off"}
+          >
+            Security view
           </Button>
           <Button size="sm" icon={<ShieldCheck size={14} />} onClick={() => navigate(`/checks?diagram=${diagramId}`)}>
             Check
@@ -1153,6 +1188,7 @@ function Editor({ ws, diagram }: { ws: Workspace; diagram: Diagram }) {
             minimap
             comments={commentMarks}
             spotlight={flows.spotlight}
+            lens={securityView ? "security" : "normal"}
             readOnly={!canEdit}
             onSelect={onCanvasSelect}
             onMove={onMove}

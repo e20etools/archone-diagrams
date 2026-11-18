@@ -823,8 +823,8 @@ object is linked to the library component its name or technology names exactly.
 ### Connections: direction, protocols and ports
 
 Each connection says which way it goes: outbound (from the first box to the second, the usual),
-inbound, or both ways. The canvas draws the arrowheads that way and moves dashes along the line
-in the direction of the traffic (still for people who ask their system for less motion). A
+inbound, or both ways. The canvas draws the arrowheads that way and runs light marks along the
+solid line in the direction of the traffic (still for people who ask their system for less motion). A
 connection carries one or more protocols and ports, picked from the catalogue of 150 under
 Library, Protocols and ports (web, remote access, file transfer, email, identity, name and
 time, databases, messaging, monitoring, tunnels, storage, containers, industrial, finance and
@@ -833,6 +833,30 @@ or GSN); and whether it is encrypted. The line's label shows the first protocols
 everything. In a diagram's library panel, a protocol is added to the connection picked. The
 clear-text check reads the protocols (HTTP, FTP, Telnet, LDAP and the like) and stays quiet when
 the connection is marked encrypted. Exports carry the direction and protocols.
+
+### How boxes and lines look, and the Security view
+
+- **Boxes** carry their icon on a tile coloured by their type, with their name, what they are
+  and their technology; their marks (lifecycle, AI draft, open comments) sit on the top edge.
+  A system run outside the organisation is a dashed box, and a person has rounded ends. A
+  zone, and the inside of the object a diagram shows, is a frame with its name on a tab.
+  Diagrams in ArchiMate or BPMN keep their notation's look.
+- **Lines** are solid and coloured by their kind (calls, reads or writes, depends on, routes
+  to, replicates to, hosted on), or by the network they run over when it is known. Their labels
+  are small pills, with a lock where the protocols they name are encrypted.
+- **Security view** (a button on the diagram's toolbar, kept on until it is switched off):
+  - Lines take the colour of how they are protected: blue for encrypted (an encrypting
+    protocol, or marked encrypted), orange and dashed for not encrypted (a protocol that sends
+    in the clear, such as HTTP or TCP, or marked not encrypted), grey and dotted where no
+    protocol is recorded, so nothing can be said. A line that stands for several connections
+    shows the least protected. The labels say only the protocols, or that none is recorded.
+  - Boxes show what the checks find on them (security baseline, privacy, PCI DSS, NCA ECC, AI
+    agents and the workspace's own rules): "2 high", or "3 to check" for medium ones; and how
+    their data is classified (Confidential, Restricted, Personal data, Card data).
+  - Zones take the colour of how far they are trusted, from their names: Internet and public
+    (untrusted), DMZ and perimeter, internal, and restricted, PCI or data zones.
+  - A key on the canvas counts the lines of each kind and the findings by severity.
+  - The assistant can switch it on and off when asked.
 
 ### Impact and dependencies
 
@@ -1645,9 +1669,9 @@ build does not reload.
 ## Check it
 
 ```bash
-npm test                   # 632 tests: model, the component library, flows, links, protected live links, decisions, arranging, health, CALM, scenario merging, the trust page, the document, your own rules, large models, templates, the pull-request gate, the APM import, AI, questions, checks, MCP, import readers, sync engine, comparison, and the database rules and the API on a real Postgres
+npm test                   # 635 tests: model, the component library, flows, links, protected live links, decisions, arranging, health, CALM, scenario merging, the trust page, the document, your own rules, large models, templates, the pull-request gate, the APM import, AI, questions, checks, MCP, import readers, sync engine, comparison, and the database rules and the API on a real Postgres
 npm run build              # type-check and production build into dist/
-npm run test:browser       # 285 end-to-end checks of browser-only mode (run after a build)
+npm run test:browser       # 287 end-to-end checks of browser-only mode (run after a build)
 npm run test:browser:cloud # 128 end-to-end checks of hosted mode with several people
 ```
 
