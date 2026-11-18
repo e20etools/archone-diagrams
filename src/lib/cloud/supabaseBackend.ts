@@ -3,7 +3,8 @@ import type { TrustPage } from "../trust";
 import { AUDIT_PAGE_SIZE, cleanSearch, dayBounds, type AuditEntry } from "./audit";
 import { createClient, type PostgrestError, type RealtimeChannel, type SupabaseClient } from "@supabase/supabase-js";
 import type { IntegrationInfo } from "../integrations/catalog";
-import { BackendError, type AiUsageReport, type ApiKeyInfo, type Backend, type FileKind, type StoredFile, type CloudUser, type LiveLink, type WebhookInfo, type Invite, type LiveHandlers, type Member, type Peer, type PendingInvite, type Role, type WorkspaceSummary } from "./backend";
+import { BackendError, type AiUsageReport, type ApiKeyInfo, type Backend, type FileKind, type StoredFile, type CloudUser, type LiveLink, type Publication, type PublishedCopy, type WebhookInfo, type Invite, type LiveHandlers, type Member, type Peer, type PendingInvite, type Role, type WorkspaceSummary } from "./backend";
+import type { ApprovalQueue, ApprovalSettings, DiagramRecord } from "../approvals";
 import { snapshotToTables, type Comment, type Review, type ReviewDecision, type ReviewStage, type VersionInfo } from "./collab";
 import { KEY_COLUMNS, SQL_TABLE, fromRow, toRow, type Row } from "./rows";
 import { TABLE_NAMES, emptyTables, splitNodeKey, type ChangeSet, type TableName, type Tables } from "./tables";
@@ -683,6 +684,61 @@ export function createSupabaseBackend(url: string, key: string): Backend {
       if (error) fail(error, "The live link could not be switched off.");
     },
 
+    // Approving diagrams and verified copies: every rule is in the database functions.
+    async approvalSettings(workspaceId) {
+      const { data, error } = await supabase.rpc("diagram_approval_settings", { p_workspace: workspaceId });
+      if (error) fail(error, "The approval settings could not be read.");
+      return data as ApprovalSettings;
+    },
+    async setApprovalSettings(workspaceId, required, ea, security) {
+      const { data, error } = await supabase.rpc("set_diagram_approval", { p_workspace: workspaceId, p_required: required, p_ea: ea, p_security: security });
+      if (error) fail(error, "The approval settings could not be saved.");
+      return data as ApprovalSettings;
+    },
+    async diagramRecord(workspaceId, diagramId) {
+      const { data, error } = await supabase.rpc("diagram_record", { p_workspace: workspaceId, p_diagram: diagramId });
+      if (error) fail(error, "The diagram's approval could not be read.");
+      return data as DiagramRecord;
+    },
+    async submitDiagram(workspaceId, diagramId, note) {
+      const { data, error } = await supabase.rpc("submit_diagram_for_approval", { p_workspace: workspaceId, p_diagram: diagramId, p_note: note });
+      if (error) fail(error, "The diagram could not be sent for approval.");
+      return data as DiagramRecord;
+    },
+    async decideDiagram(workspaceId, diagramId, role, decision, note) {
+      const { data, error } = await supabase.rpc("decide_diagram_approval", { p_workspace: workspaceId, p_diagram: diagramId, p_role: role, p_decision: decision, p_note: note });
+      if (error) fail(error, "The decision could not be saved.");
+      return data as DiagramRecord;
+    },
+    async withdrawDiagram(workspaceId, diagramId) {
+      const { data, error } = await supabase.rpc("withdraw_diagram_approval", { p_workspace: workspaceId, p_diagram: diagramId });
+      if (error) fail(error, "The request could not be withdrawn.");
+      return data as DiagramRecord;
+    },
+    async approvalQueue(workspaceId) {
+      const { data, error } = await supabase.rpc("diagram_approval_queue", { p_workspace: workspaceId });
+      if (error) fail(error, "The approvals could not be listed.");
+      return data as ApprovalQueue;
+    },
+    async publishDiagram(workspaceId, diagramId, options) {
+      const { data, error } = await supabase.rpc("publish_diagram", { p_workspace: workspaceId, p_diagram: diagramId, p_expires_at: options.expiresAt ?? null, p_note: options.note ?? "" });
+      if (error) fail(error, "The copy could not be published.");
+      return data as PublishedCopy;
+    },
+    async listPublications(workspaceId, diagramId) {
+      const { data, error } = await supabase.rpc("list_publications", { p_workspace: workspaceId, p_diagram: diagramId });
+      if (error) fail(error, "The verified copies could not be listed.");
+      return (data ?? []) as Publication[];
+    },
+    async revokePublication(workspaceId, publicationId) {
+      const { error } = await supabase.rpc("revoke_publication", { p_workspace: workspaceId, p_publication: publicationId });
+      if (error) fail(error, "The copy could not be switched off.");
+    },
+    async addPublicationFile(workspaceId, publicationId, sha256, name) {
+      const { error } = await supabase.rpc("add_publication_file", { p_workspace: workspaceId, p_publication: publicationId, p_sha256: sha256, p_name: name });
+      if (error) fail(error, "The file could not be registered with the copy.");
+    },
+
     connect(workspaceId, me, handlers: LiveHandlers) {
       const tabKey = `${me.id}:${Math.random().toString(36).slice(2, 8)}`;
       let presence = { userId: me.id, name: me.name || me.email, diagramId: null as string | null };
@@ -718,6 +774,7 @@ export function createSupabaseBackend(url: string, key: string): Backend {
         handlers.onComment(row.deleted === true ? { id: String(row.id), removed: true } : toComment(row));
       });
       channel.on("postgres_changes", { event: "*", schema: "public", table: "reviews", filter: `workspace_id=eq.${workspaceId}` }, () => handlers.onCollab());
+      channel.on("postgres_changes", { event: "*", schema: "public", table: "diagram_approval_requests", filter: `workspace_id=eq.${workspaceId}` }, () => handlers.onCollab());
       channel.on("postgres_changes", { event: "UPDATE", schema: "public", table: "workspaces", filter: `id=eq.${workspaceId}` }, () => handlers.onCollab());
       // Delete events cannot be filtered by the server, so the workspace is checked here.
       channel.on("postgres_changes", { event: "*", schema: "public", table: "workspace_members" }, (payload) => {

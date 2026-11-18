@@ -1,4 +1,5 @@
 import { repairProcess } from "../bpm/repair";
+import { titleBlockSchema, type TitleBlock } from "../types";
 import type { Adr, AiPolicy, Branding, CustomReport, CustomRule, DiagramArchive, LibraryItem, WizardConfig, SavedTemplate, Flow, ModelLink, ModelObject, NodePlacement, Notation, Proposal, Relationship, ProcessModel } from "../types";
 import { nodeKey, splitNodeKey, type DiagramMeta, type TableName } from "./tables";
 
@@ -122,6 +123,8 @@ export function toRow(table: TableName, workspaceId: string, key: string, value:
         flows: d.flows?.length ? d.flows : null,
         // Sent only once a diagram has been archived, so a database without the column still saves the rest.
         ...(d.archive ? { archive: d.archive } : {}),
+        // Sent only once the information box has been set, for the same reason.
+        ...(d.titleBlock ? { title_block: d.titleBlock } : {}),
         created_at: d.createdAt,
         updated_at: d.updatedAt,
         deleted: false,
@@ -173,6 +176,12 @@ export function toRow(table: TableName, workspaceId: string, key: string, value:
       return { workspace_id: workspaceId, id: p.id, data: p, created_at: p.createdAt, deleted: false };
     }
   }
+}
+
+/** The information box's settings as stored, or nothing when they cannot be read. */
+function titleBlockOf(value: unknown): { titleBlock?: TitleBlock } {
+  const parsed = titleBlockSchema.safeParse(value);
+  return parsed.success ? { titleBlock: parsed.data } : {};
 }
 
 /** Returns the row's key and its value, or null as the value when the row is marked deleted. */
@@ -238,6 +247,7 @@ export function fromRow(table: TableName, row: Row): { key: string; value: unkno
         ...((["archimate", "bpmn"] as const).some((n) => n === row.notation) ? { notation: row.notation as Notation } : {}),
         ...flowsOf(row.flows),
         ...(row.archive && typeof row.archive === "object" && Array.isArray((row.archive as DiagramArchive).history) ? { archive: row.archive as DiagramArchive } : {}),
+        ...titleBlockOf(row.title_block),
         createdAt: iso(row.created_at),
         updatedAt: iso(row.updated_at),
       };

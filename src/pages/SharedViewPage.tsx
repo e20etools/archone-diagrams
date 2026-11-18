@@ -97,7 +97,7 @@ export function SharedViewPage() {
 }
 
 /** A diagram to look at, with the details of whichever box is selected. Used by snapshot links and live links. */
-export function DiagramViewer({ ws, diagram, subtitle, note, badge = "View only" }: { ws: Workspace; diagram: Diagram; subtitle: string; note: string; badge?: string }) {
+export function DiagramViewer({ ws, diagram, subtitle, note, badge = "View only", overlay }: { ws: Workspace; diagram: Diagram; subtitle: string; note: string; badge?: string; overlay?: React.ReactNode }) {
   const [selection, setSelection] = useState<CanvasSelection>({ objectId: null, edgeId: null });
   const flows = useFlowCursor(ws, diagram);
   useFlowKeys(!!flows.flow, flows.move, () => flows.setCursor(NO_FLOW));
@@ -122,6 +122,7 @@ export function DiagramViewer({ ws, diagram, subtitle, note, badge = "View only"
         <div className="relative min-w-0 flex-1">
           <DiagramCanvas ws={ws} diagram={diagram} readOnly minimap selection={selection} onSelect={setSelection} spotlight={flows.spotlight} />
           <FlowBar ws={ws} diagram={diagram} cursor={flows.cursor} onCursor={flows.setCursor} />
+          {overlay}
         </div>
         {object && links && (
           <aside className="w-[320px] shrink-0 overflow-y-auto bg-surface border-l border-line" aria-label="Object details">

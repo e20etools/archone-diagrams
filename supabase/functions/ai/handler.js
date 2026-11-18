@@ -3946,7 +3946,21 @@ var flowSchema = objectType({
 	description: stringType(),
 	steps: arrayType(flowStepSchema)
 });
-/** A diagram is a view: a set of object references with positions, never a copy of the objects. */
+var titleBlockSchema = objectType({
+	show: booleanType(),
+	corner: enumType([
+		"bottom-right",
+		"bottom-left",
+		"top-right",
+		"top-left"
+	]).default("bottom-right"),
+	/** The company this diagram belongs to, when it is not the workspace's own. */
+	company: stringType().max(120).optional(),
+	/** Its logo, as a small data URL. */
+	logo: stringType().max(3e5).optional(),
+	/** Fields left out of this diagram's box; the workspace's compulsory fields stay. */
+	hidden: arrayType(stringType()).max(20).optional()
+});
 var diagramSchema = objectType({
 	id: stringType(),
 	name: stringType(),
@@ -3974,6 +3988,8 @@ var diagramSchema = objectType({
 			reason: stringType()
 		}))
 	}).optional(),
+	/** The information box: who made and changed the diagram, its company, its approvals. Missing until someone sets it. */
+	titleBlock: titleBlockSchema.optional(),
 	createdAt: stringType(),
 	updatedAt: stringType()
 });
@@ -4246,6 +4262,14 @@ var brandingSchema = objectType({
 	appName: stringType().trim().max(40).default(""),
 	/** A small image as a data URL. */
 	logo: stringType().max(3e5).default(""),
+	/** The company named in every diagram's information box, unless a diagram names its own. */
+	company: stringType().trim().max(120).optional(),
+	/** Its logo, as a small data URL. */
+	companyLogo: stringType().max(3e5).optional(),
+	/** Every diagram shows its information box, whatever its own setting says. */
+	boxRequired: booleanType().optional(),
+	/** The fields of the box a diagram cannot hide. */
+	boxFields: arrayType(stringType()).max(20).optional(),
 	/** Overrides the theme's accent colour, as #rrggbb. */
 	accent: stringType().regex(/^#[0-9a-fA-F]{6}$/).or(literalType("")).default(""),
 	/** The theme for members who have not chosen one. */

@@ -4,6 +4,7 @@ import { Button, Field, Input, formatDateTime } from "@/components/ui";
 import { VIEW_TYPE_INFO } from "@/lib/catalog";
 import { fetchLiveView, type LiveView } from "@/lib/cloud/embed";
 import { DiagramViewer } from "@/pages/SharedViewPage";
+import { TitleBlockOverlay, viewOfRecord } from "@/components/approvals/TitleBlock";
 
 const REFRESH_MS = 30_000;
 
@@ -86,16 +87,17 @@ export function EmbedPage() {
     );
   }
   if (view.status === "gone") return <Message title="This link no longer works" text="It was switched off, or the diagram was deleted. Ask the person who shared it for a new link." />;
-  if (view.status === "unpublished") return <Message title="Nothing to show yet" text="This diagram is waiting for review. It appears here once it is approved." />;
+  if (view.status === "unpublished") return <Message title="Nothing to show yet" text="This diagram is waiting for approval. It appears here once it is approved." />;
   if (view.status === "unreachable") return <Message title="The diagram could not be loaded" text="Check your connection. This page tries again by itself." />;
   const diagram = view.ws.diagrams[view.diagramId];
   return (
     <DiagramViewer
       ws={view.ws}
       diagram={diagram}
-      subtitle={`${VIEW_TYPE_INFO[diagram.viewType].label} view${view.source === "published" ? ", the approved version" : ""}`}
+      subtitle={`${VIEW_TYPE_INFO[diagram.viewType].label} view${view.source === "approved" ? `, approved version ${view.version}` : view.source === "published" ? ", the approved version" : ""}`}
       badge="Live, view only"
       note={`Up to date as of ${formatDateTime(view.at)}.`}
+      overlay={view.box ? <TitleBlockOverlay view={viewOfRecord(view.box)} corner={view.box.corner} /> : undefined}
     />
   );
 }

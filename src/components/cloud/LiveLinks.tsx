@@ -29,7 +29,7 @@ function CopyButton({ text, label }: { text: string; label: string }) {
 }
 
 /** Live links of one diagram: create, copy as a link or as wiki embed code, and switch off. */
-export function LiveLinks({ diagram }: { diagram: Diagram }) {
+export function LiveLinks({ diagram, approvalRequired = false }: { diagram: Diagram; approvalRequired?: boolean }) {
   const workspaceId = useSession((s) => s.workspaceId);
   const people = useSession((s) => s.people);
   const reviewOn = useSession((s) => s.review.required);
@@ -68,7 +68,9 @@ export function LiveLinks({ diagram }: { diagram: Diagram }) {
     <div className="space-y-4" data-live-links>
       <p className="text-ink-soft">
         Anyone with a live link sees this diagram as it is now, without an account, and cannot change anything. The link keeps up with later changes until you switch it off.
-        {reviewOn && " Because review is on, it shows the last approved version."}
+        {approvalRequired
+          ? " Because approval by Enterprise Architecture and Cybersecurity comes first, it shows this diagram's last approved version, and nothing until there is one."
+          : reviewOn && " Because review is on, it shows the last approved version."}
       </p>
       {!canEdit ? (
         <p className="text-ink-soft">Only owners and editors can create live links.</p>

@@ -152,7 +152,8 @@ export function BrandingSection({ canChange }: { canChange: boolean }) {
     reader.readAsDataURL(f);
   };
   const save = () => {
-    const branding: Branding = { id: "workspace", appName: appName.trim().slice(0, 40), logo, accent, theme, font, updatedAt: nowIso() };
+    // The information box's settings live in the same record and stay as they are.
+    const branding: Branding = { ...current, id: "workspace", appName: appName.trim().slice(0, 40), logo, accent, theme, font, updatedAt: nowIso() };
     apply((w) => ({ ...w, branding: { workspace: branding }, updatedAt: nowIso() }));
     setSaved(true);
     setTimeout(() => setSaved(false), 2500);

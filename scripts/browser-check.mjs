@@ -1466,6 +1466,36 @@ try {
   check("a PNG is stamped with a strip under the picture unless that is switched off", stampOn && plainHeight > 0 && stampedHeight - plainHeight >= 150 && stampedHeight - plainHeight <= 400, `${stampedHeight} against ${plainHeight} pixels high`);
   await page.click("[data-export-stamp]");
   await closeExport(page);
+
+  // The information box without a shared workspace: shown when chosen, and drawn under an exported picture.
+  await page.click('button[aria-label="Diagram settings"]');
+  await page.waitForSelector("[data-title-block-show]");
+  await page.$eval("[data-title-block-show]", (e) => e.click());
+  await page.waitForSelector("[data-title-block]");
+  const localBox = await page.$eval("[data-title-block]", (e) => e.innerText.replace(/\s+/g, " "));
+  const boxSaved = await page
+    .waitForFunction((id) => JSON.parse(localStorage.getItem("archone.workspace.v1") ?? "{}").diagrams?.[id]?.titleBlock?.show === true, { timeout: 5000 }, stampDiagram)
+    .then(() => true, () => false);
+  check(
+    "without a shared workspace a diagram can show its information box, with dashes where approval needs one",
+    localBox.includes("Inside Online store") && localBox.includes("Approval needs a shared workspace") && (await page.$eval('[data-title-block] [data-title-block-field="ea"]', (e) => e.innerText)).includes("—") && boxSaved,
+    `${boxSaved ? "kept" : "not kept"}: ${localBox.slice(-120)}`,
+  );
+  await shot(page, "20-information-box-local");
+  for (const f of await readdir(downloads)) if (f.endsWith(".png")) await rm(join(downloads, f));
+  await page.click("[data-export-open]");
+  await page.waitForSelector("[data-export-box]");
+  await exportAs(page, "png");
+  await sleep(2500);
+  const boxPng = (await readdir(downloads)).find((f) => f.endsWith(".png"));
+  const boxHeight = boxPng ? (await readFile(join(downloads, boxPng))).readUInt32BE(20) : 0;
+  if (boxPng) await copyFile(join(downloads, boxPng), join(shots, "export-information-box.png"));
+  check("an exported PNG carries the information box and its code under the picture", boxHeight - plainHeight >= 150, `${boxHeight} against ${plainHeight} pixels high`);
+  await closeExport(page);
+  await page.$eval("[data-title-block-show]", (e) => e.click());
+  await page.waitForFunction(() => !document.querySelector("[data-title-block]"));
+  await page.click('button[aria-label="Diagram settings"]');
+
   await page.goto(`${base}/diagram/${stampDiagram}?asof=${encodeURIComponent(new Date().toISOString())}`, { waitUntil: "networkidle0" });
   await page.waitForSelector("[data-copy-check]");
   const copyNow = await page.$eval("[data-copy-check]", (e) => [e.getAttribute("data-copy-check"), e.innerText]);

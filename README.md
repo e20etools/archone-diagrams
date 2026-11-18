@@ -1347,6 +1347,58 @@ A live link can ask for a password, and can stop working after 1, 7, 30 or 90 da
 Snapshot links already had a password of their own (the diagram inside the link is
 encrypted). SSO on links needs the paid sign-on features and is not done.
 
+### Approval by Enterprise Architecture and Cybersecurity (hosted mode)
+
+Each diagram is approved by two roles, Enterprise Architecture (EA) and Cybersecurity, before
+it goes out. An owner names the approvers of each role in **Settings → Review and approval**
+and can make that approval compulsory before publishing.
+
+- **Sending.** An editor opens **Approval** on the diagram and sends it, with a note. Each role
+  then **approves** it, **changes and approves** it (the approver edits the diagram on the
+  canvas, then approves it as changed), **returns it with notes** to fix, or **rejects** it with
+  a reason. A returned diagram is fixed and sent again; the sender, or an owner, can withdraw it.
+- **Versions.** Once both roles have approved the diagram *as it is*, it becomes a new version:
+  1, 2, 3. Each decision is bound to a fingerprint the database works out (a SHA-256 of the
+  diagram, its boxes and where they are, and the objects and relationships it draws). Any change
+  afterwards no longer matches: the diagram shows as "Changed after approval", and the next
+  version needs both approvals again. If one approver changes the diagram during approval, the
+  other role is asked to approve the changed diagram.
+- **Nothing goes out before approval.** While approval is compulsory, live links show the last
+  approved version (and nothing until there is one), verified copies are made only of it, and a
+  snapshot link cannot be made of an unapproved diagram.
+- **Approvals page.** Lists what waits for each approver, with a count in the menu, what was
+  returned to its sender, and what was decided lately. Every step is in the audit log, and the
+  decisions are kept as they were: the app cannot change or delete them.
+
+### The information box of a diagram
+
+A diagram can show an information box in a corner of the canvas (its settings, under
+**Information box**): company name and logo, diagram name, version and where its approval
+stands, who made it and when, who changed it last and when, the EA and Cybersecurity approvals
+as yes or no, and an **authenticity seal**: the first twelve characters of the fingerprint, with
+"Original: matches approved version N" or "Differs from approved version N".
+
+- The box is optional. An owner sets the company and logo every box starts with, can make the
+  box compulsory on every diagram, and can mark fields as required, so a diagram cannot hide them
+  (**Settings → Branding → Information box**). A diagram can name a company and logo of its own.
+- Exported PNG and PDF carry the box under the picture, with its seal and a QR code.
+- Without a shared workspace the box shows what the browser knows, with dashes for approval.
+
+### Verified copies, with a QR code and a time limit (hosted mode)
+
+**Share → Verified copy** publishes a frozen copy of the diagram with its information box at an
+unguessable address, with a QR code to print or put on a slide. Its link works for 1 hour, 24
+hours, 7 or 30 days, until a chosen date and time (at most a year), or until it is switched off.
+
+- Anyone opens it without an account. The page says whether the copy is genuine, whether it is
+  an approved version, and whether the diagram has changed since (or a newer version was
+  approved), and shows the seal code to compare with a printed copy.
+- **Export → "Publish a verified copy"** puts the copy's QR code on the PNG or PDF and registers
+  the file's SHA-256 with the copy. Whoever is sent the file drops it on the copy's page, which
+  says whether it is exactly the file that was exported. The file is checked in the browser.
+- An expired or switched-off link shows only that it no longer works. Copies are listed with how
+  often they were opened.
+
 ### The component library
 
 A library of 1,762 components to draw with, on its own page (Library) and in the panel on
@@ -1457,10 +1509,10 @@ build does not reload.
 ## Check it
 
 ```bash
-npm test                   # 389 tests: model, the component library, flows, links, protected live links, decisions, arranging, health, CALM, scenario merging, the trust page, the document, your own rules, large models, templates, the pull-request gate, the APM import, AI, questions, checks, MCP, import readers, sync engine, comparison, and the database rules and the API on a real Postgres
+npm test                   # 589 tests: model, the component library, flows, links, protected live links, decisions, arranging, health, CALM, scenario merging, the trust page, the document, your own rules, large models, templates, the pull-request gate, the APM import, AI, questions, checks, MCP, import readers, sync engine, comparison, and the database rules and the API on a real Postgres
 npm run build              # type-check and production build into dist/
-npm run test:browser       # 157 end-to-end checks of browser-only mode (run after a build)
-npm run test:browser:cloud # 87 end-to-end checks of hosted mode with several people
+npm run test:browser       # 241 end-to-end checks of browser-only mode (run after a build)
+npm run test:browser:cloud # 123 end-to-end checks of hosted mode with several people
 ```
 
 `test:browser` serves the production build, including `api/ai.js`, and walks through the

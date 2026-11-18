@@ -1,7 +1,7 @@
 import { DiagramFilesButton } from "@/components/DiagramFiles";
 import { NOTATION_INFO } from "@/lib/notation";
 import { NOTATIONS, type Notation } from "@/lib/types";
-import { Zap, ListTree, Archive, BookmarkPlus, AlignCenterHorizontal, AlignCenterVertical, AlignEndHorizontal, AlignEndVertical, AlignHorizontalSpaceAround, AlignStartHorizontal, AlignStartVertical, AlignVerticalSpaceAround, ChevronRight, EyeOff, LayoutDashboard, Presentation, ListOrdered, MessageSquare, PanelLeftClose, PanelLeftOpen, Search, Share2, ShieldCheck, Shuffle, SlidersHorizontal, Sparkles, Trash2, Waypoints, X, ZoomIn } from "lucide-react";
+import { Zap, ListTree, Archive, BookmarkPlus, AlignCenterHorizontal, AlignCenterVertical, AlignEndHorizontal, AlignEndVertical, AlignHorizontalSpaceAround, AlignStartHorizontal, AlignStartVertical, AlignVerticalSpaceAround, ChevronRight, EyeOff, LayoutDashboard, Presentation, ListOrdered, MessageSquare, BadgeCheck, PanelLeftClose, PanelLeftOpen, Search, Share2, ShieldCheck, Shuffle, SlidersHorizontal, Sparkles, Trash2, Waypoints, X, ZoomIn } from "lucide-react";
 import { checkCopy } from "@/lib/freshness";
 import { alignNodes, distributeNodes, type AlignMode } from "@/lib/arrange";
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from "react";
@@ -41,6 +41,10 @@ import {
   updateDiagram,
 } from "@/lib/model";
 import { CommentsPanel, commentsOn, openThreadsByObject, type CommentAnchor } from "@/components/cloud/CommentsPanel";
+import { ApprovalPanel } from "@/components/approvals/ApprovalPanel";
+import { DiagramTitleBlock, useDiagramRecord } from "@/components/approvals/TitleBlock";
+import { TitleBlockSettings } from "@/components/approvals/TitleBlockSettings";
+import { STATUS_LABEL } from "@/lib/approvals";
 import { cloudEnabled } from "@/lib/cloud/config";
 import { CommentCategory, useCanEdit, useCategoryRank, useSession } from "@/lib/cloud/session";
 import { CATEGORIES as AREAS, CATEGORY_INFO as AREA_INFO, VIEWS_BY_CATEGORY, viewCategory } from "@/lib/categories";
@@ -347,6 +351,9 @@ function DiagramSettings({ ws, diagram, onClose }: { ws: Workspace; diagram: Dia
           </div>
         )}
       </Section>
+      <Section title="Information box">
+        <TitleBlockSettings ws={ws} diagram={diagram} canEdit={canEdit} onChange={(titleBlock) => patch({ titleBlock })} />
+      </Section>
       <Section title="Impact">
         <p className="text-[13px] text-ink-soft mb-2">What this diagram depends on, what depends on it in other diagrams, and what stops if it stops.</p>
         <div className="flex flex-wrap gap-1.5">
@@ -622,6 +629,8 @@ function Editor({ ws, diagram }: { ws: Workspace; diagram: Diagram }) {
   const canvas = useRef<CanvasHandle | null>(null);
   const [selection, setSelectionOnly] = useState<CanvasSelection>(NONE);
   const [flowsOpen, setFlowsOpen] = useState(false);
+  const [approvalOpen, setApprovalOpen] = useState(false);
+  const approval = useDiagramRecord(ws, diagram);
   const flows = useFlowCursor(ws, diagram);
   // Boxes picked together with Shift-click, to line up, space out or drag as a group.
   const [picked, setPicked] = useState<string[]>([]);
@@ -690,6 +699,10 @@ function Editor({ ws, diagram }: { ws: Workspace; diagram: Diagram }) {
     setSettingsOpen(false);
     setFlowsOpen(false);
   }, [diagramId, setSelection]);
+  // A link from the approvals page opens the approval panel.
+  useEffect(() => {
+    if (cloudEnabled && params.has("approval")) setApprovalOpen(true);
+  }, [diagramId]);
   useEffect(() => {
     if (!focusThread) return;
     setCommentsOpen(true);
@@ -937,6 +950,7 @@ function Editor({ ws, diagram }: { ws: Workspace; diagram: Diagram }) {
               setFlowsOpen(!flowsOpen);
               if (!flowsOpen) {
                 setCommentsOpen(false);
+                setApprovalOpen(false);
                 setSelection(NONE);
               }
             }}
@@ -954,6 +968,7 @@ function Editor({ ws, diagram }: { ws: Workspace; diagram: Diagram }) {
               onClick={() => {
                 if (commentsOpen) return closeComments();
                 setFlowsOpen(false);
+                setApprovalOpen(false);
                 setCommentsOpen(true);
               }}
             >
@@ -961,11 +976,32 @@ function Editor({ ws, diagram }: { ws: Workspace; diagram: Diagram }) {
               {openThreads > 0 && <span className="tabular-nums text-ink-soft">{openThreads}</span>}
             </Button>
           )}
+          {cloudEnabled && (
+            <Button
+              icon={<BadgeCheck size={15} />}
+              aria-pressed={approvalOpen}
+              className={approvalOpen ? "!bg-blueprint-soft !text-blueprint-deep !border-transparent" : undefined}
+              title={approval.record ? `Version ${approval.record.version}: ${STATUS_LABEL[approval.record.status]}` : "Approval by Enterprise Architecture and Cybersecurity"}
+              data-approval-button={approval.record?.status ?? "unknown"}
+              onClick={() => {
+                const next = !approvalOpen;
+                setApprovalOpen(next);
+                if (next) {
+                  closeComments();
+                  setFlowsOpen(false);
+                  setSelection(NONE);
+                }
+              }}
+            >
+              Approval
+              {approval.record && <span className="tabular-nums text-ink-soft">v{approval.record.version}</span>}
+            </Button>
+          )}
           <span className="mx-1 h-5 w-px bg-line" />
           <Button icon={<Sparkles size={15} />} onClick={() => setDialog("ai")}>
             Draft with AI
           </Button>
-          <ExportMenu ws={ws} diagram={diagram} canvas={canvas} onNotice={notify} />
+          <ExportMenu ws={ws} diagram={diagram} canvas={canvas} approval={approval.record} onNotice={notify} />
           <Button icon={<Presentation size={15} />} title="Show this diagram full screen, without the tools around it" onClick={() => navigate(`/present/${diagramId}`)}>
             Present
           </Button>
@@ -1059,6 +1095,7 @@ function Editor({ ws, diagram }: { ws: Workspace; diagram: Diagram }) {
             </div>
           )}
           {(flowsOpen || flows.flow) && !(canEdit && pickedHere.length >= 2) && <FlowBar ws={ws} diagram={diagram} cursor={flows.cursor} onCursor={flows.setCursor} />}
+          <DiagramTitleBlock ws={ws} diagram={diagram} record={approval.record} />
           {empty && (
             <div className="absolute inset-0 grid place-items-center pointer-events-none">
               <div className="pointer-events-auto rounded-lg border border-dashed border-ink-faint bg-surface/90 px-6 py-5 text-center max-w-sm">
@@ -1071,7 +1108,11 @@ function Editor({ ws, diagram }: { ws: Workspace; diagram: Diagram }) {
             </div>
           )}
         </div>
-        {commentsOpen ? (
+        {approvalOpen ? (
+          <aside className="w-[340px] shrink-0 bg-surface border-l border-line" aria-label="Approval">
+            <ApprovalPanel diagram={diagram} record={approval.record} problem={approval.problem} canEdit={canEdit} onRecord={approval.setRecord} onClose={() => setApprovalOpen(false)} />
+          </aside>
+        ) : commentsOpen ? (
           <aside className="w-[340px] shrink-0 bg-surface border-l border-line" aria-label="Comments">
             <CommentCategory.Provider value={category}>
               <CommentsPanel
@@ -1104,7 +1145,7 @@ function Editor({ ws, diagram }: { ws: Workspace; diagram: Diagram }) {
         )}
       </div>
       {dialog === "ai" && <AiDraftDialog ws={ws} targetDiagram={diagram} onClose={() => setDialog(null)} />}
-      {dialog === "share" && <ShareDialog ws={ws} diagram={diagram} onClose={() => setDialog(null)} />}
+      {dialog === "share" && <ShareDialog ws={ws} diagram={diagram} approval={approval.record} onClose={() => setDialog(null)} />}
       {notice}
     </div>
   );

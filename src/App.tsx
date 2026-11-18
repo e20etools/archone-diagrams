@@ -25,6 +25,8 @@ import { ModelPage } from "@/pages/ModelPage";
 import { LibraryPage } from "@/pages/LibraryPage";
 import { PresentPage } from "@/pages/PresentPage";
 import { ReviewPage, ReviewsPage } from "@/pages/ReviewsPages";
+import { ApprovalsPage } from "@/pages/ApprovalsPage";
+import { VerifyPage } from "@/pages/VerifyPage";
 import { RulesPage } from "@/pages/RulesPage";
 import { ScenariosPage } from "@/pages/ScenariosPage";
 import { SettingsPage } from "@/pages/SettingsPage";
@@ -79,6 +81,7 @@ export default function App() {
           <>
             <Route path="/versions" element={<VersionsPage />} />
             <Route path="/versions/:id" element={<VersionPage />} />
+            <Route path="/approvals" element={<ApprovalsPage />} />
             <Route path="/reviews" element={<ReviewsPage />} />
             <Route path="/reviews/:id" element={<ReviewPage />} />
             <Route path="/audit" element={<AuditPage />} />
@@ -98,6 +101,8 @@ export default function App() {
       {cloudEnabled && <Route path="/embed/:token" element={<EmbedPage />} />}
       {/* The public trust page: where personal data is kept and who receives it. No sign-in. */}
       {cloudEnabled && <Route path="/trust/:token" element={<TrustPage />} />}
+      {/* A verified copy of a diagram: anyone with the link or its code checks it, without signing in. */}
+      {cloudEnabled && <Route path="/verify/:token" element={<VerifyPage />} />}
       {/* With a hosted backend, everything else waits for sign-in and an open workspace. */}
       {/* Presenting shows one diagram with nothing around it; it still needs the workspace, so it waits for sign-in too. */}
       <Route path="/present/:id" element={cloudEnabled ? <CloudGate><PresentPage /></CloudGate> : <PresentPage />} />

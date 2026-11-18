@@ -2,6 +2,7 @@ import { ArrowLeft, ArrowRight, Maximize2, Minimize2, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { DiagramCanvas, type CanvasHandle } from "@/components/canvas/DiagramCanvas";
+import { DiagramTitleBlock, useDiagramRecord } from "@/components/approvals/TitleBlock";
 import { FlowBar, NO_FLOW, useFlowCursor, useFlowKeys } from "@/components/Flows";
 import { Button, EmptyState, IconButton } from "@/components/ui";
 import type { Diagram } from "@/lib/types";
@@ -24,6 +25,7 @@ export function PresentPage() {
   const diagram = diagrams[index];
   // Hooks run before the "no such diagram" exit below, so they are given an empty diagram to hold.
   const flows = useFlowCursor(ws, diagram ?? NOTHING);
+  const approval = useDiagramRecord(ws, diagram ?? NOTHING);
   // While a flow is open the arrow keys walk its steps; with none open they move between diagrams.
   useFlowKeys(!!flows.flow, flows.move, () => flows.setCursor(NO_FLOW));
   const canvas = useRef<CanvasHandle>(null);
@@ -141,6 +143,7 @@ export function PresentPage() {
       <div className="relative min-h-0 flex-1">
         <DiagramCanvas ws={ws} diagram={diagram} readOnly canvasRef={canvas} onOpen={inside} spotlight={flows.spotlight} />
         <FlowBar ws={ws} diagram={diagram} cursor={flows.cursor} onCursor={flows.setCursor} />
+        <DiagramTitleBlock ws={ws} diagram={diagram} record={approval.record} />
       </div>
     </div>
   );

@@ -1,4 +1,4 @@
-import { FileBarChart, FolderOpen, Network, Zap, Boxes, Workflow, Pickaxe, ClipboardCheck, FileText, GitBranch, HeartPulse, History, GalleryThumbnails, LayoutGrid, MessageCircleQuestion, Redo2, Scale, ScrollText, Search, Settings, Shapes, ShieldCheck, Sparkles, Undo2, Waypoints } from "lucide-react";
+import { BadgeCheck, FileBarChart, FolderOpen, Network, Zap, Boxes, Workflow, Pickaxe, ClipboardCheck, FileText, GitBranch, HeartPulse, History, GalleryThumbnails, LayoutGrid, MessageCircleQuestion, Redo2, Scale, ScrollText, Search, Settings, Shapes, ShieldCheck, Sparkles, Undo2, Waypoints } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { CloudHeader, ReadOnlyBanner } from "@/components/cloud/CloudHeader";
@@ -6,6 +6,7 @@ import { TypeIcon } from "@/components/icons";
 import { IconButton, countOf, cx } from "@/components/ui";
 import { VIEW_TYPE_INFO, objectType } from "@/lib/catalog";
 import { currentStage } from "@/lib/cloud/collab";
+import { APPROVAL_ROLES, waitsFor } from "@/lib/approvals";
 import { cloudEnabled } from "@/lib/cloud/config";
 import { useSession } from "@/lib/cloud/session";
 import { searchWorkspace } from "@/lib/search";
@@ -65,6 +66,7 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
           label: "Work together",
           items: [
             { to: "/versions", label: "Versions", icon: History },
+            { to: "/approvals", label: "Approvals", icon: BadgeCheck },
             { to: "/reviews", label: "Reviews", icon: ClipboardCheck },
             { to: "/scenarios", label: "Scenarios", icon: GitBranch },
             { to: "/audit", label: "Audit log", icon: ScrollText, ownerOnly: true },
@@ -222,6 +224,8 @@ export function AppShell({ children }: { children: ReactNode }) {
   const isOwner = useSession((s) => s.role) === "owner";
   const myId = useSession((s) => s.user?.id);
   const waitingForMe = useSession((s) => s.reviews).filter((r) => !!myId && currentStage(r)?.reviewerId === myId).length;
+  const approvals = useSession((s) => s.approvals);
+  const approvalsForMe = approvals ? approvals.open.filter((item) => APPROVAL_ROLES.some((r) => approvals.mine[r] && waitsFor(item, r))).length : 0;
   const look = useApplyAppearance(ws.branding?.workspace);
 
   useEffect(() => {
@@ -268,7 +272,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 <ul className="space-y-0.5">
                   {items.map((item) => (
                     <li key={item.to}>
-                      <NavItemLink item={item} compact={compact} badge={item.to === "/reviews" ? waitingForMe : item.to === "/ai" ? pending : 0} badgeTitle={item.to === "/reviews" ? `${waitingForMe} waiting for your decision` : `${pending} waiting for review`} />
+                      <NavItemLink item={item} compact={compact} badge={item.to === "/reviews" ? waitingForMe : item.to === "/approvals" ? approvalsForMe : item.to === "/ai" ? pending : 0} badgeTitle={item.to === "/reviews" ? `${waitingForMe} waiting for your decision` : item.to === "/approvals" ? `${approvalsForMe} ${approvalsForMe === 1 ? "diagram waits" : "diagrams wait"} for your approval` : `${pending} waiting for review`} />
                     </li>
                   ))}
                 </ul>

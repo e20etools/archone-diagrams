@@ -1,6 +1,8 @@
 import { emptyWorkspace } from "../model";
 import type { Workspace } from "../types";
+import type { BoxRecord } from "../approvals";
 import { snapshotToTables } from "./collab";
+import { boxOf, type DemoApprovalDb } from "./demoApprovals";
 import { DEMO_DB_KEY, demoBackend, supabaseKey, supabaseUrl } from "./config";
 import { fromTables, withoutDangling, type Tables } from "./tables";
 
@@ -10,7 +12,18 @@ import { fromTables, withoutDangling, type Tables } from "./tables";
  */
 
 export type LiveView =
-  | { status: "ok"; source: "working" | "published"; ws: Workspace; diagramId: string; at: string }
+  | {
+      status: "ok";
+      /** The working diagram, the workspace's published version, or the diagram's last approved version. */
+      source: "working" | "published" | "approved";
+      ws: Workspace;
+      diagramId: string;
+      at: string;
+      /** The approved version shown, while approval is compulsory. */
+      version?: number | null;
+      /** The diagram's information box, when it shows one. */
+      box?: BoxRecord | null;
+    }
   /** Switched off, mistyped, or its diagram was deleted. */
   | { status: "gone" }
   /** Its last day has passed. */
@@ -23,9 +36,9 @@ export type LiveView =
   | { status: "unpublished" }
   | { status: "unreachable" };
 
-function toView(tables: Tables, diagramId: string, source: "working" | "published", at: string): LiveView {
+function toView(tables: Tables, diagramId: string, source: "working" | "published" | "approved", at: string, extra: { version?: number | null; box?: BoxRecord | null } = {}): LiveView {
   const ws: Workspace = { ...emptyWorkspace("Shared diagram"), ...fromTables(withoutDangling(tables)) };
-  return ws.diagrams[diagramId] ? { status: "ok", source, ws, diagramId, at } : { status: "gone" };
+  return ws.diagrams[diagramId] ? { status: "ok", source, ws, diagramId, at, ...extra } : { status: "gone" };
 }
 
 /** A live link shows the picture and its details, not the links to repositories and dashboards behind it. */
@@ -39,7 +52,7 @@ type DemoLink = { token: string; workspaceId: string; diagramId: string; protect
 export async function fetchLiveView(token: string, password = ""): Promise<LiveView> {
   if (demoBackend) {
     try {
-      const db = JSON.parse(localStorage.getItem(DEMO_DB_KEY) ?? "{}") as { liveLinks?: DemoLink[]; rows?: Record<string, Tables> };
+      const db = JSON.parse(localStorage.getItem(DEMO_DB_KEY) ?? "{}") as DemoApprovalDb & { liveLinks?: DemoLink[] };
       const link = db.liveLinks?.find((l) => l.token === token);
       const tables = link && db.rows?.[link.workspaceId];
       if (!link || !tables) return { status: "gone" };
@@ -57,7 +70,16 @@ export async function fetchLiveView(token: string, password = ""): Promise<LiveV
           return { status: "locked", wrong: true };
         }
       }
-      return toView(withoutLinks({ ...tables, proposals: {} }), link.diagramId, "working", new Date().toISOString());
+      const at = new Date().toISOString();
+      if (!tables.diagrams[link.diagramId]) return { status: "gone" };
+      if (db.approval?.[link.workspaceId]?.required) {
+        // Only what both roles approved leaves the workspace.
+        const approved = (db.approvalRequests?.[link.workspaceId] ?? []).filter((r) => r.diagramId === link.diagramId && r.status === "approved" && r.copy).sort((a, b) => ((a.closedAt ?? "") < (b.closedAt ?? "") ? 1 : -1))[0];
+        if (!approved?.copy) return { status: "unpublished" };
+        return toView(approved.copy.tables, link.diagramId, "approved", at, { version: approved.version, box: approved.copy.record.show ? approved.copy.record : null });
+      }
+      const box = await boxOf({ ...db, users: db.users ?? {}, workspaces: db.workspaces ?? {}, members: db.members ?? [], rows: db.rows ?? {} }, link.workspaceId, link.diagramId);
+      return toView(withoutLinks({ ...tables, proposals: {} }), link.diagramId, "working", at, { box: box.show ? box : null });
     } catch {
       return { status: "unreachable" };
     }
@@ -70,13 +92,14 @@ export async function fetchLiveView(token: string, password = ""): Promise<LiveV
       body: JSON.stringify(password ? { p_token: token, p_password: password } : { p_token: token }),
     });
     if (!response.ok) return { status: "unreachable" };
-    const reply = (await response.json()) as { status?: string; wrong?: boolean; minutes?: number; source?: string; diagram?: { id?: string }; nodes?: unknown; objects?: unknown; relationships?: unknown; at?: string };
+    const reply = (await response.json()) as { status?: string; wrong?: boolean; minutes?: number; source?: string; diagram?: { id?: string }; nodes?: unknown; objects?: unknown; relationships?: unknown; at?: string; version?: number | null; box?: BoxRecord | null };
     if (reply.status === "gone" || reply.status === "unpublished" || reply.status === "expired") return { status: reply.status };
     if (reply.status === "locked") return { status: "locked", wrong: reply.wrong === true };
     if (reply.status === "throttled") return { status: "throttled", minutes: Number(reply.minutes) || 15 };
     if (reply.status !== "ok" || !reply.diagram?.id) return { status: "unreachable" };
     const tables = snapshotToTables({ objects: reply.objects, relationships: reply.relationships, diagrams: [reply.diagram], nodes: reply.nodes });
-    return toView(tables, reply.diagram.id, reply.source === "published" ? "published" : "working", reply.at ?? new Date().toISOString());
+    const source = reply.source === "published" || reply.source === "approved" ? reply.source : "working";
+    return toView(tables, reply.diagram.id, source, reply.at ?? new Date().toISOString(), { version: reply.version ?? null, box: reply.box && typeof reply.box === "object" ? reply.box : null });
   } catch {
     return { status: "unreachable" };
   }

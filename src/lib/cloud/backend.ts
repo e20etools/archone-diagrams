@@ -4,6 +4,7 @@ import type { AuditCheck, AuditPage, AuditQuery } from "./audit";
 import type { Comment, CommentDraft, CommentPatch, Review, ReviewSettings, ReviewStage, VersionInfo } from "./collab";
 import type { TrustPage, TrustPageInput } from "../trust";
 import type { ChangeSet, Tables } from "./tables";
+import type { ApprovalQueue, ApprovalRole, ApprovalSettings, DiagramRecord } from "../approvals";
 
 /**
  * Everything the app needs from a hosted backend. The Supabase implementation is in
@@ -119,6 +120,27 @@ export interface WebhookInfo {
   createdAt: string;
 }
 /** A link that shows one diagram, read-only and current, until it is switched off. */
+export type ApprovalDecision = "approve" | "return" | "reject";
+/** A verified copy just published. */
+export interface PublishedCopy {
+  id: string;
+  token: string;
+  createdAt: string;
+  expiresAt: string | null;
+  fingerprint: string;
+  version: number | null;
+}
+export interface Publication extends PublishedCopy {
+  createdBy: string;
+  revokedAt: string | null;
+  views: number;
+  note: string;
+  /** How many exported files were registered with it. */
+  files: number;
+  /** The diagram still matches it. */
+  current: boolean;
+}
+
 export interface LiveLink {
   id: string;
   token: string;
@@ -264,6 +286,21 @@ export interface Backend {
   listLiveLinks(workspaceId: string, diagramId: string): Promise<LiveLink[]>;
   createLiveLink(workspaceId: string, diagramId: string, options?: LiveLinkOptions): Promise<void>;
   revokeLiveLink(workspaceId: string, linkId: string): Promise<void>;
+
+  /* Approving diagrams by Enterprise Architecture and Cybersecurity, and verified copies. */
+  approvalSettings(workspaceId: string): Promise<ApprovalSettings>;
+  /** Owners only. The lists replace the approvers of each role. */
+  setApprovalSettings(workspaceId: string, required: boolean, ea: string[], security: string[]): Promise<ApprovalSettings>;
+  diagramRecord(workspaceId: string, diagramId: string): Promise<DiagramRecord>;
+  /** Sends the diagram for approval, or sends a returned one again. */
+  submitDiagram(workspaceId: string, diagramId: string, note: string): Promise<DiagramRecord>;
+  decideDiagram(workspaceId: string, diagramId: string, role: ApprovalRole, decision: ApprovalDecision, note: string): Promise<DiagramRecord>;
+  withdrawDiagram(workspaceId: string, diagramId: string): Promise<DiagramRecord>;
+  approvalQueue(workspaceId: string): Promise<ApprovalQueue>;
+  publishDiagram(workspaceId: string, diagramId: string, options: { expiresAt?: string | null; note?: string }): Promise<PublishedCopy>;
+  listPublications(workspaceId: string, diagramId: string): Promise<Publication[]>;
+  revokePublication(workspaceId: string, publicationId: string): Promise<void>;
+  addPublicationFile(workspaceId: string, publicationId: string, sha256: string, name: string): Promise<void>;
 
   /** Limits an editor to the given domains, or lifts the limit with null. Owners only. */
   setMemberDomains(workspaceId: string, userId: string, domains: string[] | null): Promise<void>;

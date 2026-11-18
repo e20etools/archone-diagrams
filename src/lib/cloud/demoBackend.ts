@@ -10,6 +10,7 @@ import type { IntegrationInfo } from "../integrations/catalog";
 import { BackendError, LIVE_LINK_MIN_PASSWORD, canCommentRole, canEditRole, type ApiKeyInfo, type Backend, type StoredFile, type LiveLink, type WebhookInfo, type CloudUser, type LiveHandlers, type Peer, type Role } from "./backend";
 import type { Comment, Review, ReviewSettings, VersionInfo } from "./collab";
 import { DEMO_DB_KEY } from "./config";
+import { approvalOf, approversOf, boxOf, changedByMeSince, demoFingerprint, diagramTables, nameOfUser, recordOf, requestsOf, roleState, settingsView, tryComplete, type DemoApprovalDb, type DemoApprovalEvent, type DemoPublication } from "./demoApprovals";
 import { emptyTables, fromTables, patchTables, sameValue, splitNodeKey, type ChangeSet, type Tables } from "./tables";
 
 /**
@@ -42,6 +43,13 @@ interface Db {
   files?: Record<string, (Omit<StoredFile, "diagramIds"> & { links: string[]; data: string })[]>;
   /** A stand-in for the audit log the real database writes with triggers. It covers the model, members and invitations. */
   audit?: Record<string, AuditEntry[]>;
+  /** Approving diagrams: who approves, the requests and their decisions, verified copies, who made each diagram. */
+  approval?: DemoApprovalDb["approval"];
+  approvalRequests?: DemoApprovalDb["approvalRequests"];
+  publications?: DemoPublication[];
+  diagramMakers?: DemoApprovalDb["diagramMakers"];
+  /** Counts up with every write; see write(). */
+  rev?: number;
 }
 
 const DB_KEY = DEMO_DB_KEY;
@@ -58,7 +66,20 @@ const read = (): Db => {
   }
   return { users: {}, workspaces: {}, members: [], invites: [], rows: {} };
 };
-const write = (db: Db) => localStorage.setItem(DB_KEY, JSON.stringify(db));
+/*
+ * Every write counts up a revision, kept beside the data. Another tab can hear about a change on
+ * the BroadcastChannel before its copy of localStorage has it, so a message carries the revision
+ * it follows and is handed on only once that revision can be read.
+ */
+const REV_KEY = `${DEMO_DB_KEY}.rev`;
+let lastRev = 0;
+const write = (db: Db) => {
+  db.rev = Math.max(Number(db.rev) || 0, Number(localStorage.getItem(REV_KEY)) || 0) + 1;
+  lastRev = db.rev;
+  localStorage.setItem(DB_KEY, JSON.stringify(db));
+  localStorage.setItem(REV_KEY, String(db.rev));
+};
+const storedRev = () => Number(localStorage.getItem(REV_KEY)) || 0;
 const pause = () => new Promise<void>((resolve) => setTimeout(resolve, 15));
 
 type Message =
@@ -73,7 +94,16 @@ type Message =
 export function createDemoBackend(): Backend {
   const bus = new BroadcastChannel("archone-demo");
   const listeners = new Set<(message: Message) => void>();
-  bus.onmessage = (event: MessageEvent<Message>) => listeners.forEach((listener) => listener(event.data));
+  bus.onmessage = (event: MessageEvent<Message & { rev?: number }>) => {
+    const message = event.data;
+    const deliver = () => listeners.forEach((listener) => listener(message));
+    const wanted = message.rev ?? 0;
+    if (storedRev() >= wanted) return deliver();
+    const since = Date.now();
+    const wait = () => (storedRev() >= wanted || Date.now() - since > 3000 ? deliver() : setTimeout(wait, 10));
+    setTimeout(wait, 10);
+  };
+  const post = (message: Message) => bus.postMessage({ ...message, rev: lastRev });
   const authListeners = new Set<(user: CloudUser | null, event: "session" | "recovery") => void>();
 
   const current = (): CloudUser | null => {
@@ -223,7 +253,7 @@ export function createDemoBackend(): Backend {
     if (review.status !== "open") throw new BackendError("invalid", "This review is already closed.");
     return review;
   };
-  const collabChanged = (workspaceId: string) => bus.postMessage({ type: "collab", workspaceId } satisfies Message);
+  const collabChanged = (workspaceId: string) => post({ type: "collab", workspaceId } satisfies Message);
 
   /* The file library, by the database's rules. */
   const filesOf = (db: Db, workspaceId: string) => ((db.files ??= {})[workspaceId] ??= []);
@@ -341,7 +371,7 @@ export function createDemoBackend(): Backend {
       db.members = db.members.filter((m) => m.workspaceId !== workspaceId);
       db.invites = db.invites.filter((i) => i.workspaceId !== workspaceId);
       write(db);
-      bus.postMessage({ type: "members" } satisfies Message);
+      post({ type: "members" } satisfies Message);
     },
     async myInvites() {
       const db = read();
@@ -362,7 +392,7 @@ export function createDemoBackend(): Backend {
       log(db, invite.workspaceId, "invitation", invite.id, invite.email, "closed");
       db.invites = db.invites.filter((i) => i.id !== inviteId);
       write(db);
-      bus.postMessage({ type: "members" } satisfies Message);
+      post({ type: "members" } satisfies Message);
       return invite.workspaceId;
     },
     async declineInvite(inviteId) {
@@ -415,7 +445,7 @@ export function createDemoBackend(): Backend {
       member.role = role;
       if (role !== "editor") member.domains = null;
       write(db);
-      bus.postMessage({ type: "members" } satisfies Message);
+      post({ type: "members" } satisfies Message);
     },
     async removeMember(workspaceId, userId) {
       const db = read();
@@ -427,7 +457,7 @@ export function createDemoBackend(): Backend {
       if (member) log(db, workspaceId, "member", userId, gone?.name || gone?.email || "", "removed", { role: [member.role, null] });
       db.members = db.members.filter((m) => !(m.workspaceId === workspaceId && m.userId === userId));
       write(db);
-      bus.postMessage({ type: "members" } satisfies Message);
+      post({ type: "members" } satisfies Message);
     },
 
     async load(workspaceId) {
@@ -448,9 +478,13 @@ export function createDemoBackend(): Backend {
       if (Object.keys(change.branding ?? {}).length && roleOf(db, workspaceId, me().id) !== "owner") throw new BackendError("forbidden", "Only an owner can change the workspace's branding.");
       if (Object.keys(change.aiPolicy ?? {}).length && roleOf(db, workspaceId, me().id) !== "owner") throw new BackendError("forbidden", "Only an owner can change the AI limits.");
       logChanges(db, workspaceId, db.rows[workspaceId] ?? emptyTables(), change);
+      // As the database's trigger does, whoever adds a diagram is its maker.
+      for (const [diagramId, diagram] of Object.entries(change.diagrams ?? {})) {
+        if (diagram && !db.rows[workspaceId]?.diagrams[diagramId]) ((db.diagramMakers ??= {})[workspaceId] ??= {})[diagramId] ??= me().id;
+      }
       db.rows[workspaceId] = patchTables(db.rows[workspaceId] ?? emptyTables(), change);
       write(db);
-      bus.postMessage({ type: "changes", workspaceId, change } satisfies Message);
+      post({ type: "changes", workspaceId, change } satisfies Message);
     },
     async listComments(workspaceId) {
       await pause();
@@ -479,7 +513,7 @@ export function createDemoBackend(): Backend {
       };
       list.push(comment);
       write(db);
-      bus.postMessage({ type: "comment", workspaceId, comment } satisfies Message);
+      post({ type: "comment", workspaceId, comment } satisfies Message);
       return comment;
     },
     async updateComment(workspaceId, commentId, patch) {
@@ -495,7 +529,7 @@ export function createDemoBackend(): Backend {
         const gone = list.filter((c) => c.id === commentId || c.parentId === commentId);
         db.comments![workspaceId] = list.filter((c) => !gone.includes(c));
         write(db);
-        for (const c of gone) bus.postMessage({ type: "comment", workspaceId, comment: { id: c.id, removed: true } } satisfies Message);
+        for (const c of gone) post({ type: "comment", workspaceId, comment: { id: c.id, removed: true } } satisfies Message);
         return;
       }
       if (patch.body !== undefined) {
@@ -505,7 +539,7 @@ export function createDemoBackend(): Backend {
       if (patch.mentions !== undefined) comment.mentions = patch.mentions;
       if (patch.resolved !== undefined) comment.resolved = patch.resolved;
       write(db);
-      bus.postMessage({ type: "comment", workspaceId, comment } satisfies Message);
+      post({ type: "comment", workspaceId, comment } satisfies Message);
     },
 
     async listVersions(workspaceId) {
@@ -656,7 +690,7 @@ export function createDemoBackend(): Backend {
       write(db);
       if (change) {
         const message = { type: "changes", workspaceId, change } satisfies Message;
-        bus.postMessage(message);
+        post(message);
         listeners.forEach((listener) => listener(message));
       }
       collabChanged(workspaceId);
@@ -776,7 +810,7 @@ export function createDemoBackend(): Backend {
       log(db, workspaceId, "member", userId, person?.name || person?.email || "", "category roles changed", { categories: [member.categoryRoles ?? {}, kept] });
       member.categoryRoles = kept;
       write(db);
-      bus.postMessage({ type: "members" } satisfies Message);
+      post({ type: "members" } satisfies Message);
     },
     async setMemberDomains(workspaceId, userId, domains) {
       const db = read();
@@ -790,7 +824,7 @@ export function createDemoBackend(): Backend {
       log(db, workspaceId, "member", userId, person?.name || person?.email || "", "limit changed", { domains: [nameOf(member.domains), nameOf(domains)] });
       member.domains = domains?.length ? domains : null;
       write(db);
-      bus.postMessage({ type: "members" } satisfies Message);
+      post({ type: "members" } satisfies Message);
     },
     async trustPage(workspaceId) {
       const db = read();
@@ -822,7 +856,7 @@ export function createDemoBackend(): Backend {
       log(db, workspaceId, "scenario", scenarioId, name.trim(), "created");
       log(db, scenarioId, "scenario", scenarioId, name.trim(), "created", { "copied from": db.workspaces[workspaceId].name });
       write(db);
-      bus.postMessage({ type: "members" } satisfies Message);
+      post({ type: "members" } satisfies Message);
       return scenarioId;
     },
 
@@ -947,11 +981,202 @@ export function createDemoBackend(): Backend {
       db.liveLinks = (db.liveLinks ?? []).filter((l) => l.id !== linkId);
       write(db);
     },
+
+    /* Approving diagrams and verified copies, by the database's rules (see demoApprovals.ts). */
+    async approvalSettings(workspaceId) {
+      const db = read();
+      requireRole(db, workspaceId, (r) => r !== null);
+      return settingsView(db, workspaceId);
+    },
+    async setApprovalSettings(workspaceId, required, ea, security) {
+      const db = read();
+      if (roleOf(db, workspaceId, me().id) !== "owner") throw new BackendError("forbidden", "Only an owner can choose who approves diagrams.");
+      for (const list of [ea, security]) {
+        if (list.length > 20) throw new BackendError("invalid", "A role can have at most 20 approvers.");
+        if (list.some((u) => roleOf(db, workspaceId, u) === null)) throw new BackendError("invalid", "Every approver has to be a member of the workspace.");
+        if (required && !list.length) throw new BackendError("invalid", "Name at least one Enterprise Architecture and one Cybersecurity approver before making approval compulsory.");
+      }
+      (db.approval ??= {})[workspaceId] = { required, ea: [...new Set(ea)], security: [...new Set(security)] };
+      log(db, workspaceId, "workspace", workspaceId, "", "diagram approval set", { compulsory: required, ea: ea.map((u) => nameOfUser(db, u)), security: security.map((u) => nameOfUser(db, u)) });
+      write(db);
+      collabChanged(workspaceId);
+      return settingsView(db, workspaceId);
+    },
+    async diagramRecord(workspaceId, diagramId) {
+      const db = read();
+      requireRole(db, workspaceId, (r) => r !== null);
+      if (!db.rows[workspaceId]?.diagrams[diagramId]) throw new BackendError("invalid", "There is no such diagram.");
+      return recordOf(db, workspaceId, diagramId, me().id);
+    },
+    async submitDiagram(workspaceId, diagramId, note) {
+      const db = read();
+      if (!canEditRole(roleOf(db, workspaceId, me().id))) throw new BackendError("forbidden", "Only owners and editors can send a diagram for approval.");
+      const diagram = db.rows[workspaceId]?.diagrams[diagramId];
+      if (!diagram) throw new BackendError("invalid", "There is no such diagram.");
+      if (!approversOf(db, workspaceId, "ea").length || !approversOf(db, workspaceId, "security").length) throw new BackendError("invalid", "An owner has to name the Enterprise Architecture and Cybersecurity approvers in Settings first.");
+      const text = note.trim();
+      if (text.length > 2000) throw new BackendError("invalid", "The note is longer than 2000 characters.");
+      const fingerprint = (await demoFingerprint(db.rows[workspaceId], diagramId))!;
+      const requests = requestsOf(db, workspaceId);
+      const user = me();
+      const at = new Date().toISOString();
+      let request = requests.find((r) => r.diagramId === diagramId && (r.status === "pending" || r.status === "returned"));
+      if (request) {
+        if (request.status === "pending") throw new BackendError("invalid", "This diagram is already waiting for approval.");
+        Object.assign(request, { status: "pending", round: request.round + 1, fingerprint, note: text || request.note, updatedAt: at });
+        request.events.push({ kind: "resubmitted", role: null, note: text, fingerprint, byId: user.id, byName: nameOfUser(db, user.id), at, round: request.round });
+        log(db, workspaceId, "diagram", diagramId, diagram.name, "sent for approval again", { version: request.version, round: request.round });
+      } else {
+        if (requests.some((r) => r.diagramId === diagramId && r.status === "approved" && r.approvedFingerprint === fingerprint)) throw new BackendError("invalid", "This diagram is approved as it is. Change it to start its next version.");
+        const version = requests.filter((r) => r.diagramId === diagramId && r.status === "approved").length + 1;
+        request = { id: id("apr"), diagramId, version, status: "pending", round: 1, note: text, fingerprint, requestedBy: user.id, requestedAt: at, updatedAt: at, events: [] };
+        request.events.push({ kind: "submitted", role: null, note: text, fingerprint, byId: user.id, byName: nameOfUser(db, user.id), at, round: 1 });
+        requests.push(request);
+        log(db, workspaceId, "diagram", diagramId, diagram.name, "sent for approval", { version });
+      }
+      await tryComplete(db, workspaceId, request, { id: user.id, name: nameOfUser(db, user.id) });
+      write(db);
+      collabChanged(workspaceId);
+      return recordOf(db, workspaceId, diagramId, user.id);
+    },
+    async decideDiagram(workspaceId, diagramId, role, decision, note) {
+      const db = read();
+      const user = me();
+      const roleName = role === "ea" ? "Enterprise Architecture" : "Cybersecurity";
+      if (!approvalOf(db, workspaceId)[role].includes(user.id) || roleOf(db, workspaceId, user.id) === null) throw new BackendError("forbidden", `Only a ${roleName} approver can decide this.`);
+      const diagram = db.rows[workspaceId]?.diagrams[diagramId];
+      if (!diagram) throw new BackendError("invalid", "There is no such diagram.");
+      const request = requestsOf(db, workspaceId).find((r) => r.diagramId === diagramId && (r.status === "pending" || r.status === "returned"));
+      if (!request) throw new BackendError("invalid", "Nothing on this diagram is waiting for approval.");
+      if (request.status === "returned") throw new BackendError("invalid", "This diagram is back with its sender for changes. It can be decided once it is sent again.");
+      const text = note.trim();
+      if (decision !== "approve" && !text) throw new BackendError("invalid", "Say what has to change, so the sender knows what to fix.");
+      if (text.length > 2000) throw new BackendError("invalid", "The note is longer than 2000 characters.");
+      const fingerprint = (await demoFingerprint(db.rows[workspaceId], diagramId))!;
+      const at = new Date().toISOString();
+      const event = (kind: DemoApprovalEvent["kind"]) => request.events.push({ kind, role, note: text, fingerprint, byId: user.id, byName: nameOfUser(db, user.id), at, round: request.round });
+      if (decision === "approve") {
+        if (request.events.some((e) => e.role === role && (e.kind === "approved" || e.kind === "approved_with_changes") && e.fingerprint === fingerprint)) throw new BackendError("invalid", `${roleName} has already approved the diagram as it is.`);
+        const sentAt = request.events.filter((e) => e.kind === "submitted" || e.kind === "resubmitted").at(-1)?.at ?? request.requestedAt;
+        const withChanges = fingerprint !== request.fingerprint && changedByMeSince(db, workspaceId, diagramId, user.id, sentAt);
+        event(withChanges ? "approved_with_changes" : "approved");
+        request.updatedAt = at;
+        log(db, workspaceId, "diagram", diagramId, diagram.name, `${withChanges ? "changed and approved" : "approved"} by ${roleName}`, { version: request.version });
+        await tryComplete(db, workspaceId, request, { id: user.id, name: nameOfUser(db, user.id) });
+        if (request.status === "approved") log(db, workspaceId, "diagram", diagramId, diagram.name, `approved as version ${request.version}`);
+      } else if (decision === "return") {
+        Object.assign(request, { status: "returned", updatedAt: at });
+        event("returned");
+        log(db, workspaceId, "diagram", diagramId, diagram.name, `returned for changes by ${roleName}`, { version: request.version, note: text });
+      } else {
+        Object.assign(request, { status: "rejected", updatedAt: at, closedAt: at });
+        event("rejected");
+        log(db, workspaceId, "diagram", diagramId, diagram.name, `rejected by ${roleName}`, { version: request.version, note: text });
+      }
+      write(db);
+      collabChanged(workspaceId);
+      return recordOf(db, workspaceId, diagramId, user.id);
+    },
+    async withdrawDiagram(workspaceId, diagramId) {
+      const db = read();
+      const user = me();
+      const request = requestsOf(db, workspaceId).find((r) => r.diagramId === diagramId && (r.status === "pending" || r.status === "returned"));
+      if (!request) throw new BackendError("invalid", "Nothing on this diagram is waiting for approval.");
+      const role = roleOf(db, workspaceId, user.id);
+      if (!(request.requestedBy === user.id && canEditRole(role)) && role !== "owner") throw new BackendError("forbidden", "Only the person who sent it, or an owner, can withdraw it.");
+      const at = new Date().toISOString();
+      Object.assign(request, { status: "withdrawn", updatedAt: at, closedAt: at });
+      request.events.push({ kind: "withdrawn", role: null, note: "", fingerprint: (await demoFingerprint(db.rows[workspaceId], diagramId)) ?? "", byId: user.id, byName: nameOfUser(db, user.id), at, round: request.round });
+      log(db, workspaceId, "diagram", diagramId, db.rows[workspaceId]?.diagrams[diagramId]?.name ?? "", "approval request withdrawn", { version: request.version });
+      write(db);
+      collabChanged(workspaceId);
+      return recordOf(db, workspaceId, diagramId, user.id);
+    },
+    async approvalQueue(workspaceId) {
+      const db = read();
+      requireRole(db, workspaceId, (r) => r !== null);
+      const user = me();
+      const tables = db.rows[workspaceId] ?? emptyTables();
+      const settings = approvalOf(db, workspaceId);
+      const requests = requestsOf(db, workspaceId).filter((r) => tables.diagrams[r.diagramId]);
+      const open = await Promise.all(
+        requests
+          .filter((r) => r.status === "pending" || r.status === "returned")
+          .sort((a, b) => (a.requestedAt < b.requestedAt ? -1 : 1))
+          .map(async (r) => {
+            const fingerprint = await demoFingerprint(tables, r.diagramId);
+            return {
+              requestId: r.id, diagramId: r.diagramId, name: tables.diagrams[r.diagramId].name, version: r.version, status: r.status as "pending" | "returned", round: r.round, note: r.note,
+              requestedBy: nameOfUser(db, r.requestedBy), requestedById: r.requestedBy, requestedAt: r.requestedAt, updatedAt: r.updatedAt,
+              ea: roleState(r, "ea", fingerprint), security: roleState(r, "security", fingerprint),
+            };
+          }),
+      );
+      const recent = requests
+        .filter((r) => r.status === "approved" || r.status === "rejected" || r.status === "withdrawn")
+        .sort((a, b) => ((a.closedAt ?? "") < (b.closedAt ?? "") ? 1 : -1))
+        .slice(0, 30)
+        .map((r) => ({ requestId: r.id, diagramId: r.diagramId, name: tables.diagrams[r.diagramId].name, version: r.version, status: r.status as "approved" | "rejected" | "withdrawn", requestedBy: nameOfUser(db, r.requestedBy), closedAt: r.closedAt ?? r.updatedAt }));
+      return { mine: { ea: settings.ea.includes(user.id), security: settings.security.includes(user.id) }, open, recent };
+    },
+    async publishDiagram(workspaceId, diagramId, options) {
+      const db = read();
+      const user = me();
+      if (!canEditRole(roleOf(db, workspaceId, user.id))) throw new BackendError("forbidden", "Only owners and editors can publish a copy.");
+      const diagram = db.rows[workspaceId]?.diagrams[diagramId];
+      if (!diagram) throw new BackendError("invalid", "There is no such diagram.");
+      const expiresAt = options.expiresAt ?? null;
+      const ms = expiresAt ? new Date(expiresAt).getTime() - Date.now() : 0;
+      if (expiresAt && (ms <= 60_000 || ms > 366 * 86_400_000)) throw new BackendError("invalid", "Choose an end between a few minutes and a year from now, or none.");
+      let copy: Pick<DemoPublication, "fingerprint" | "version" | "tables" | "record">;
+      if (approvalOf(db, workspaceId).required) {
+        const approved = requestsOf(db, workspaceId).filter((r) => r.diagramId === diagramId && r.status === "approved" && r.copy).sort((a, b) => ((a.closedAt ?? "") < (b.closedAt ?? "") ? 1 : -1))[0];
+        if (!approved?.copy) throw new BackendError("invalid", "This diagram has no approved version yet. Approval by Enterprise Architecture and Cybersecurity comes before publishing.");
+        copy = { fingerprint: approved.approvedFingerprint!, version: approved.version, tables: approved.copy.tables, record: approved.copy.record };
+      } else {
+        const record = await boxOf(db, workspaceId, diagramId);
+        copy = { fingerprint: record.fingerprint ?? "", version: record.status === "approved" ? record.version : null, tables: diagramTables(db.rows[workspaceId], diagramId), record };
+      }
+      const row: DemoPublication = {
+        id: id("pub"), token: `${id("ver")}${id("x")}${id("y")}`.replace(/_/g, ""), workspaceId, diagramId, ...copy, note: (options.note ?? "").trim().slice(0, 500), files: [],
+        createdBy: user.id, createdAt: new Date().toISOString(), expiresAt, revokedAt: null, views: 0,
+      };
+      (db.publications ??= []).push(row);
+      log(db, workspaceId, "diagram", diagramId, diagram.name, "published a verified copy", { version: row.version, expires: expiresAt });
+      write(db);
+      return { id: row.id, token: row.token, createdAt: row.createdAt, expiresAt, fingerprint: row.fingerprint, version: row.version };
+    },
+    async listPublications(workspaceId, diagramId) {
+      const db = read();
+      if (!canEditRole(roleOf(db, workspaceId, me().id))) return [];
+      const now = await demoFingerprint(db.rows[workspaceId] ?? emptyTables(), diagramId);
+      return (db.publications ?? [])
+        .filter((p) => p.workspaceId === workspaceId && p.diagramId === diagramId)
+        .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
+        .map((p) => ({ id: p.id, token: p.token, createdAt: p.createdAt, createdBy: nameOfUser(db, p.createdBy), expiresAt: p.expiresAt, revokedAt: p.revokedAt, views: p.views, note: p.note, fingerprint: p.fingerprint, version: p.version, files: p.files.length, current: p.fingerprint === now }));
+    },
+    async revokePublication(workspaceId, publicationId) {
+      const db = read();
+      const row = (db.publications ?? []).find((p) => p.id === publicationId && p.workspaceId === workspaceId && !p.revokedAt);
+      if (!row || !canEditRole(roleOf(db, workspaceId, me().id))) throw new BackendError("forbidden", "That copy no longer exists, or you may not switch it off.");
+      row.revokedAt = new Date().toISOString();
+      log(db, workspaceId, "diagram", row.diagramId, row.record.name, "switched off a verified copy");
+      write(db);
+    },
+    async addPublicationFile(workspaceId, publicationId, sha256, name) {
+      const db = read();
+      if (!canEditRole(roleOf(db, workspaceId, me().id))) throw new BackendError("forbidden", "Only owners and editors can add a file to a copy.");
+      if (!/^[0-9a-f]{64}$/.test(sha256)) throw new BackendError("invalid", "That is not a SHA-256.");
+      const row = (db.publications ?? []).find((p) => p.id === publicationId && p.workspaceId === workspaceId && !p.revokedAt);
+      if (!row || row.files.length >= 50) throw new BackendError("invalid", "That copy no longer takes files.");
+      row.files.push({ sha256, name: name.slice(0, 200), at: new Date().toISOString() });
+      write(db);
+    },
     connect(workspaceId, user, handlers: LiveHandlers) {
       const key = `${user.id}:${id("tab")}`;
       let self: Peer = { key, userId: user.id, name: user.name || user.email, diagramId: null };
       const peers = new Map<string, Peer>();
-      const tell = () => bus.postMessage({ type: "peer", workspaceId, peer: self } satisfies Message);
+      const tell = () => post({ type: "peer", workspaceId, peer: self } satisfies Message);
       const listener = (message: Message) => {
         if (message.type === "members") return handlers.onMembership();
         if (message.workspaceId !== workspaceId) return;
@@ -970,11 +1195,11 @@ export function createDemoBackend(): Backend {
         }
       };
       listeners.add(listener);
-      const leave = () => bus.postMessage({ type: "bye", workspaceId, key } satisfies Message);
+      const leave = () => post({ type: "bye", workspaceId, key } satisfies Message);
       window.addEventListener("pagehide", leave);
       setTimeout(() => {
         handlers.onStatus("live");
-        bus.postMessage({ type: "hello", workspaceId } satisfies Message);
+        post({ type: "hello", workspaceId } satisfies Message);
         tell();
       }, 0);
       return {

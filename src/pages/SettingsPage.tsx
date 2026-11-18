@@ -5,6 +5,7 @@ import { IntegrationsCard } from "@/components/cloud/IntegrationsCard";
 import { MembersCard } from "@/components/cloud/MembersCard";
 import { TrustPageCard } from "@/components/cloud/TrustPageCard";
 import { ReviewSettingsCard } from "@/components/cloud/ReviewSettingsCard";
+import { ApprovalSettingsCard, InformationBoxSection } from "@/components/approvals/ApprovalSettings";
 import { AiFairUseCard } from "@/components/cloud/AiFairUseCard";
 import { ConnectedServicesCard } from "@/components/cloud/ConnectedServicesCard";
 import { WizardSettingsCard } from "@/components/WizardSettings";
@@ -204,6 +205,9 @@ export function SettingsPage() {
           <Card>
             <BrandingSection canChange={isOwner} />
           </Card>
+          <Card title="Information box" text="The box a diagram can show in its corner, on live links, verified copies and exported pictures: company and logo, name, version, who made and changed it, its approvals and its authenticity seal.">
+            <InformationBoxSection canChange={isOwner} />
+          </Card>
         </Group>
 
         {cloudEnabled && (
@@ -216,6 +220,7 @@ export function SettingsPage() {
         )}
         {cloudEnabled && (
           <Group id="review" title="Review and approval">
+            <ApprovalSettingsCard />
             <ReviewSettingsCard />
           </Group>
         )}

@@ -4,12 +4,15 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import type { CanvasHandle } from "@/components/canvas/DiagramCanvas";
 import { LiveLinks } from "@/components/cloud/LiveLinks";
+import { VerifiedCopies } from "@/components/approvals/VerifiedCopies";
+import type { DiagramRecord } from "@/lib/approvals";
 import type { DiagramStart } from "@/components/ImportDialog";
 import { Button, Field, Input, Modal, Select, Tabs, Textarea, cx } from "@/components/ui";
 import { allowanceText, useAiUsage } from "@/lib/cloud/aiUsage";
 import { AiError, draftFromImage, draftFromPrompt, fetchAiStatus, getAccessCode, type AiStatus, type DraftResult } from "@/lib/ai/client";
 import { draftToProposal, saveProposal } from "@/lib/ai/proposals";
 import { cloudEnabled } from "@/lib/cloud/config";
+import { getBackend, useCanEdit, useSession } from "@/lib/cloud/session";
 import {
   diagramJson,
   diagramObjects,
@@ -29,7 +32,11 @@ import { diagramWorkspace, drawioXml, gifBlob, interactiveHtml, powerPointBlob, 
 import { writeXlsx } from "@/lib/import/xlsx";
 import { modelSheets } from "@/lib/import/draft";
 import { writeArchimate } from "@/lib/import/archimate";
-import { capturePng, exportPdf, exportPng, exportSvg, stampFor } from "@/lib/exportImage";
+import { capturePng, exportSvg, pictureBlob, stampFor } from "@/lib/exportImage";
+import { COPY_ENDS, copyScope, endOf } from "@/components/approvals/VerifiedCopies";
+import { viewOfDiagram } from "@/components/approvals/TitleBlock";
+import { boxShown, sha256Hex, verifyUrl } from "@/lib/approvals";
+import type { PublishedCopy } from "@/lib/cloud/backend";
 import { objectType } from "@/lib/catalog";
 import { integrationOf } from "@/lib/integrations/catalog";
 import { callIntegration, useConnected } from "@/lib/integrations/client";
@@ -219,13 +226,15 @@ export function AiDraftDialog({ ws, targetDiagram, onClose, start }: { ws: Works
 
 /* ---------- share ---------- */
 
-export function ShareDialog({ ws, diagram, onClose }: { ws: Workspace; diagram: Diagram; onClose: () => void }) {
+export function ShareDialog({ ws, diagram, approval = null, onClose }: { ws: Workspace; diagram: Diagram; approval?: DiagramRecord | null; onClose: () => void }) {
   const [password, setPassword] = useState("");
   const [link, setLink] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
   // With accounts, a link that stays current and can be switched off is the usual choice.
-  const [kind, setKind] = useState<"live" | "snapshot">(cloudEnabled ? "live" : "snapshot");
+  const [kind, setKind] = useState<"live" | "verified" | "snapshot">(cloudEnabled ? "live" : "snapshot");
+  // A snapshot link carries the diagram as it is; while approval comes first, that has to be an approved diagram.
+  const snapshotHeld = !!approval?.required && approval.status !== "approved";
   const create = async () => {
     setBusy(true);
     try {
@@ -252,6 +261,7 @@ export function ShareDialog({ ws, diagram, onClose }: { ws: Workspace; diagram: 
           <Tabs
             tabs={[
               { id: "live", label: "Live link" },
+              { id: "verified", label: "Verified copy" },
               { id: "snapshot", label: "Snapshot link" },
             ]}
             value={kind}
@@ -260,7 +270,14 @@ export function ShareDialog({ ws, diagram, onClose }: { ws: Workspace; diagram: 
         </div>
       )}
       {kind === "live" ? (
-        <LiveLinks diagram={diagram} />
+        <LiveLinks diagram={diagram} approvalRequired={!!approval?.required} />
+      ) : kind === "verified" ? (
+        <VerifiedCopies diagram={diagram} record={approval} />
+      ) : snapshotHeld ? (
+        <p className="rounded-md border border-signal/30 bg-signal-soft px-3 py-2 text-[13px]" data-snapshot-held>
+          A snapshot link carries the diagram as it is now, and this version is not approved. In this workspace Enterprise Architecture and Cybersecurity approve a diagram
+          before it is published; a live link or a verified copy shows the last approved version.
+        </p>
       ) : (
       <div className="space-y-4">
         <p className="text-ink-soft">
@@ -308,14 +325,14 @@ export function ShareDialog({ ws, diagram, onClose }: { ws: Workspace; diagram: 
 
 const STAMP_KEY = "archone.export.stamp";
 
-export function ExportMenu({ ws, diagram, canvas, onNotice }: { ws: Workspace; diagram: Diagram; canvas: React.RefObject<CanvasHandle | null>; onNotice: (text: string) => void }) {
+export function ExportMenu({ ws, diagram, canvas, approval = null, onNotice }: { ws: Workspace; diagram: Diagram; canvas: React.RefObject<CanvasHandle | null>; approval?: DiagramRecord | null; onNotice: (text: string) => void }) {
   const [open, setOpen] = useState(false);
   return (
     <>
       <Button icon={<Download size={15} />} onClick={() => setOpen(true)} data-export-open>
         Export
       </Button>
-      {open && <ExportDialog ws={ws} diagram={diagram} canvas={canvas} onNotice={onNotice} onClose={() => setOpen(false)} />}
+      {open && <ExportDialog ws={ws} diagram={diagram} canvas={canvas} approval={approval} onNotice={onNotice} onClose={() => setOpen(false)} />}
     </>
   );
 }
@@ -343,7 +360,7 @@ type ExportId =
   | "channels";
 
 /** Every way a diagram can leave the app, in one window, grouped by what the file is for. */
-function ExportDialog({ ws, diagram, canvas, onNotice, onClose }: { ws: Workspace; diagram: Diagram; canvas: React.RefObject<CanvasHandle | null>; onNotice: (text: string) => void; onClose: () => void }) {
+function ExportDialog({ ws, diagram, canvas, approval, onNotice, onClose }: { ws: Workspace; diagram: Diagram; canvas: React.RefObject<CanvasHandle | null>; approval: DiagramRecord | null; onNotice: (text: string) => void; onClose: () => void }) {
   const file = slugify(diagram.name) || "diagram";
   const [busy, setBusy] = useState<ExportId | null>(null);
   const [done, setDone] = useState("");
@@ -363,20 +380,39 @@ function ExportDialog({ ws, diagram, canvas, onNotice, onClose }: { ws: Workspac
       // Not remembered; it still applies to this visit.
     }
   };
+  // A diagram that shows its information box carries it under PNG and PDF, with a QR code.
+  const hasBox = boxShown(ws, diagram);
+  const workspaceId = useSession((s) => s.workspaceId);
+  const canEditCloud = useCanEdit() && cloudEnabled && !!workspaceId;
+  const [verified, setVerified] = useState(false);
+  const [verifiedEnd, setVerifiedEnd] = useState("30d");
+  // The copy has to be what the picture shows: while approval comes first, the diagram as approved.
+  const scope = copyScope(approval);
+  const verifiable = scope.allowed && (!approval?.required || approval.status === "approved");
   const picture = async (kind: "png" | "svg" | "pdf") => {
     const handle = canvas.current;
     const element = handle?.element();
     if (!handle || !element) throw new Error("Open the diagram to export its picture.");
     const stamp = stamped ? stampFor(diagram, ws.name, ws.userName, window.location.origin) : undefined;
+    const name = `${file}.${kind}`;
     try {
       await handle.whole(true);
-      if (kind === "png") await exportPng(element, handle.nodes(), file, stamp);
-      if (kind === "svg") await exportSvg(element, handle.nodes(), file);
-      if (kind === "pdf") await exportPdf(element, handle.nodes(), file, diagram.name, stamp);
+      if (kind === "svg") {
+        await exportSvg(element, handle.nodes(), file);
+        return name;
+      }
+      let copy: PublishedCopy | null = null;
+      if (verified && verifiable && workspaceId) copy = await (await getBackend()).publishDiagram(workspaceId, diagram.id, { expiresAt: endOf(verifiedEnd, "") ?? null, note: `Exported as ${name}` });
+      const url = copy ? verifyUrl(window.location.origin, copy.token) : (stamp?.url ?? `${window.location.origin}/diagram/${encodeURIComponent(diagram.id)}?asof=${encodeURIComponent(new Date().toISOString())}`);
+      const box = hasBox || copy ? { view: viewOfDiagram(ws, diagram, approval), url } : undefined;
+      const blob = await pictureBlob(element, handle.nodes(), kind, diagram.name, box ? { box } : { stamp });
+      // The file is registered with its copy, so anyone it is sent to can check it on the copy's page.
+      if (copy && workspaceId) await (await getBackend()).addPublicationFile(workspaceId, copy.id, await sha256Hex(blob), name);
+      downloadBlob(name, blob);
     } finally {
       void handle.whole(false);
     }
-    return `${file}.${kind}`;
+    return name;
   };
   const drawn = () => diagramPicture(ws, diagram);
   const run: Record<ExportId, () => Promise<string> | string> = {
@@ -540,10 +576,36 @@ function ExportDialog({ ws, diagram, canvas, onNotice, onClose }: { ws: Workspac
               ))}
             </div>
             {group.title === "Pictures and slides" && (
-              <label className="mt-1.5 flex items-start gap-2 text-[13px] text-ink-soft" title="A strip under the picture with the date and a code. Scanning the code opens this diagram and says what has changed since.">
-                <input type="checkbox" className="mt-0.5 accent-blueprint" checked={stamped} onChange={(e) => toggleStamp(e.target.checked)} data-export-stamp />
-                Add the date and a check code under PNG and PDF
-              </label>
+              <div className="mt-1.5 space-y-1.5">
+                {hasBox ? (
+                  <p className="text-[13px] text-ink-soft" data-export-box>
+                    PNG and PDF carry the diagram's information box underneath, with its seal and a QR code{verified && verifiable ? " that opens the verified copy" : " that opens this diagram"}.
+                  </p>
+                ) : (
+                  <label className="flex items-start gap-2 text-[13px] text-ink-soft" title="A strip under the picture with the date and a code. Scanning the code opens this diagram and says what has changed since.">
+                    <input type="checkbox" className="mt-0.5 accent-blueprint" checked={stamped} onChange={(e) => toggleStamp(e.target.checked)} data-export-stamp />
+                    Add the date and a check code under PNG and PDF
+                  </label>
+                )}
+                {canEditCloud && (
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                    <label className="flex items-start gap-2 text-[13px] text-ink-soft" title={verifiable ? "Anyone who scans the code sees whether the picture is genuine, approved and still current, and can check the file itself." : scope.text}>
+                      <input type="checkbox" className="mt-0.5 accent-blueprint" checked={verified && verifiable} disabled={!verifiable} onChange={(e) => setVerified(e.target.checked)} data-export-verified />
+                      Publish a verified copy with PNG and PDF, and register the file with it
+                    </label>
+                    {verified && verifiable && (
+                      <Select className="!h-7 !w-auto text-[13px]" aria-label="How long the verified copy's link works" value={verifiedEnd} onChange={(e) => setVerifiedEnd(e.target.value)}>
+                        {COPY_ENDS.filter((c) => c.id !== "custom").map((c) => (
+                          <option key={c.id} value={c.id}>
+                            Link works {c.label.toLowerCase()}
+                          </option>
+                        ))}
+                      </Select>
+                    )}
+                  </div>
+                )}
+                {canEditCloud && !verifiable && approval && <p className="text-xs text-ink-faint">{approval.required && approval.status !== "approved" ? "A verified copy goes with an approved diagram: this version is not approved." : scope.text}</p>}
+              </div>
             )}
             {group.note && <p className="mt-1.5 text-xs text-ink-faint">{group.note}</p>}
           </section>

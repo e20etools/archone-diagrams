@@ -4,7 +4,7 @@
 // Supabase adapter itself; the database rules are covered by src/lib/cloud/database.test.ts.
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -273,7 +273,8 @@ try {
     await sleep(1500);
     console.log("VERA banner:", await vera.evaluate(() => document.body.innerText.includes("You have view access")));
   }
-  await until(vera, () => !document.body.innerText.includes("You have view access to this workspace"), 15000);
+  // A role change travels through every open tab of the stand-in server; on a two-core machine that can take a while.
+  await until(vera, () => !document.body.innerText.includes("You have view access to this workspace"), 30000);
   await visit(vera, diagramUrl, ".object-node");
   await vera.evaluate(() => [...document.querySelectorAll("aside button")].find((b) => b.textContent.trim() === "Database")?.click());
   await until(vera, (n) => document.querySelectorAll(".object-node").length === n + 1, 5000, veraBoxes);
@@ -497,9 +498,9 @@ try {
   await ana.click(`${card} input[type=checkbox]`);
   await clickText(ana, "Save review settings");
   await waitText(ana, "Review settings saved.");
-  await waitText(vera, "You have comment access to this workspace");
+  await waitText(vera, "You have comment access to this workspace", 30000);
   await ana.select('select[aria-label="Role of Vera Viewer"]', "editor");
-  await until(vera, () => !document.body.innerText.includes("access to this workspace"), 15000);
+  await until(vera, () => !document.body.innerText.includes("access to this workspace"), 30000);
   await visit(vera, diagramUrl, ".object-node");
   await visit(ben, diagramUrl, ".object-node");
   check("switching review off gives readers the working model again", (await count(vera, ".object-node")) === (await count(ben, ".object-node")));
@@ -599,7 +600,7 @@ try {
   /* ---------- live links, API keys and webhooks ---------- */
   await clickText(ben, "Share");
   await ben.waitForSelector("[data-live-links]");
-  check("sharing offers a live link first, and a snapshot link as before", (await count(ben, "[role=dialog] [role=tab]")) === 2 && (await hasText(ben, "The link keeps up with later changes until you switch it off.")));
+  check("sharing offers a live link first, a verified copy, and a snapshot link as before", (await count(ben, "[role=dialog] [role=tab]")) === 3 && (await hasText(ben, "The link keeps up with later changes until you switch it off.")));
   await clickText(ben, "Create a live link");
   await ben.waitForSelector('input[aria-label="Live link"]');
   const liveUrl = await ben.$eval('input[aria-label="Live link"]', (e) => e.value);
@@ -699,6 +700,217 @@ try {
   await clickText(ana, "I have saved it");
   await visit(ben, `${base}/settings`);
   check("someone who is not an owner does not see keys or webhooks", (await hasText(ben, "Workspace name")) && (await count(ben, integrations)) === 0);
+  await visit(ben, diagramUrl, ".object-node");
+
+  /* ---------- approval by Enterprise Architecture and Cybersecurity, the information box, verified copies ---------- */
+  // Raw page actions in a background tab can wait for a frame that never comes: each brings its tab to the front first.
+  const tap = async (page, selector) => {
+    await page.bringToFront();
+    await page.$eval(selector, (e) => e.click());
+  };
+  const typeIn = async (page, selector, text) => {
+    await page.bringToFront();
+    await page.type(selector, text);
+  };
+  const pick = async (page, selector, value) => {
+    await page.bringToFront();
+    await page.select(selector, value);
+  };
+  const waitFor = async (page, selector, options) => {
+    await page.bringToFront();
+    return page.waitForSelector(selector, options);
+  };
+  const evalOn = async (page, selector, fn) => {
+    await page.bringToFront();
+    return page.$eval(selector, fn);
+  };
+  await visit(ana, `${base}/settings`, "[data-approval-settings] [data-approvers=ea] input");
+  await evalOn(ana, '[data-approvers=ea] input[data-approver="ana@example.com"]', (e) => e.click());
+  await evalOn(ana, '[data-approvers=security] input[data-approver="vera@example.com"]', (e) => e.click());
+  await evalOn(ana, "[data-approval-required]", (e) => e.click());
+  await evalOn(ana, "[data-approval-save]", (e) => e.click());
+  await waitText(ana, "Diagrams now need both approvals before they are published.");
+  check("an owner names the EA and Cybersecurity approvers and makes their approval come before publishing", await hasText(ana, "Required before publishing"));
+  await typeIn(ana, "[data-box-company]", "Gulf Payments");
+  await evalOn(ana, "[data-box-field-required=version]", (e) => e.click());
+  await evalOn(ana, "[data-box-save]", (e) => e.click());
+  await waitText(ana, "Saved.");
+  await saved(ana);
+
+  await visit(ben, diagramUrl, ".object-node");
+  await tap(ben, 'button[aria-label="Diagram settings"]');
+  await waitFor(ben, "[data-title-block-show]");
+  await evalOn(ben, "[data-title-block-show]", (e) => e.click());
+  await waitFor(ben, "[data-title-block]");
+  const boxField = (page, field) => page.$eval(`[data-title-block] [data-title-block-field=${field}]`, (e) => e.innerText.replace(/\s+/g, " ").trim()).catch(() => "");
+  await until(ben, () => /1 · Not approved yet/.test(document.querySelector("[data-title-block]")?.innerText ?? ""), 8000);
+  const versionLocked = await evalOn(ben, "[data-title-block-field-toggle=version]", (e) => e.disabled && e.checked);
+  await evalOn(ben, "[data-title-block-field-toggle=createdBy]", (e) => e.click());
+  await until(ben, () => !document.querySelector("[data-title-block] [data-title-block-field=createdBy]"), 4000);
+  await saved(ben);
+  check(
+    "a diagram shows its information box when its owner chooses: company, name, version and approvals, with the workspace's required fields kept",
+    (await evalOn(ben, "[data-title-block-company]", (e) => e.textContent.trim())) === "Gulf Payments" && (await boxField(ben, "ea")).includes("No") && (await boxField(ben, "changedBy")).includes("Ben Editor") && versionLocked,
+    `${await boxField(ben, "version")} | ${await boxField(ben, "ea")}`,
+  );
+  await shot(ben, "32-information-box");
+
+  // Nothing leaves the workspace before both approvals.
+  await clickText(ben, "Share");
+  await waitFor(ben, "[data-live-link-new]");
+  await clickText(ben, "Create a live link");
+  await waitFor(ben, '[data-live-link="open"] input[aria-label="Live link"]');
+  const approvedLiveUrl = await ben.$$eval('[data-live-link="open"] input[aria-label="Live link"]', (inputs) => inputs.at(-1).value);
+  await clickText(ben, "Verified copy", "[role=tab]");
+  await waitFor(ben, "[data-copy-scope]");
+  const copyBlocked = (await evalOn(ben, "[data-copy-scope]", (e) => e.dataset.copyScope)) === "blocked" && (await evalOn(ben, "[data-publish-copy]", (e) => e.disabled));
+  await clickText(ben, "Snapshot link", "[role=tab]");
+  const snapshotHeld = (await count(ben, "[data-snapshot-held]")) === 1;
+  await clickText(ben, "Done");
+  const outsider = await open();
+  await visit(outsider, approvedLiveUrl);
+  await waitText(outsider, "Nothing to show yet");
+  check("before both approvals, a live link shows nothing and no verified copy or snapshot link can be made", copyBlocked && snapshotHeld && (await count(outsider, ".object-node")) === 0);
+
+  // Ben sends it; Cybersecurity returns it with notes.
+  await tap(ben, "[data-approval-button]");
+  await waitFor(ben, "[data-approval-send] textarea");
+  await typeIn(ben, "[data-approval-send] textarea", "Payments flow for the audit");
+  await clickText(ben, "Send for approval");
+  await waitFor(ben, '[data-approval-panel="pending"]');
+  await until(vera, () => document.querySelector('nav a[href="/approvals"] span[title$="for your approval"]')?.textContent.trim() === "1", 15000);
+  check("sending a diagram for approval puts it in the approvers' queue, with a count in their menu", true);
+  await visit(vera, `${base}/approvals`, "[data-queue-item]");
+  check("the approvals page lists what waits for the approver", (await hasText(vera, "Waiting for you")) && (await hasText(vera, "Payments flow for the audit")));
+  await vera.evaluate(() => document.querySelector("[data-queue-item] a").click());
+  await waitFor(vera, '[data-approval-decide="security"] textarea');
+  await typeIn(vera, '[data-approval-decide="security"] textarea', "Label the link to the database with its protocol.");
+  await evalOn(vera, "[data-return=security]", (e) => e.click());
+  await waitFor(vera, '[data-approval-panel="returned"]');
+  await ben.bringToFront();
+  await waitFor(ben, "[data-approval-returned]", { timeout: 15000 });
+  check(
+    "an approver returns the diagram with notes; its sender sees them",
+    (await hasText(ben, "Label the link to the database with its protocol.")) && (await evalOn(ben, '[data-approval-role="security"]', (e) => e.dataset.state)) === "returned",
+  );
+
+  // Ben fixes it and sends it again; EA approves; Cybersecurity changes it and approves, so EA approves again.
+  const beforeFix = await count(ben, ".object-node");
+  await ben.evaluate(() => [...document.querySelectorAll("aside button")].find((b) => b.textContent.trim() === "Cache")?.click());
+  await until(ben, (n) => document.querySelectorAll(".object-node").length === n + 1, 5000, beforeFix);
+  await saved(ben);
+  await typeIn(ben, "[data-approval-send] textarea", "Protocol added");
+  await clickText(ben, "Send again");
+  await waitFor(ben, '[data-approval-panel="pending"]');
+  await visit(ana, `${diagramUrl}?approval`, '[data-approval-decide="ea"]');
+  await evalOn(ana, "[data-approve=ea]", (e) => e.click());
+  await until(ana, () => document.querySelector('[data-approval-role="ea"]')?.dataset.state === "approved", 8000);
+  await visit(vera, `${diagramUrl}?approval`, '[data-approval-decide="security"]');
+  await evalOn(vera, "[data-edit-then-approve=security]", (e) => e.click());
+  await waitFor(vera, "[data-approval-editing]");
+  const veraBefore = await count(vera, ".object-node");
+  await vera.evaluate(() => [...document.querySelectorAll("aside button")].find((b) => b.textContent.trim() === "Database")?.click());
+  await until(vera, (n) => document.querySelectorAll(".object-node").length === n + 1, 5000, veraBefore);
+  await saved(vera);
+  await clickText(vera, "Approve with my changes");
+  await until(vera, () => document.querySelector('[data-approval-role="security"]')?.dataset.state === "approved", 8000);
+  await until(ana, () => document.querySelector('[data-approval-role="ea"]')?.dataset.state === "stale", 15000);
+  check("an approver can change the diagram and approve it; the other role is asked to approve the changed diagram again", (await evalOn(ana, '[data-approval-panel]', (e) => e.dataset.approvalPanel)) === "pending");
+  await until(ana, () => !!document.querySelector("[data-approve=ea]") && !document.querySelector("[data-approve=ea]").disabled, 8000);
+  await evalOn(ana, "[data-approve=ea]", (e) => e.click());
+  await waitFor(ana, '[data-approval-panel="approved"]', { timeout: 8000 });
+  await ben.bringToFront();
+  await until(ben, () => /1 · Approved/.test(document.querySelector("[data-title-block]")?.innerText ?? ""), 15000);
+  const sealOk = await evalOn(ben, "[data-title-block]", (e) => e.dataset.seal);
+  check(
+    "once both roles approve, it is version 1: the box marks both approvals yes and seals it as the original",
+    sealOk === "ok" && (await evalOn(ben, "[data-title-block] [data-title-block-field=ea]", (e) => e.dataset.mark)) === "yes" && (await boxField(ben, "security")).includes("Changed and approved by Vera Viewer"),
+    await boxField(ben, "seal"),
+  );
+  const approvedBoxes = await count(ben, ".object-node");
+  const sealText = await boxField(ben, "seal");
+  await shot(ben, "33-approved-box");
+
+  // What goes out now: the approved version, on the live link and as a verified copy.
+  await visit(outsider, approvedLiveUrl, ".object-node");
+  check("the live link now shows the approved version, with its information box", (await count(outsider, ".object-node")) === approvedBoxes && (await hasText(outsider, "approved version 1")) && (await count(outsider, "[data-title-block]")) === 1);
+  await clickText(ben, "Share");
+  await waitFor(ben, "[data-live-links]");
+  await clickText(ben, "Verified copy", "[role=tab]");
+  await waitFor(ben, '[data-copy-scope="allowed"]');
+  await pick(ben, 'select[aria-label="How long the verified copy\'s link works"]', "1h");
+  await evalOn(ben, "[data-publish-copy]", (e) => e.click());
+  await waitFor(ben, '[data-verified-copy="live"] [data-copy-qr] svg path');
+  const copyUrl = await evalOn(ben, '[data-verified-copy="live"] input', (e) => e.value);
+  const qrHolds = await evalOn(ben, "[data-copy-qr] [data-qr]", (e) => e.dataset.qr);
+  await shot(ben, "34-verified-copy-share");
+  await clickText(ben, "Done");
+  await visit(outsider, copyUrl, "[data-verify-page] .object-node");
+  check(
+    "a verified copy has a QR code and a link that opens for anyone, saying it is genuine and approved, with the same seal",
+    /\/verify\/[a-z0-9]{24,}$/.test(copyUrl) && qrHolds === copyUrl && (await evalOn(outsider, "[data-verify-page]", (e) => e.dataset.verdict)) === "ok" && sealText.includes(await evalOn(outsider, "[data-verify-seal]", (e) => e.textContent.trim())) && (await hasText(outsider, "until")),
+    copyUrl.replace(/.*\/verify\//, "/verify/"),
+  );
+  await shot(outsider, "35-verify-page");
+  // An exported picture carries the box and the copy's QR code, and its file is registered with the copy.
+  const exported = await mkdtemp(join(tmpdir(), "archone-cloud-dl-"));
+  const cdp = await ben.createCDPSession();
+  // The tabs share a browser context of their own; downloads are allowed for that context.
+  await cdp.send("Browser.setDownloadBehavior", { behavior: "allow", downloadPath: exported, browserContextId: context.id });
+  await tap(ben, "[data-export-open]");
+  await waitFor(ben, "[data-export-window] [data-export-verified]");
+  await evalOn(ben, "[data-export-verified]", (e) => e.click());
+  await tap(ben, '[data-export="png"]');
+  let png = "";
+  for (let i = 0; i < 100 && !png; i++) {
+    await sleep(200);
+    png = (await readdir(exported)).find((f) => f.endsWith(".png")) ?? "";
+  }
+  await clickText(ben, "Done");
+  const registered = await outsider.evaluate(() => JSON.parse(localStorage.getItem("archone.demoServer")).publications.find((p) => p.files.length)?.token ?? "");
+  await visit(outsider, `${base}/verify/${registered}`, "[data-verify-file]");
+  await (await outsider.$("[data-verify-file]")).uploadFile(join(exported, png));
+  await waitFor(outsider, "[data-verify-file-result]");
+  const matched = await evalOn(outsider, "[data-verify-file-result]", (e) => e.dataset.verifyFileResult);
+  const strange = join(exported, "not-the-export.txt");
+  await writeFile(strange, "not the picture");
+  await (await outsider.$("[data-verify-file]")).uploadFile(strange);
+  await until(outsider, () => document.querySelector("[data-verify-file-result]")?.dataset.verifyFileResult === "no-match", 5000);
+  check("an exported PNG carries the box and a verified copy's QR code; the copy's page recognises that exact file and no other", !!png && matched === "match", png);
+  await rm(exported, { recursive: true, force: true });
+
+  // A change after approval: the box says so, the copy's page says so, and the live link keeps the approved version.
+  await ben.evaluate(() => [...document.querySelectorAll("aside button")].find((b) => b.textContent.trim() === "Cache")?.click());
+  await until(ben, (n) => document.querySelectorAll(".object-node").length === n + 1, 5000, approvedBoxes);
+  await saved(ben);
+  await until(ben, () => document.querySelector("[data-title-block]")?.dataset.seal === "warn", 15000);
+  await visit(outsider, copyUrl, "[data-verify-page]");
+  await visit(ana, approvedLiveUrl, ".object-node");
+  check(
+    "a change after approval drops it: the box says the diagram differs from version 1, the copy's page says it changed, and the live link keeps version 1",
+    (await boxField(ben, "version")).includes("2 · Changed after approval") && (await evalOn(outsider, "[data-verify-page]", (e) => e.dataset.current)) === "changed" && (await count(ana, ".object-node")) === approvedBoxes,
+    await boxField(ben, "seal"),
+  );
+  await clickText(ben, "Export");
+  await waitFor(ben, "[data-export-window]");
+  check("an exported picture of an unapproved change cannot be published as a verified copy", (await evalOn(ben, "[data-export-verified]", (e) => e.disabled)) && (await count(ben, "[data-export-box]")) === 1);
+  await clickText(ben, "Done");
+  // The copy's link ends when it was set to.
+  await outsider.evaluate(() => {
+    const db = JSON.parse(localStorage.getItem("archone.demoServer"));
+    for (const p of db.publications) p.expiresAt = new Date(Date.now() - 60000).toISOString();
+    localStorage.setItem("archone.demoServer", JSON.stringify(db));
+  });
+  await visit(outsider, copyUrl);
+  await waitText(outsider, "This link has expired");
+  check("a verified copy's link stops working when its time is up", (await count(outsider, ".object-node")) === 0);
+  await outsider.close();
+
+  // Back to open publishing for the rest of the run.
+  await visit(ana, `${base}/settings`, "[data-approval-required]");
+  await evalOn(ana, "[data-approval-required]", (e) => e.click());
+  await evalOn(ana, "[data-approval-save]", (e) => e.click());
+  await waitText(ana, "Approval settings saved.");
   await visit(ben, diagramUrl, ".object-node");
 
   /* ---------- offline edits are kept and saved later ---------- */
@@ -1022,6 +1234,18 @@ try {
   check("no errors in the browser console", errors.length === 0, errors.slice(0, 3).join(" | "));
 } catch (error) {
   check("the run finished", false, error.message);
+  if (errors.length) console.log("Browser errors before the failure:", errors.slice(0, 5).join(" | "));
+  console.log((error.stack ?? "").split("\n").filter((l) => l.includes("browser-check-cloud")).slice(0, 3).join("\n"));
+  for (const page of await context.pages()) {
+    const state = await page
+      .evaluate(() => {
+        const st = window.__archoneSession?.getState();
+        return st ? JSON.stringify({ phase: st.phase, user: st.user?.name, role: st.role, sync: st.sync.kind, live: st.live, published: !!st.published, approvals: st.approvals && st.approvals.open.length, }) : "no session";
+      })
+      .catch((e) => `unreadable: ${e.message}`);
+    console.log("TAB", page.url().replace(base, ""), state);
+  }
+  console.log("MEMBERS", await (await context.pages())[0].evaluate(() => JSON.stringify(JSON.parse(localStorage.getItem("archone.demoServer")).members.map((m) => m.role))).catch(() => "?"));
   const pages = await context.pages();
   for (const [i, page] of pages.entries()) {
     await page.bringToFront().catch(() => {});

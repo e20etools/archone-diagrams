@@ -10,6 +10,7 @@ import { scopeRefusal } from "./scope";
 import { categoryRank, categoryRefusal, hiddenCategories, type Category, type CategoryRoles } from "../categories";
 import type { Workspace } from "../types";
 import { BackendError, canCommentRole, canEditRole, type Backend, type CloudUser, type Invite, type LiveConnection, type Peer, type Role, type WorkspaceSummary } from "./backend";
+import type { ApprovalQueue } from "../approvals";
 import type { Comment, CommentDraft, Person, Review, ReviewSettings, ReviewStage, VersionInfo } from "./collab";
 import { cloudEnabled, demoBackend, supabaseKey, supabaseUrl } from "./config";
 import { normalizeForCloud } from "./rows";
@@ -49,10 +50,12 @@ interface SessionState {
    * is required and they cannot edit. `version` is null until something has been published.
    */
   published: { version: VersionInfo | null } | null;
+  /** Diagrams waiting for approval by Enterprise Architecture and Cybersecurity. Null until read, or on a database without it. */
+  approvals: ApprovalQueue | null;
 }
 
 const NO_REVIEW: ReviewSettings = { required: false, stages: [], publishedVersionId: null };
-const NO_COLLAB = { people: [] as Person[], comments: {} as Record<string, Comment>, review: NO_REVIEW, versions: [] as VersionInfo[], reviews: [] as Review[], published: null };
+const NO_COLLAB = { people: [] as Person[], comments: {} as Record<string, Comment>, review: NO_REVIEW, versions: [] as VersionInfo[], reviews: [] as Review[], published: null, approvals: null };
 
 export const useSession = create<SessionState>(() => ({
   phase: "starting",
@@ -68,6 +71,9 @@ export const useSession = create<SessionState>(() => ({
   notice: null,
   ...NO_COLLAB,
 }));
+
+// The stand-in server's builds expose the session to the browser checks, to say what a tab knows when a check fails.
+if (demoBackend && typeof window !== "undefined") (window as unknown as { __archoneSession?: typeof useSession }).__archoneSession = useSession;
 
 const set = useSession.setState;
 const get = useSession.getState;
@@ -263,19 +269,28 @@ export async function openWorkspace(workspaceId: string): Promise<void> {
       // Not remembered; the picker is shown next time.
     }
     set({ phase: "ready", workspaceId, role: summary.role, myCategoryRoles: summary.categoryRoles ?? {}, sync: { kind: "saved" }, review, published: readsPublished ? { version: null } : null });
-    void refreshCollab().catch(() => undefined);
+    // A role changed while the workspace was opening, before changes were heard, would be missed: look once more now.
+    void membershipChanged(workspaceId);
   } catch (error) {
     closeWorkspace();
     set({ phase: "choosing", notice: errorText(error) });
   }
 }
 
+let membershipAsks = 0;
+
 /** Someone's role changed, or someone joined or left. If it was this person, the app follows. */
 async function membershipChanged(workspaceId: string): Promise<void> {
   if (deleting === workspaceId) return;
+  // Several changes can arrive close together; only the latest answer is applied, so an older one cannot undo it.
+  const ask = ++membershipAsks;
   try {
-    await refreshLists();
+    const backend = await getBackend();
+    const [workspaces, invites] = await Promise.all([backend.listWorkspaces(), backend.myInvites()]);
+    if (ask !== membershipAsks) return;
+    set({ workspaces, invites });
   } catch {
+    await refreshCollab().catch(() => undefined);
     return;
   }
   if (get().workspaceId !== workspaceId) return;
@@ -311,12 +326,14 @@ export async function refreshCollab(): Promise<void> {
   const { workspaceId } = get();
   if (!workspaceId) return;
   const backend = await getBackend();
-  const [people, comments, review, versions, reviews] = await Promise.all([
+  const [people, comments, review, versions, reviews, approvals] = await Promise.all([
     backend.listPeople(workspaceId),
     backend.listComments(workspaceId),
     backend.reviewSettings(workspaceId),
     backend.listVersions(workspaceId),
     backend.listReviews(workspaceId),
+    // A database without diagram approval yet still opens the workspace.
+    backend.approvalQueue(workspaceId).catch(() => null),
   ]);
   if (get().workspaceId !== workspaceId) return;
   const shouldReadPublished = review.required && !canEditRole(get().role);
@@ -328,6 +345,7 @@ export async function refreshCollab(): Promise<void> {
     review,
     versions,
     reviews,
+    approvals,
     published: shouldReadPublished ? { version: versions.find((v) => v.id === review.publishedVersionId) ?? null } : null,
   });
   if (shouldReadPublished !== !!was || (shouldReadPublished && before !== review.publishedVersionId)) {
@@ -342,6 +360,23 @@ const here = async (): Promise<{ backend: Backend; workspaceId: string }> => {
   if (!workspaceId) throw new BackendError("invalid", "Open a workspace first.");
   return { backend: await getBackend(), workspaceId };
 };
+
+/* ---------- approving diagrams ---------- */
+
+/** Re-reads what waits for approval, after this person acted on a request. */
+export async function refreshApprovals(): Promise<void> {
+  const { backend, workspaceId } = await here();
+  const approvals = await backend.approvalQueue(workspaceId).catch(() => null);
+  if (get().workspaceId === workspaceId) set({ approvals });
+}
+
+/** Runs an approval step on the open workspace, then refreshes the queue. */
+export async function approvalStep<T>(work: (backend: Backend, workspaceId: string) => Promise<T>): Promise<T> {
+  const { backend, workspaceId } = await here();
+  const result = await work(backend, workspaceId);
+  void refreshApprovals().catch(() => undefined);
+  return result;
+}
 
 /* ---------- comments ---------- */
 

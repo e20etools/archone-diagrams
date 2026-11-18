@@ -131,6 +131,22 @@ export const flowSchema = z.object({
 export type Flow = z.infer<typeof flowSchema>;
 
 /** A diagram is a view: a set of object references with positions, never a copy of the objects. */
+export const TITLE_BLOCK_CORNERS = ["bottom-right", "bottom-left", "top-right", "top-left"] as const;
+/** What an information box can show, in the order it shows it. */
+export const TITLE_BLOCK_FIELD_IDS = ["company", "name", "version", "createdBy", "createdAt", "changedBy", "changedAt", "ea", "security", "seal"] as const;
+export type TitleBlockField = (typeof TITLE_BLOCK_FIELD_IDS)[number];
+export const titleBlockSchema = z.object({
+  show: z.boolean(),
+  corner: z.enum(TITLE_BLOCK_CORNERS).default("bottom-right"),
+  /** The company this diagram belongs to, when it is not the workspace's own. */
+  company: z.string().max(120).optional(),
+  /** Its logo, as a small data URL. */
+  logo: z.string().max(300_000).optional(),
+  /** Fields left out of this diagram's box; the workspace's compulsory fields stay. */
+  hidden: z.array(z.string()).max(20).optional(),
+});
+export type TitleBlock = z.infer<typeof titleBlockSchema>;
+
 export const diagramSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -155,6 +171,8 @@ export const diagramSchema = z.object({
       history: z.array(z.object({ action: z.enum(["archived", "restored"]), at: z.string(), by: z.string(), reason: z.string() })),
     })
     .optional(),
+  /** The information box: who made and changed the diagram, its company, its approvals. Missing until someone sets it. */
+  titleBlock: titleBlockSchema.optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
@@ -381,6 +399,14 @@ export const brandingSchema = z.object({
   appName: z.string().trim().max(40).default(""),
   /** A small image as a data URL. */
   logo: z.string().max(300_000).default(""),
+  /** The company named in every diagram's information box, unless a diagram names its own. */
+  company: z.string().trim().max(120).optional(),
+  /** Its logo, as a small data URL. */
+  companyLogo: z.string().max(300_000).optional(),
+  /** Every diagram shows its information box, whatever its own setting says. */
+  boxRequired: z.boolean().optional(),
+  /** The fields of the box a diagram cannot hide. */
+  boxFields: z.array(z.string()).max(20).optional(),
   /** Overrides the theme's accent colour, as #rrggbb. */
   accent: z.string().regex(/^#[0-9a-fA-F]{6}$/).or(z.literal("")).default(""),
   /** The theme for members who have not chosen one. */
