@@ -75,6 +75,20 @@ function fakeProvider(port) {
         res.end(JSON.stringify({ choices: [{ message: { content: `Nothing in the model says so.\n- [[${id}]] holds the bookings.\n- [[obj_invented]] is made up.` } }] }));
         return;
       }
+      // The assistant hides a connection, shows it again from what the app says is not drawn, and is asked to delete the diagram.
+      if (String(sent.messages?.[0]?.content ?? "").includes("EDITING THE DIAGRAM\n") && /أخف الاتصال|أظهر الاتصال|احذف المخطط/.test(String(sent.messages.at(-1).content))) {
+        const system = sent.messages[0].content;
+        const asked = String(sent.messages.at(-1).content);
+        const hiddenId = /connection id (rel_\w+)[^\n]*\| not drawn: hidden on this diagram/.exec(system)?.[1] ?? "missing";
+        const plan = asked.includes("أخف")
+          ? { apply: [{ op: "hide_connection", from: "Web server 1", to: "Booking service" }] }
+          : asked.includes("أظهر")
+            ? { apply: [{ op: "show_connection", id: hiddenId }] }
+            : { apply: [{ op: "delete_diagram" }] };
+        const content = `${asked.includes("احذف") ? "حذف المخطط كاملاً يحتاج موافقتك." : "تم."}\n\n\`\`\`archone-changes\n${JSON.stringify(plan)}\n\`\`\``;
+        res.end(JSON.stringify({ choices: [{ message: { content } }], usage: { total_tokens: 900 } }));
+        return;
+      }
       // The assistant asked to change the diagram on screen: add a server and connect it, hold a removal for a yes, suggest two fixes.
       if (String(sent.messages?.[0]?.content ?? "").includes("EDITING THE DIAGRAM\n") && /خادم ويب|web server/i.test(String(sent.messages.at(-1).content))) {
         const system = sent.messages[0].content;
@@ -2705,7 +2719,7 @@ try {
   }));
   check("the server appears on the diagram at once, connected, and the answer lists what changed without the block", afterAdd.length === nodesBefore.length + 1 && afterAdd.some((t) => t.includes("Web server 1")) && card.made.length === 2 && card.made[1].includes("HTTP 80/TCP, not encrypted") && !card.block, JSON.stringify(card.made));
   check("the checks' new findings come with the change, as a warning", /\[high\].*Web server 1/.test(card.findings) && /\[medium\].*Web server 1/.test(card.findings), card.findings.slice(0, 200));
-  check("taking something off the diagram waits for a yes, and the suggestions wait for a click", card.waiting === "waiting" && card.suggestions === 2 && afterAdd.some((t) => t.includes("Clinic portal")));
+  check("a change the model is not sure of waits for a yes, and the suggestions wait for a click", card.waiting === "waiting" && card.suggestions === 2 && afterAdd.some((t) => t.includes("Clinic portal")));
   await shot(page2, "49-assistant-edits");
   await page2.click("[data-assistant-yes]");
   await page2.waitForFunction(() => ![...document.querySelectorAll(".object-node")].some((n) => n.innerText.includes("Clinic portal")), { timeout: 5000 }).catch(() => {});
@@ -2721,13 +2735,48 @@ try {
   check("a suggestion taken is made at once, and the warning it fixes is cleared", taken.includes("Changed the connection Web server 1 → Booking service") && taken.includes("1 finding of the checks is cleared"), taken);
   await page2.click('[data-assistant-suggestion="1"] [aria-label^="Put aside"]');
   check("a suggestion put aside is struck through and offers nothing more", !(await page2.$('[data-assistant-suggestion="1"] [data-assistant-take]')) && (await page2.$eval('[data-assistant-suggestion="1"] span', (e) => getComputedStyle(e).textDecorationLine)) === "line-through");
+  // Connections in the model but not drawn: hidden, then shown again from what the app tells the model.
+  const edgeCount = () => page2.$$eval(".react-flow__edge", (edges) => edges.length);
+  const edgesBefore = await edgeCount();
+  const turnsNow = () => page2.$$eval('[data-assistant-kind="ai"]', (t) => t.length);
+  let aiTurns = await turnsNow();
+  const say = async (words) => {
+    await page2.type("[data-assistant-input]", words);
+    await page2.keyboard.press("Enter");
+    await page2.waitForFunction((n) => document.querySelectorAll('[data-assistant-kind="ai"]').length === n + 1, { timeout: 10000 }, aiTurns);
+    aiTurns += 1;
+    await sleep(300);
+  };
+  await say("أخف الاتصال بين خادم الويب وخدمة الحجز");
+  const edgesHidden = await edgeCount();
+  await say("أظهر الاتصال مرة أخرى");
+  const showCall = seen.at(-1).body.messages[0].content;
+  const edgesShown = await edgeCount();
+  check(
+    "the assistant hides a connection on this diagram only, and shows it again from what the app says is not drawn",
+    edgesHidden === edgesBefore - 1 && edgesShown === edgesBefore && /Connections in the model that are not drawn on it[\s\S]*\| not drawn: hidden on this diagram/.test(showCall),
+    JSON.stringify({ edgesBefore, edgesHidden, edgesShown }),
+  );
+  await say("احذف المخطط");
+  const lastCard = await page2.evaluate(() => {
+    const cards = [...document.querySelectorAll("[data-assistant-change]")];
+    const card = cards.at(-1);
+    return { waiting: card?.querySelector("[data-assistant-confirm]")?.getAttribute("data-assistant-confirm"), text: card?.innerText ?? "", made: !!card?.querySelector("[data-assistant-made]") };
+  });
+  check(
+    "deleting the whole diagram is never done without a person's yes",
+    lastCard.waiting === "waiting" && lastCard.text.includes("Delete this whole diagram") && !lastCard.made && (await page2.$$eval(".object-node", (n) => n.length)) > 0,
+    JSON.stringify(lastCard),
+  );
+  await page2.evaluate(() => [...document.querySelectorAll("[data-assistant-no]")].at(-1).click());
+
   await page2.click("[data-assistant-edit-toggle]");
   check("with changes switched off the assistant only answers", (await page2.$eval("[data-assistant-engine]", (e) => e.textContent)).startsWith("Answers with"));
   await page2.type("[data-assistant-input]", "شكرا، ماذا غيرت؟");
   await page2.keyboard.press("Enter");
-  await page2.waitForFunction((n) => document.querySelectorAll('[data-assistant-kind="ai"]').length === n, {}, 2);
+  await page2.waitForFunction((n) => document.querySelectorAll('[data-assistant-kind="ai"]').length === n + 1, {}, aiTurns);
   const followUp = seen.at(-1).body;
-  const remembered = String(followUp.messages[2]?.content ?? "");
+  const remembered = String(followUp.messages.find((m, i) => i > 0 && m.role === "assistant")?.content ?? "");
   check("the next message carries no permission to change, and remembers what was changed, undone and taken", !followUp.edit && remembered.includes("Changes made: Added Web server 1") && remembered.includes("the person said yes") && remembered.includes("(put aside)"), remembered.slice(-300));
   await page2.close();
 

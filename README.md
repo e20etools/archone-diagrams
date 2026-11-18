@@ -1478,19 +1478,37 @@ category), with an AI model on, the assistant changes the diagram as it is asked
 or by speaking (the microphone, in Arabic or English, where the browser can take dictation).
 "May change this diagram" under the message box switches it off, and the choice is kept.
 
-- **At once.** It adds servers, networks, firewalls and other objects (showing one that is
-  already in the model rather than making a copy), connects them with their kind,
-  protocols and ports, network and encryption, changes names, owners, technology and basic
-  information (IP address, operating system, data classification...), renames or describes
-  the diagram and tidies it. The changes are made as one step on the diagram on screen: the
-  view moves to them, clear of the panel, and marks them for a moment. Under the answer,
-  a card lists each change with **Undo**, which takes it back while nothing has been
-  changed after it (otherwise the editor's own Undo does). New objects say they were made
-  by the AI model at the person's request.
-- **With a yes.** Taking an object off the diagram, deleting an object or a connection, and
-  changes the model is not sure the person wants wait under "Waiting for your yes", with
-  **Yes, do it** and **No**. A removal is never made without the yes, whichever list the
-  model put it in.
+- **What a person can do, it can do.** On the diagram the person may change, the assistant
+  has their rights and no more: what they may not change is not saved, and the card says so.
+  - Objects: add (showing one already in the model rather than making a copy), show, change
+    the name, kind, component, owner, technology, lifecycle, tags, description, basic
+    information (IP address, operating system, data classification...) and links, put one
+    inside another or take it out, take it off the diagram, delete it from the model.
+  - Connections: draw them with their kind, protocols and ports, network, encryption,
+    direction of traffic, description and links; change them; hide one on this diagram;
+    delete one. A connection that is in the model but not drawn here (hidden on this
+    diagram, its kind of arrow switched off, or an end not on it) is shown again: both ends
+    go on the diagram, it stops being hidden and its kind of arrow is switched on. Asked to
+    connect two already connected, it shows and changes that connection instead of copying
+    it. The assistant is told every connection that is not drawn, with why, and each
+    connection's id.
+  - Layout and settings: move a box (next to another, or to a place), line up and space
+    boxes, tidy; rename or describe the diagram, change what it shows (only to a kind the
+    person may make), the object it shows the inside of, direction, notation, colours and
+    which arrows are shown; show or hide the information box; add another diagram as one
+    box; add or delete a flow with its steps; link or unlink a business process; copy or
+    archive the diagram.
+  - The library: a component or a protocol the library does not have is added to the
+    workspace's own library when the assistant uses it, so it can be picked again.
+- **At once, with Undo.** The changes are made as one step on the diagram on screen,
+  removals included: the view moves to them, clear of the panel, and marks them for a
+  moment. Under the answer, a card lists each change with **Undo**, which takes it back while
+  nothing has been changed after it (otherwise the editor's own Undo does). New objects say
+  they were made by the AI model at the person's request.
+- **Only with a person's yes.** Deleting the whole diagram, and taking everything off it (or
+  most of a diagram of five boxes or more), wait under "Waiting for your yes" with **Yes, do
+  it** and **No**, whichever list the model put them in. The model may also hold back a
+  change it is not sure the person wants.
 - **Suggestions.** Improvements the person did not ask for (encrypt a connection, put a
   firewall in front of a data store, add an owner, a backup, a classification) are offered
   one by one with **Do it**, or put aside.
@@ -1615,9 +1633,9 @@ build does not reload.
 ## Check it
 
 ```bash
-npm test                   # 623 tests: model, the component library, flows, links, protected live links, decisions, arranging, health, CALM, scenario merging, the trust page, the document, your own rules, large models, templates, the pull-request gate, the APM import, AI, questions, checks, MCP, import readers, sync engine, comparison, and the database rules and the API on a real Postgres
+npm test                   # 630 tests: model, the component library, flows, links, protected live links, decisions, arranging, health, CALM, scenario merging, the trust page, the document, your own rules, large models, templates, the pull-request gate, the APM import, AI, questions, checks, MCP, import readers, sync engine, comparison, and the database rules and the API on a real Postgres
 npm run build              # type-check and production build into dist/
-npm run test:browser       # 280 end-to-end checks of browser-only mode (run after a build)
+npm run test:browser       # 282 end-to-end checks of browser-only mode (run after a build)
 npm run test:browser:cloud # 127 end-to-end checks of hosted mode with several people
 ```
 

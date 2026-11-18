@@ -63,7 +63,7 @@ describe("what the assistant knows", () => {
     expect(text).toContain('Cybersecurity: returned it for changes (Huda, 2026-11-17 11:15); note: "Encrypt the link to the orders database"');
     expect(text).toContain(`[[${db.id}]] Orders database | type: Database | owner: Data team`);
     expect(text).toContain("details: IP address=10.20.0.15; Operating system=Ubuntu 24.04; Data classification=Confidential; Personal data=Yes");
-    expect(text).toMatch(/-> \[\[[^\]]+\]\] \| reads \/ writes \| protocols: PostgreSQL 5432\/TCP \| network: Data VLAN \| encrypted: no/);
+    expect(text).toMatch(/-> \[\[[^\]]+\]\] \| reads \/ writes \| connection id rel_\w+ \| protocols: PostgreSQL 5432\/TCP \| network: Data VLAN \| encrypted: no/);
     expect(text).toContain("What the checks find on this diagram");
     expect(text).toMatch(/\[medium\] NCA ECC \(Saudi Arabia\) · Where classified data is hosted is written down \| Orders database holds confidential data/);
     expect(text).toContain(`Sara, 2026-11-16 12:00, on [[${db.id}]] in [[d:${inside.id}]] (open): "Is the backup tested?"`);

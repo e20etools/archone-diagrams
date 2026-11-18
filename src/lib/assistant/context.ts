@@ -123,6 +123,7 @@ function relationshipLine(r: Relationship, describe: number, people: Map<string,
   return parts(
     `${objectTag(r.sourceId)} -> ${objectTag(r.targetId)}`,
     RELATION_KIND_INFO[r.kind].verb,
+    `connection id ${r.id}`,
     r.label.trim() && `label: ${oneLine(r.label, 80)}`,
     protocols && `protocols: ${protocols}`,
     r.network?.trim() && `network: ${oneLine(r.network, 60)}`,
@@ -219,6 +220,19 @@ function diagramDetail(facts: AssistantFacts, d: Diagram, people: Map<string, st
   const shownSet = new Set(shown);
   const hidden = new Set(d.hiddenRelationshipIds);
   const connections = Object.values(ws.relationships).filter((r) => shownSet.has(r.sourceId) && shownSet.has(r.targetId) && !hidden.has(r.id) && (!d.edgeKinds || d.edgeKinds.includes(r.kind)));
+  const drawn = new Set(connections.map((r) => r.id));
+  // In the model but not drawn here: hidden on this diagram, its kind of arrow switched off, or an end not on it.
+  const notDrawn = Object.values(ws.relationships)
+    .filter((r) => !drawn.has(r.id) && ws.objects[r.sourceId] && ws.objects[r.targetId] && (shownSet.has(r.sourceId) || shownSet.has(r.targetId)))
+    .map((r) => ({
+      r,
+      why: hidden.has(r.id)
+        ? "hidden on this diagram"
+        : d.edgeKinds && !d.edgeKinds.includes(r.kind)
+          ? "this kind of arrow is switched off here"
+          : `${objectTag(shownSet.has(r.sourceId) ? r.targetId : r.sourceId)} is not on this diagram`,
+    }))
+    .slice(0, 120);
   const lines = [
     `DIAGRAM ${diagramTag(d.id)} ${oneLine(d.name, 160)}`,
     `- Kind: ${VIEW_TYPE_INFO[d.viewType].label}${d.notation && d.notation !== "plain" ? `; notation: ${d.notation === "archimate" ? "ArchiMate" : "BPMN"}` : ""}${d.scopeId && ws.objects[d.scopeId] ? `; shows the inside of ${objectTag(d.scopeId)}` : ""}${d.archive?.archived ? "; archived" : ""}`,
@@ -242,10 +256,15 @@ function diagramDetail(facts: AssistantFacts, d: Diagram, people: Map<string, st
   }
   const box = d.titleBlock;
   if (box) lines.push(`- Information box: ${box.show ? `shown, ${box.corner}` : "hidden"}${box.company ? `; company ${quoted(box.company, 120)}` : ""}${box.hidden?.length ? `; fields left out: ${box.hidden.join(", ")}` : ""}`);
-  lines.push(`- Objects on it (${shown.length}):`);
-  for (const id of shown) lines.push(`  ${objectLine(ws, ws.objects[id], 600)}`);
-  lines.push(`- Connections between them (${connections.length}):`);
+  lines.push(`- Drawn ${d.direction === "LR" ? "left to right" : "top to bottom"}; boxes coloured by ${d.colorBy}; arrows shown: ${d.edgeKinds ? d.edgeKinds.join(", ") || "none" : "every kind"}`);
+  lines.push(`- Objects on it (${shown.length}), with where each box sits (x, y):`);
+  for (const id of shown) lines.push(`  ${objectLine(ws, ws.objects[id], 600)} | at ${Math.round(d.nodes[id].x)}, ${Math.round(d.nodes[id].y)}`);
+  lines.push(`- Connections drawn on it (${connections.length}):`);
   for (const r of connections) lines.push(`  ${relationshipLine(r, 300, people)}`);
+  if (notDrawn.length) {
+    lines.push(`- Connections in the model that are not drawn on it (${notDrawn.length}):`);
+    for (const { r, why } of notDrawn) lines.push(`  ${relationshipLine(r, 0, people)} | not drawn: ${why}`);
+  }
   for (const flow of flowsOf(d)) {
     lines.push(`- Flow ${quoted(flow.name, 120)}${flow.description.trim() ? `: ${oneLine(flow.description, 300)}` : ""}`);
     flow.steps.forEach((step, i) => lines.push(`  ${stepLine(ws, step, i)}`));

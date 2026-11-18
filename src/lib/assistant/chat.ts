@@ -5,11 +5,12 @@ import { answerFromModel, searchFallback } from "../ask/ask";
 import { cloudEnabled } from "../cloud/config";
 import { getBackend, useSession } from "../cloud/session";
 import { VIEW_TYPE_INFO } from "../catalog";
+import { categoryRank, viewCategory } from "../categories";
 import { useStore } from "../store";
 import type { Workspace } from "../types";
 import { assistantContext, diagramTag, focusOf, objectTag, type AssistantFacts } from "./context";
 import { showChanges } from "./show";
-import { applyOps, clearedFindings, describeOp, diagramFindings, newFindings, planOps, readPlan, type EditOp } from "./edits";
+import { applyOps, clearedFindings, describeOp, diagramFindings, holdWipes, newFindings, planOps, readPlan, type EditOp, type Who } from "./edits";
 
 /**
  * The assistant beside every page: a conversation about the workspace. With an AI model it is
@@ -261,15 +262,26 @@ export interface AskEnv {
   editDiagramId?: string | null;
 }
 
+/** Who the changes are made for, with what they may do: the assistant has the person's permissions, no more. */
+function whoFor(source: string, engine: string): Who {
+  const session = useSession.getState();
+  return {
+    by: session.user?.name || useStore.getState().ws.userName || "the person",
+    source,
+    engine: `${engine} (assistant)`,
+    mayUseView: (viewType) => !cloudEnabled || categoryRank(session.role, session.myCategoryRoles, viewCategory(viewType)) >= 3,
+  };
+}
+
 /** Makes changes on a diagram as one undo step, and says what changed and what the checks now find. */
 function makeStep(diagramId: string, ops: EditOp[], source: string, engine: string, plan: EditOp[] = ops): ChangeStep {
   const store = useStore.getState();
   const before = store.ws;
   const findingsBefore = diagramFindings(before, diagramId);
-  const by = useSession.getState().user?.name || before.userName || "the person";
+  const who = whoFor(source, engine);
   let result: ReturnType<typeof applyOps> | null = null;
   store.apply((ws) => {
-    result = applyOps(ws, diagramId, ops, { by, source, engine: `${engine} (assistant)` }, plan);
+    result = applyOps(ws, diagramId, ops, who, plan);
     return result.ws;
   });
   const after = useStore.getState().ws;
@@ -366,10 +378,12 @@ export async function sendToAssistant(question: string, env: AskEnv): Promise<vo
       const context = assistantContext(facts, texts, contextBudget(env.ai.engine));
       const editing = env.editDiagramId && ws.diagrams[env.editDiagramId] ? env.editDiagramId : null;
       const { answer, engine } = await chatAi(history, context.text, env.page.label, editing ? { diagramId: editing } : undefined);
-      const { text, plan, dropped } = editing ? readPlan(answer) : { text: answer, plan: null, dropped: 0 };
+      const { text, plan: planAsked, dropped } = editing ? readPlan(answer) : { text: answer, plan: null, dropped: 0 };
       let change: DiagramChange | undefined;
-      if (editing && plan) {
+      if (editing && planAsked) {
         const now = useStore.getState().ws;
+        // Emptying the diagram waits for a yes, like deleting it.
+        const plan = holdWipes(now, editing, planAsked, whoFor(asked, engine));
         const all = planOps(plan);
         change = {
           diagramId: editing,

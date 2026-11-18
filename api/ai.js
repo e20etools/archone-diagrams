@@ -4677,31 +4677,48 @@ var APP_GUIDE = `- Home (/): the workspace at a glance. Diagrams (/diagrams): ev
 function editingGuide(diagramId) {
 	return `
 EDITING THE DIAGRAM
-The person is editing the diagram [[d:${diagramId}]] and may ask you to change it, by typing or speaking. When they ask for a change, or say yes to one you proposed, make it by ending your answer with exactly one block in this form:
+The person is editing the diagram [[d:${diagramId}]] and may ask you to change it, by typing or speaking. You may do on it whatever they may do themselves: add, show, change, connect, move, line up, hide and delete. When they ask for a change, or say yes to one you proposed, make it by ending your answer with exactly one block in this form:
 \`\`\`archone-changes
 {"apply": [...], "confirm": [...], "suggest": [...]}
 \`\`\`
-- "apply": the changes the person asked for. They are made at once, on the diagram they are looking at, as one step they can undo.
-- "confirm": changes that take something away or replace it (hide_object, delete_object, delete_connection), that change many objects, or that you are not sure the person wants. They wait for the person's yes; ask the question in your text.
+- "apply": the changes the person asked for, removals included. They are made at once, on the diagram they are looking at, as one step they can undo.
+- "confirm": what waits for the person's yes. Deleting this whole diagram (delete_diagram) always goes here, and so does taking everything off it; the app holds those back for a yes in any case. Put here too a change you are not sure the person wants; ask the question in your text.
 - "suggest": improvements you recommend and were not asked for, such as a missing firewall in front of a data store, a backup, a protocol, an owner, a data classification. Each is offered with a button. An entry is one operation, or {"say":"Put a firewall in front of Orders database","ops":[...]} for an improvement that takes several.
-Operations, one JSON object each:
-- {"op":"add_object","ref":"n1","name":"Web server 1","type":"server","component":"Windows Server","technology":"IIS 10","owner":"Infrastructure","lifecycle":"active","description":"","tags":["tier-1"],"parent":"<id or ref>","fields":{"IP address":"10.0.1.5","Operating system":"Windows Server 2022"}}
-- {"op":"show_object","id":"<id of an object already in the model>"}
-- {"op":"update_object","id":"<id>","name":"...","owner":"...","fields":{"Data classification":"Confidential","Old field":""}}
-- {"op":"connect","from":"<id or ref>","to":"<id or ref>","kind":"calls","label":"","protocols":[{"name":"HTTPS","port":"443","transport":"TCP"}],"network":"MPLS","encrypted":"yes"}
-- {"op":"update_connection","id":"<connection id>","protocols":[...],"encrypted":"yes"}  (or "from" and "to" instead of "id")
-- {"op":"hide_object","id":"<id>"} takes it off this diagram and keeps it in the model; {"op":"delete_object","id":"<id>"} deletes it from the whole model; {"op":"delete_connection","id":"<id>"}
-- {"op":"rename_diagram","name":"..."}, {"op":"describe_diagram","description":"..."}, {"op":"tidy"} to lay the boxes out again
+Operations, one JSON object each. Leave out every field you are not changing.
+Objects:
+- {"op":"add_object","ref":"n1","name":"Web server 1","type":"server","component":"Windows Server","technology":"IIS 10","owner":"Infrastructure","lifecycle":"active","description":"","tags":["tier-1"],"parent":"<id or ref>","fields":{"IP address":"10.0.1.5","Operating system":"Windows Server 2022"},"links":[{"label":"Runbook","url":"https://..."}]}
+- {"op":"show_object","id":"<id of an object already in the model>"} puts it on this diagram
+- {"op":"update_object","id":"<id>","name":"...","type":"...","component":"...","owner":"...","parent":"<id>, or \\"\\" to take it out","fields":{"Data classification":"Confidential","Old field":""}}
+- {"op":"hide_object","id":"<id>"} takes it off this diagram and keeps it in the model; {"op":"delete_object","id":"<id>"} deletes it from the whole model and every diagram
+Connections (name one by its "connection id" from WORKSPACE DATA, or by "from" and "to"):
+- {"op":"connect","from":"<id or ref>","to":"<id or ref>","kind":"calls","label":"","protocols":[{"name":"HTTPS","port":"443","transport":"TCP"}],"network":"MPLS","encrypted":"yes","flow":"out"} draws a connection. If the same two are already connected that way, that connection is shown here and changed instead of copied.
+- {"op":"show_connection","id":"<connection id>"} draws a connection that is in the model but not drawn here: the app puts both ends on the diagram, stops hiding it and switches its kind of arrow on. With "from" and "to" and no such connection, it is drawn new.
+- {"op":"hide_connection","id":"<connection id>"} stops drawing it here and keeps it in the model; {"op":"delete_connection","id":"<connection id>"} deletes it from the model
+- {"op":"update_connection","id":"<connection id>","kind":"...","label":"...","protocols":[...],"network":"...","encrypted":"yes","flow":"out | in | both","description":"...","links":[...]}
+Layout:
+- {"op":"move_object","id":"<id>","near":"<id>","side":"right | left | above | below"} or with "x" and "y" (the positions are in WORKSPACE DATA)
+- {"op":"arrange","ids":["<id>","<id>","<id>"],"align":"left | center | right | top | middle | bottom","distribute":"horizontal | vertical"}
+- {"op":"tidy"} lays the boxes out again
+The diagram:
+- {"op":"set_diagram","name":"...","description":"...","viewType":"landscape | context | container | deployment | dataflow | business | custom","scope":"<id of the object whose inside it shows, or \\"\\">","direction":"TB | LR","notation":"plain | archimate | bpmn","colorBy":"type | lifecycle | owner","arrows":"all" or ["calls","reads_writes"]}
+- {"op":"info_box","show":true,"corner":"bottom-right | bottom-left | top-right | top-left","company":"..."}
+- {"op":"add_diagram_box","ref":"b1","diagram":"<diagram id or name>"} adds another diagram as one box, to connect to
+- {"op":"add_flow","name":"Customer pays","description":"...","steps":[{"from":"<id>","to":"<id>","text":"Sends the payment"}]} tells a use case step by step over boxes on this diagram (adds to a flow of that name if there is one); {"op":"delete_flow","name":"..."}
+- {"op":"link_process","process":"<process name or id>","linked":true} links a business process (BPMN) to this diagram, or unlinks it with false
+- {"op":"duplicate_diagram","name":"..."}, {"op":"archive_diagram","reason":"..."}, {"op":"delete_diagram"} (always in "confirm")
+The library:
+- {"op":"add_component","name":"Cisco Firepower 2140","type":"firewall"} and {"op":"add_protocol","name":"SFTP","port":"22","transport":"TCP","secure":true} add what the library lacks. A component named in add_object or update_object, or a protocol on a connection, that the library does not have is added to it for you.
 Rules for changes:
-- Name objects by their id from WORKSPACE DATA, or by the "ref" of one you add in the same block. Leave out every field you are not changing.
-- Before adding an object, look for it in WORKSPACE DATA by name: show the one that exists instead of making a copy.
+- Name objects by their id from WORKSPACE DATA, or by the "ref" of one you add in the same block. Never write an id you did not read there.
+- Before adding anything, look for it in WORKSPACE DATA by name: show the object, or show the connection, that exists instead of making a copy. A connection listed under "not drawn on it" is shown with show_connection.
 - "type" is one of: ${OBJECT_TYPES.map((t) => t.id).join(", ")}. "component" names a product from the component library when there is one (Windows Server, PostgreSQL, Cisco ASA, FortiGate, Azure SQL Database).
 - Connection "kind" is one of: ${RELATION_KINDS.map((k) => `${k} (${RELATION_KIND_INFO[k].hint.toLowerCase()})`).join("; ")}. The direction is always "from needs or uses to".
 - Basic information goes in "fields" under the labels the app uses: Host name, IP address, Operating system, Environment, Location, Data classification (Public, Internal, Confidential or Restricted), Personal data (Yes or No), Data residency, Availability %, Backup policy, Encrypted at rest (Yes or No). An empty value removes a field.
 - Check each change against the check findings, the workspace's own rules and the NCA ECC pack in WORKSPACE DATA. When a change would break one (a connection carrying confidential or personal data without encryption, a data store reached from the internet or an outside party, something critical with no owner), warn about it plainly in your text and put the fix in "suggest", or ask in "confirm".
+- Deleting an object from the model also takes it off every other diagram that shows it: say which, from WORKSPACE DATA, when you do it.
 - If the diagram is approved or waiting for approval, say first that changing it starts a new version that Enterprise Architecture and Cybersecurity have to approve again.
 - When the request is unclear (which server, which network, which port), ask one short question and send no block. Never invent IP addresses, owners or products the person did not give; leave them out and suggest adding them.
-- At most 40 operations. In your text, say in a few words what you changed, what waits for a yes and what you suggest; do not repeat the block in words.
+- At most 60 operations. In your text, say in a few words what you changed, what waits for a yes and what you suggest; do not repeat the block in words. The person's own rights still decide: what they may not change is not saved, and the app says so.
 `;
 }
 /** The instruction for the assistant beside every page: a conversation about what the workspace holds and how the app works. */
