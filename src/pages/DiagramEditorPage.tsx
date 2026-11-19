@@ -128,7 +128,7 @@ function Palette({
   };
   const unplaced = Object.keys(ws.objects).length - Object.keys(diagram.nodes).length;
   return (
-    <aside className="w-[284px] shrink-0 flex flex-col bg-surface border-r border-line">
+    <aside className="w-[284px] shrink-0 flex flex-col bg-surface border-r border-line" data-palette>
       <div className="flex items-end gap-1 pl-3 pr-1.5 pt-2">
         <div className="flex-1">
           <Tabs
@@ -145,7 +145,7 @@ function Palette({
         </IconButton>
       </div>
       {tab === "new" ? (
-        <div className="min-h-0 overflow-y-auto px-3 py-3 space-y-3.5">
+        <div className="min-h-0 overflow-y-auto px-3 py-3 space-y-3.5" data-palette-scroll>
           <p className="text-[13px] text-ink-soft">Drag a component onto the canvas, or click it. Each box becomes an object in the model.</p>
           <LibraryPanel
             onPick={onAddComponent}
@@ -172,6 +172,7 @@ function Palette({
                     draggable
                     onDragStart={drag({ kind: "type", id: t.id })}
                     onClick={() => onAddType(t.id)}
+                    data-palette-type={t.id}
                     title={t.hint}
                     className="flex items-center gap-1.5 h-8 px-2 rounded-md border border-line text-left text-[13px] cursor-grab hover:border-blueprint hover:bg-blueprint-soft active:cursor-grabbing"
                   >
@@ -1132,7 +1133,7 @@ function Editor({ ws, diagram }: { ws: Workspace; diagram: Diagram }) {
           <ExportMenu ws={ws} diagram={diagram} canvas={canvas} approval={approval.record} onNotice={notify} ask={exportAsk} onAskTaken={() => setExportAsk(null)} />
           <Button
             icon={<Clapperboard size={15} />}
-            title="Watch the diagram build itself, from the bottom up (Esc stops it, space pauses it)"
+            title="Watch the diagram being put together on the canvas, from the bottom up (Esc stops it, space pauses it)"
             aria-pressed={building}
             disabled={empty}
             onClick={() => (building ? undefined : canvas.current?.build())}
@@ -1182,8 +1183,6 @@ function Editor({ ws, diagram }: { ws: Workspace; diagram: Diagram }) {
         </div>
       )}
       <div className="min-h-0 flex-1 flex">
-        {/* While the diagram builds itself the canvas takes the whole width; the panels keep what is typed in them. */}
-        <div className={building ? "hidden" : "contents"}>
         {!canEdit ? null : paletteOpen ? (
           <Palette ws={ws} diagram={diagram} onAddType={addType} onAddComponent={addComponent} onAddObject={addExisting} onAddDiagram={addDiagram} onPickProtocol={pickProtocol} onCollapse={() => togglePalette(false)} />
         ) : (
@@ -1193,7 +1192,6 @@ function Editor({ ws, diagram }: { ws: Workspace; diagram: Diagram }) {
             </IconButton>
           </div>
         )}
-        </div>
         <div className="relative min-w-0 flex-1">
           <DiagramCanvas
             ws={ws}
@@ -1237,8 +1235,8 @@ function Editor({ ws, diagram }: { ws: Workspace; diagram: Diagram }) {
               </IconButton>
             </div>
           )}
-          {!building && (flowsOpen || flows.flow) && !(canEdit && pickedHere.length >= 2) && <FlowBar ws={ws} diagram={diagram} cursor={flows.cursor} onCursor={flows.setCursor} />}
-          {!building && <DiagramTitleBlock ws={ws} diagram={diagram} record={approval.record} />}
+          {(flowsOpen || flows.flow) && !(canEdit && pickedHere.length >= 2) && <FlowBar ws={ws} diagram={diagram} cursor={flows.cursor} onCursor={flows.setCursor} />}
+          <DiagramTitleBlock ws={ws} diagram={diagram} record={approval.record} />
           {empty && (
             <div className="absolute inset-0 grid place-items-center pointer-events-none">
               <div className="pointer-events-auto rounded-lg border border-dashed border-ink-faint bg-surface/90 px-6 py-5 text-center max-w-sm">
@@ -1251,7 +1249,6 @@ function Editor({ ws, diagram }: { ws: Workspace; diagram: Diagram }) {
             </div>
           )}
         </div>
-        <div className={building ? "hidden" : "contents"}>
         {processesOpen ? (
           <aside className="w-[340px] shrink-0 bg-surface border-l border-line" aria-label="Processes">
             <DiagramProcessesPanel ws={ws} diagram={diagram} canEdit={canEditProcesses} onClose={() => setProcessesOpen(false)} />
@@ -1291,7 +1288,6 @@ function Editor({ ws, diagram }: { ws: Workspace; diagram: Diagram }) {
           </aside>
           )
         )}
-        </div>
       </div>
       {dialog === "ai" && <AiDraftDialog ws={ws} targetDiagram={diagram} onClose={() => setDialog(null)} />}
       {dialog === "share" && <ShareDialog ws={ws} diagram={diagram} approval={approval.record} onClose={() => setDialog(null)} />}

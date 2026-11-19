@@ -140,7 +140,7 @@ export function PresentPage() {
             <ArrowRight size={17} />
           </IconButton>
           <span className="mx-1 h-5 w-px bg-line" />
-          <Button size="sm" icon={<Clapperboard size={14} />} title="Watch the diagram build itself, from the bottom up (B)" onClick={() => canvas.current?.build()} data-build-play="ready">
+          <Button size="sm" icon={<Clapperboard size={14} />} title="Watch the diagram being put together, from the bottom up (B)" onClick={() => canvas.current?.build()} data-build-play="ready">
             Build
           </Button>
           <IconButton label={full ? "Leave full screen (F)" : "Full screen (F)"} onClick={toggleFull}>

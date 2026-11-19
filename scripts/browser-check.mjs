@@ -243,62 +243,78 @@ try {
     check("boxes have an icon tile and no coloured stripe, lines are solid with their traffic moving along them, and outside systems are dashed", look.stripe === "1px" && look.radius === "12px" && look.solid && look.moving > 0 && look.outside, JSON.stringify(look));
   }
 
-  // The build animation: the diagram rises from the bottom up, a layer at a time, under a caption, with controls.
+  // The build animation: a hand puts the diagram together on the canvas itself, from the bottom up.
   {
     const diagramId = decodeURIComponent(new URL(page.url()).pathname.split("/diagram/")[1] ?? "");
     const placed = (await stored()).diagrams[diagramId]?.nodes ?? {};
     const lowest = Math.max(...Object.values(placed).map((n) => n.y));
     const total = await count(page, ".object-node");
+    const paletteBefore = await page.evaluate(() => document.querySelector("[data-palette]")?.getBoundingClientRect().width ?? 0);
     await page.click("[data-build-play]");
     await page.waitForSelector("[data-build-show]");
-    const panelsAway = await page.evaluate(() => !document.querySelector('[data-build-show]') || ![...document.querySelectorAll("aside")].some((a) => a.offsetParent !== null && a.getBoundingClientRect().width > 100 && !a.closest("[data-assistant-dock]")));
-    await page.waitForSelector('[data-build-show][data-build-phase="stage"]', { timeout: 8000 });
-    await sleep(500);
+    await page.waitForFunction(() => document.querySelector("[data-build-show]")?.getAttribute("data-build-phase") === "building" && document.querySelectorAll(".object-node").length >= 1, { timeout: 10000 });
     const first = await page.evaluate(() => ({
-      shown: document.querySelectorAll(".object-node").length,
-      arriving: [...document.querySelectorAll(".react-flow__node.build-arrive")].map((n) => n.getAttribute("data-id")),
-      step: document.querySelector(".build-show__step")?.textContent,
-      title: document.querySelector(".build-show__title")?.textContent,
-      layers: document.querySelectorAll(".build-show__progress li").length,
+      ids: [...document.querySelectorAll(".react-flow__node")].filter((n) => n.querySelector(".object-node")).map((n) => n.getAttribute("data-id")),
+      hand: !!document.querySelector("[data-build-hand].is-on"),
+      caption: document.querySelector("[data-build-caption]")?.textContent ?? "",
+      palette: document.querySelector("[data-palette]")?.getBoundingClientRect().width ?? 0,
+      film: document.querySelectorAll(".build-show__bar, .build-show__vignette").length,
       button: document.querySelector("[data-build-play]")?.getAttribute("data-build-play"),
     }));
     await shot(page, "02a-build");
-    const bottomFirst = first.arriving.length > 0 && first.arriving.every((id) => Math.abs((placed[id]?.y ?? -1e9) - lowest) <= 40);
     check(
-      "Build plays the diagram from the bottom up: the bottom row comes first, under a caption naming the layer, with the panels folded away",
-      panelsAway && first.shown > 0 && first.shown < total && bottomFirst && /^Layer 1 of \d+$/.test(first.step ?? "") && first.title && first.layers >= 2 && first.button === "playing",
-      JSON.stringify({ ...first, total, lowest, panelsAway }),
+      "Build puts the diagram together on the canvas itself: the panels stay, a hand carries the boxes in, and the bottom row comes first",
+      paletteBefore > 200 && first.palette === paletteBefore && first.film === 0 && first.hand && first.ids.length >= 1 && first.ids.length < total && first.ids.every((id) => Math.abs((placed[id]?.y ?? -1e9) - lowest) <= 40) && /^(Placing|Drawing|Framing|Connecting) /.test(first.caption) && first.button === "playing",
+      JSON.stringify({ ...first, paletteBefore, total, lowest }),
     );
-    // The next layer rises on top of the first, and its lines draw themselves in.
-    await page.waitForSelector('[data-build-show][data-build-stage="1"]', { timeout: 8000 });
-    await sleep(300);
-    const second = await page.evaluate(() => ({ shown: document.querySelectorAll(".object-node").length, drawing: document.querySelectorAll(".react-flow__edge.build-draw").length, step: document.querySelector(".build-show__step")?.textContent }));
-    // The space bar pauses it, and the layer stays.
-    await page.keyboard.press(" ");
-    await sleep(2600);
-    const paused = await page.evaluate(() => ({ stage: document.querySelector("[data-build-show]")?.getAttribute("data-build-stage"), label: document.querySelector("[data-build-pause]")?.getAttribute("aria-label") }));
-    await page.keyboard.press(" ");
+    // A line is dragged from one box to the other, and shows only as far as the hand has drawn it.
+    await page.waitForSelector(".react-flow__edge.build-draw", { timeout: 20000 });
+    const drawing = async () =>
+      page.evaluate(() => {
+        const g = document.querySelector(".react-flow__edge.build-draw");
+        return { hand: document.querySelector("[data-build-hand]")?.style.transform ?? "", off: parseFloat(g?.style.getPropertyValue("--build-off") ?? "NaN"), len: parseFloat(g?.style.getPropertyValue("--build-len") ?? "NaN"), caption: document.querySelector("[data-build-caption]")?.textContent ?? "", labels: g ? 1 : 0 };
+      });
+    await page.waitForFunction(() => {
+      const g = document.querySelector(".react-flow__edge.build-draw");
+      const off = parseFloat(g?.style.getPropertyValue("--build-off") ?? "NaN");
+      const len = parseFloat(g?.style.getPropertyValue("--build-len") ?? "NaN");
+      return off > 0 && off < len;
+    }, { timeout: 8000 }).catch(() => {});
+    const d1 = await drawing();
+    await sleep(120);
+    const d2 = await drawing();
+    await shot(page, "02a-build-line");
     check(
-      "the next layer rises on the one before with its lines drawing in, and the space bar pauses it",
-      second.shown > first.shown && second.drawing > 0 && second.step?.startsWith("Layer 2 of") && paused.stage === "1" && paused.label === "Play (space)",
-      JSON.stringify({ second, paused }),
+      "a line is drawn from one box to the other as the hand drags it",
+      d1.caption.startsWith("Connecting ") && d1.len > 0 && d1.off > 0 && d1.off < d1.len && (d2.off < d1.off || Number.isNaN(d2.off)) && d1.hand !== d2.hand,
+      JSON.stringify({ d1, d2 }),
     );
-    // Skip goes to the end: everything stands, with a closing caption; Esc ends it and the editor comes back as it was.
+    // The space bar pauses it: nothing moves; 2× makes it faster.
+    await page.keyboard.press(" ");
+    await sleep(150);
+    const still = async () => page.evaluate(() => ({ hand: document.querySelector("[data-build-hand]")?.style.transform, boxes: document.querySelectorAll(".object-node").length, lines: document.querySelectorAll(".react-flow__edge").length, caption: document.querySelector("[data-build-caption]")?.textContent ?? "", label: document.querySelector("[data-build-pause]")?.getAttribute("aria-label") }));
+    const p1 = await still();
+    await sleep(1500);
+    const p2 = await still();
+    await page.keyboard.press(" ");
+    await page.click("[data-build-fast]");
+    const fast = await page.$eval("[data-build-fast]", (b) => b.getAttribute("aria-pressed"));
+    check("the space bar pauses the hand where it is, and 2× makes it faster", p1.hand === p2.hand && p1.boxes === p2.boxes && p1.lines === p2.lines && p2.caption.startsWith("Paused: ") && p2.label === "Play (space)" && fast === "true", JSON.stringify({ p1, p2, fast }));
+    // Skip goes to the end: everything stands, with how much was built; a moment later the canvas is given back.
     await page.click("[data-build-skip]");
-    await page.waitForSelector('[data-build-show][data-build-phase="outro"]');
+    await page.waitForSelector('[data-build-show][data-build-phase="done"]');
+    await sleep(300);
+    const end = await page.evaluate(() => ({ shown: document.querySelectorAll(".object-node").length, lines: document.querySelectorAll(".react-flow__edge").length, caption: document.querySelector("[data-build-caption]")?.textContent, hand: !!document.querySelector("[data-build-hand].is-on") }));
+    await page.waitForFunction(() => !document.querySelector("[data-build-show]"), { timeout: 6000 });
     await sleep(400);
-    const end = await page.evaluate(() => ({ shown: document.querySelectorAll(".object-node").length, step: document.querySelector(".build-show__step")?.textContent, said: document.querySelector(".build-show__names")?.textContent }));
-    await shot(page, "02a-build-end");
-    await page.keyboard.press("Escape");
-    await page.waitForFunction(() => !document.querySelector("[data-build-show]"));
-    await sleep(500);
-    const after = await page.evaluate(() => ({ shown: document.querySelectorAll(".object-node").length, edges: document.querySelectorAll(".react-flow__edge").length, hidden: document.querySelectorAll(".react-flow__node.build-arrive, .react-flow__edge.build-draw").length, palette: [...document.querySelectorAll("aside")].some((a) => a.offsetParent !== null && a.getBoundingClientRect().width > 200), button: document.querySelector("[data-build-play]")?.getAttribute("data-build-play") }));
+    const after = await page.evaluate(() => ({ shown: document.querySelectorAll(".object-node").length, edges: document.querySelectorAll(".react-flow__edge").length, left: document.querySelectorAll(".react-flow__node.build-drop, .react-flow__edge.build-draw, [data-build-hand]").length, palette: document.querySelector("[data-palette]")?.getBoundingClientRect().width ?? 0, button: document.querySelector("[data-build-play]")?.getAttribute("data-build-play") }));
     check(
-      "skipping shows the whole diagram with a closing caption, and Esc gives the editor back as it was",
-      end.shown === total && end.step === "Built" && new RegExp(`^${total} components, \\d+ connections, in \\d+ layers$`).test(end.said ?? "") && after.shown === total && after.edges === sampleEdges && after.hidden === 0 && after.palette && after.button === "ready",
+      "skipping shows the whole diagram and what was built, and then the canvas is given back as it was",
+      end.shown === total && end.lines === sampleEdges && end.caption === `Built: ${total} components and ${sampleEdges} connections` && !end.hand && after.shown === total && after.edges === sampleEdges && after.left === 0 && after.palette === paletteBefore && after.button === "ready",
       JSON.stringify({ end, after, total }),
     );
   }
+
 
   // A connection: which way it goes, moving on the canvas, and its protocols and ports.
   {
@@ -1015,13 +1031,15 @@ try {
   await sleep(300);
   check("the arrow keys walk through the diagrams", secondShown !== firstShown && (await presented()) === firstShown);
   // B plays the build animation in a presentation too; Esc stops it and the presentation stays.
+  const presentShown = await count(page, ".object-node");
   await page.keyboard.press("b");
   await page.waitForSelector("[data-build-show]");
+  await page.waitForFunction(() => document.querySelector("[data-build-show]")?.getAttribute("data-build-phase") === "building", { timeout: 8000 }).catch(() => {});
   const presentBuild = await page.evaluate(() => ({ phase: document.querySelector("[data-build-show]")?.getAttribute("data-build-phase"), button: !!document.querySelector("[data-build-play]"), shown: document.querySelectorAll(".object-node").length }));
   await page.keyboard.press("Escape");
   await page.waitForFunction(() => !document.querySelector("[data-build-show]"));
   await sleep(300);
-  check("in a presentation, B plays the build animation and Esc stops it without leaving", ["intro", "stage"].includes(presentBuild.phase) && presentBuild.button && page.url().includes("/present/") && (await count(page, ".object-node")) > presentBuild.shown, JSON.stringify(presentBuild));
+  check("in a presentation, B builds the diagram on its canvas and Esc stops it without leaving", presentBuild.phase === "building" && presentBuild.shown < presentShown && presentBuild.button && page.url().includes("/present/") && (await count(page, ".object-node")) === presentShown && (await count(page, "[data-build-hand]")) === 0, JSON.stringify({ presentBuild, presentShown }));
   await page.keyboard.press("Escape");
   await page.waitForSelector('nav[aria-label="Main"]');
   check("Escape returns to the editor", page.url().endsWith(`/diagram/${landscapeId}`));

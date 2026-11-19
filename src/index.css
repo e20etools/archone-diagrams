@@ -1258,228 +1258,283 @@ html[data-motion="off"] .insight { animation: none; }
   margin-right: 80px;
 }
 
-/* ---------- The build animation: the diagram rises from the bottom up ---------- */
-.is-building .react-flow__panel,
-.is-building .react-flow__minimap,
-.is-building .react-flow__controls,
-.is-building .react-flow__attribution {
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 400ms ease;
-}
+/* ---------- The build animation: a hand puts the diagram together on the canvas ---------- */
 .is-building .edge-traffic {
   display: none;
 }
-/* A box rises into place: up from below, out of a blur. Its wrapper keeps the position. */
-.react-flow__node.build-arrive > * {
-  animation: build-rise 900ms cubic-bezier(0.16, 1, 0.3, 1) var(--build-delay, 0ms) both;
+/* The canvas empties before the building starts. */
+.build-clearing .react-flow__node,
+.build-clearing .react-flow__edge,
+.build-clearing .react-flow__edgelabel-renderer {
+  opacity: 0;
+  transition: opacity 280ms ease;
 }
-@keyframes build-rise {
+/* A box put down lands: a touch larger as it leaves the hand, then in its place. */
+.react-flow__node.build-drop > * {
+  animation: build-drop 340ms cubic-bezier(0.2, 0.9, 0.3, 1.25) both;
+}
+@keyframes build-drop {
   from {
-    opacity: 0;
-    transform: translateY(34px) scale(0.94);
-    filter: blur(7px);
-  }
-  55% {
-    filter: blur(0);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-    filter: none;
-  }
-}
-/* Zones and the frame of what the diagram shows the inside of open around their boxes. */
-.react-flow__node.build-frame > * {
-  animation: build-frame 1100ms cubic-bezier(0.16, 1, 0.3, 1) both;
-}
-@keyframes build-frame {
-  from {
-    opacity: 0;
-    transform: scale(0.97);
+    opacity: 0.55;
+    transform: translateY(-5px) scale(1.05);
+    box-shadow: 0 14px 28px rgba(20, 30, 50, 0.22);
   }
   to {
     opacity: 1;
     transform: none;
   }
 }
-/* A line draws itself from one box to the other once both stand; its head and label follow. */
+.react-flow__node.build-frame-in > * {
+  animation: build-appear 260ms ease both;
+}
+@keyframes build-appear {
+  from {
+    opacity: 0;
+  }
+}
+/* The line being drawn shows only as far as the hand has dragged it. */
 .react-flow__edge.build-draw .react-flow__edge-path {
-  stroke-dasharray: 2400 !important;
-  stroke-dashoffset: 2400;
-  animation: build-draw 1100ms cubic-bezier(0.65, 0, 0.35, 1) var(--build-delay, 400ms) forwards;
-}
-@keyframes build-draw {
-  to {
-    stroke-dashoffset: 0;
-  }
+  stroke-dasharray: var(--build-len, 100000px) !important;
+  stroke-dashoffset: var(--build-off, 100000px) !important;
 }
 .edge-label[data-arriving] {
-  animation: build-label 600ms ease both;
+  animation: build-label 420ms ease both;
 }
 @keyframes build-label {
   from {
     opacity: 0;
-    transform: translateY(4px);
+    transform: translateY(3px);
   }
 }
 
-.build-show {
-  position: absolute;
-  inset: 0;
-  z-index: 6;
-  pointer-events: none;
-  color: #ffffff;
-}
-.build-show__bar {
-  position: absolute;
+/* The hand: a pointer, what it carries, and the rectangle it draws. Above everything, and never in the way of a click. */
+.build-hand,
+.build-chip,
+.build-marquee {
+  position: fixed;
   left: 0;
-  right: 0;
-  background: rgba(7, 11, 19, 0.92);
-  backdrop-filter: blur(6px);
-  animation: build-bar-top 800ms cubic-bezier(0.16, 1, 0.3, 1) both;
-}
-.build-show__bar--top {
   top: 0;
-  height: 52px;
+  pointer-events: none;
+  will-change: transform;
 }
-.build-show__bar--bottom {
-  bottom: 0;
-  min-height: 104px;
-  box-sizing: border-box;
-  padding: 18px 28px;
+.build-hand {
+  z-index: 62;
+  width: 26px;
+  height: 26px;
+  margin: -3px 0 0 -5px;
+  opacity: 0;
+  transition: opacity 220ms ease;
+}
+.build-hand.is-on {
+  opacity: 1;
+}
+.build-hand__arrow {
+  display: block;
+  filter: drop-shadow(0 2px 3px rgba(15, 23, 42, 0.32));
+  transform-origin: 5px 3px;
+  transition: transform 110ms ease;
+}
+.build-hand.is-down .build-hand__arrow {
+  transform: scale(0.88);
+}
+.build-hand__ring {
+  position: absolute;
+  left: -9px;
+  top: -11px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid var(--color-blueprint, #2447d6);
+  opacity: 0;
+  transform: scale(0.4);
+}
+.build-hand.is-down .build-hand__ring {
+  animation: build-press 420ms ease-out;
+}
+@keyframes build-press {
+  from {
+    opacity: 0.7;
+    transform: scale(0.4);
+  }
+  to {
+    opacity: 0;
+    transform: scale(1.25);
+  }
+}
+.build-chip {
+  z-index: 61;
+  transform-origin: 0 0;
+  opacity: 0;
+  transition: opacity 160ms ease;
+}
+.build-chip.is-on {
+  opacity: 0.94;
+}
+.build-chip > * {
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.18);
+}
+.build-chip__tile {
+  width: 100%;
+  background: var(--color-surface, #ffffff);
+  border-color: var(--color-blueprint, #2447d6) !important;
+}
+.build-chip__card {
   display: flex;
   align-items: center;
-  gap: 24px;
-  pointer-events: auto;
-  animation-name: build-bar-bottom;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--color-blueprint, #2447d6);
+  background: var(--color-surface, #ffffff);
+  color: var(--color-ink, #1d2433);
 }
-@keyframes build-bar-top {
-  from {
-    transform: translateY(-100%);
-  }
+.build-chip__dot {
+  width: 10px;
+  height: 10px;
+  flex: none;
+  border-radius: 3px;
 }
-@keyframes build-bar-bottom {
-  from {
-    transform: translateY(100%);
-  }
-}
-.build-show__vignette {
-  position: absolute;
-  inset: 52px 0 104px;
-  background: radial-gradient(ellipse at center, transparent 58%, rgba(7, 11, 19, 0.2));
-  animation: build-fade 1200ms ease both;
-}
-@keyframes build-fade {
-  from {
-    opacity: 0;
-  }
-}
-.build-show__caption {
+.build-chip__text {
   min-width: 0;
-  flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  animation: build-caption 800ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
-@keyframes build-caption {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-    filter: blur(4px);
-  }
-}
-.build-show__step {
-  font-size: 12px;
-  letter-spacing: 0.02em;
-  color: #9fb0cc;
-}
-.build-show__title {
-  font-size: 22px;
-  line-height: 28px;
-  font-weight: 600;
-  color: #ffffff;
-}
-.build-show__names {
+.build-chip__name {
   font-size: 13px;
-  color: #c9d3e3;
+  font-weight: 600;
+  line-height: 17px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.build-show__right {
+.build-chip__kind {
+  font-size: 11px;
+  line-height: 14px;
+  color: var(--color-ink-faint, #6b7488);
+}
+.build-marquee {
+  z-index: 60;
+  border: 1.5px dashed var(--color-blueprint, #2447d6);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--color-blueprint, #2447d6) 6%, transparent);
+  opacity: 0;
+}
+.build-marquee.is-on {
+  opacity: 1;
+}
+
+/* What the hand is doing, and the controls, in a small bar at the top of the canvas. */
+.build-bar {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 12;
+  max-width: calc(100% - 32px);
   display: flex;
   align-items: center;
-  gap: 18px;
+  gap: 10px;
+  height: 40px;
+  padding: 0 6px 0 14px;
+  overflow: hidden;
+  border: 1px solid var(--color-line, #dfe3ea);
+  border-radius: 10px;
+  background: var(--color-surface, #ffffff);
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.1);
+  font-size: 13px;
+  color: var(--color-ink, #1d2433);
 }
-[data-assistant-room] .build-show__right {
-  margin-right: 68px;
+.build-bar__dot {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--color-blueprint, #2447d6);
+  animation: build-dot 1.4s ease-in-out infinite;
 }
-.build-show__progress {
-  margin: 0;
-  padding: 0;
-  list-style: none;
+.build-bar__dot[data-paused] {
+  animation: none;
+  background: var(--color-ink-faint, #6b7488);
+}
+.build-bar__dot[data-done] {
+  animation: none;
+  background: #16a34a;
+}
+@keyframes build-dot {
+  50% {
+    opacity: 0.35;
+  }
+}
+.build-bar__text {
+  min-width: 0;
+  max-width: 420px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.build-bar__count {
+  flex: none;
+  color: var(--color-ink-faint, #6b7488);
+  font-variant-numeric: tabular-nums;
+}
+.build-bar__controls {
+  flex: none;
   display: flex;
-  gap: 5px;
+  align-items: center;
+  gap: 2px;
+  padding-left: 6px;
+  border-left: 1px solid var(--color-line, #dfe3ea);
 }
-.build-show__progress li {
-  width: 18px;
-  height: 3px;
-  border-radius: 2px;
-  background: #34405a;
-  transition: background 500ms ease;
-}
-.build-show__progress li[data-done],
-.build-show__progress li[data-now] {
-  background: #8aa2ff;
-}
-.build-show__controls {
-  display: flex;
-  gap: 6px;
-}
-.build-show__controls button {
-  width: 36px;
-  height: 36px;
+.build-bar__controls button {
+  min-width: 28px;
+  height: 28px;
   display: grid;
   place-items: center;
+  padding: 0 4px;
   border: 0;
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.09);
-  color: #ffffff;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-ink-soft, #475066);
+  font-size: 12px;
+  font-weight: 600;
   cursor: pointer;
-  transition: background 150ms ease;
 }
-.build-show__controls button:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.18);
+.build-bar__controls button:hover:not(:disabled) {
+  background: var(--color-line-soft, #eef1f5);
+  color: var(--color-ink, #1d2433);
 }
-.build-show__controls button:focus-visible {
-  outline: 2px solid #8aa2ff;
-  outline-offset: 2px;
+.build-bar__controls button[aria-pressed="true"] {
+  background: var(--color-blueprint-soft, #e8edff);
+  color: var(--color-blueprint, #2447d6);
 }
-.build-show__controls button:disabled {
+.build-bar__controls button:focus-visible {
+  outline: 2px solid var(--color-blueprint, #2447d6);
+  outline-offset: 1px;
+}
+.build-bar__controls button:disabled {
   opacity: 0.4;
   cursor: default;
 }
-/* Less motion: things appear with a quick fade, the camera does not move. */
-.is-building:has([data-still]) .react-flow__node.build-arrive > *,
-.is-building:has([data-still]) .react-flow__node.build-frame > * {
-  animation: build-fade 240ms ease both;
+.build-bar__progress {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: var(--color-line-soft, #eef1f5);
 }
-.is-building:has([data-still]) .react-flow__edge.build-draw .react-flow__edge-path {
-  animation: none;
-  stroke-dashoffset: 0;
-}
-.build-show[data-still] .build-show__bar,
-.build-show[data-still] .build-show__caption {
-  animation: build-fade 240ms ease both;
+.build-bar__progress > span {
+  display: block;
+  height: 100%;
+  background: var(--color-blueprint, #2447d6);
+  transition: width 300ms ease;
 }
 @media (max-width: 640px) {
-  .build-show__bar--bottom {
-    flex-wrap: wrap;
-    padding: 14px 16px;
+  .build-bar__count {
+    display: none;
   }
-  .build-show__title {
-    font-size: 18px;
-  }
+}
+/* Less motion: no hand; things appear in turn with a short fade. */
+.is-building:has([data-still]) .react-flow__node.build-drop > * {
+  animation: build-appear 200ms ease both;
 }

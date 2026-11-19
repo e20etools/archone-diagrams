@@ -858,26 +858,32 @@ the connection is marked encrypted. Exports carry the direction and protocols.
   - A key on the canvas counts the lines of each kind and the findings by severity.
   - The assistant can switch it on and off when asked.
 
-### Watching a diagram build itself
+### Watching a diagram being put together
 
-**Build** on the diagram's toolbar (and in Present, or the B key there) plays a short animation
-in which the diagram builds itself from the bottom up, a layer at a time:
+**Build** on the diagram's toolbar (and in Present, or the B key there) puts the diagram
+together again on its own canvas, the way a person builds it, from the bottom up:
 
-- The canvas takes the whole width, with dark bars at the top and bottom like a film. The
-  panels fold away and come back as they were, with anything typed in them.
-- The camera starts close on the bottom row and pulls back as each layer rises into place.
-  Boxes come up from below out of a blur, one after another from the middle outwards. A zone,
-  and the frame of what the diagram shows the inside of, opens around its first boxes.
-- Lines draw themselves from one box to the other once both stand, and then take their
-  arrowheads and labels.
-- A caption names each layer ("Layer 2 of 6", "Data and storage") and its first boxes. At the
-  end the whole diagram is in view, with how many components, connections and layers it has.
-- A layer is a row of boxes (a column, for a diagram drawn left to right), and is named after
-  the kind of thing most of its boxes are. The layers come from where the boxes are on the
-  canvas, so nothing has to be set up first.
-- Pause or play with the space bar, skip to the end, play it again, or stop it with Esc.
-- For people who ask their system for less motion, the camera does not move and things
-  appear with a short fade.
+- It happens in the same frame: the toolbar and the panels stay where they are. The whole
+  diagram is brought into view, the canvas empties, and a pointer starts building.
+- For each box the pointer goes to the panel of components (to the box's own tile when it is
+  in view), picks it up, carries it to its place and puts it down; on the way the tile turns
+  into the box, at the size it has on the canvas. On the presentation page, where there is no
+  panel, it brings each box in from the edge of the canvas.
+- A zone, and the frame of what the diagram shows the inside of, is drawn as a rectangle from
+  its top left corner just before the first box that goes into it.
+- As soon as both ends of a line stand, the pointer drags it from one box to the other; the
+  line follows the pointer, then takes its arrowhead and its label.
+- The boxes go in row by row from the bottom (column by column from the right, for a diagram
+  drawn left to right), and along each row from the left. The order comes from where the boxes
+  are, so nothing has to be set up first.
+- A small bar at the top of the canvas says what is being done ("Placing Order service",
+  "Connecting Order service to Orders database") and how many boxes stand, with pause and play
+  (or the space bar), 2× speed, skip to the end, build it again, and stop (or Esc). A large
+  diagram goes faster on its own, so that it takes about half a minute.
+- While it plays, the canvas does not move or take clicks. At the end it says how many
+  components and connections were built and gives the canvas back as it now stands.
+- For people who ask their system for less motion, there is no pointer: the boxes and lines
+  appear in turn.
 - The assistant can play it when asked.
 
 ### Impact and dependencies
@@ -1691,9 +1697,9 @@ build does not reload.
 ## Check it
 
 ```bash
-npm test                   # 638 tests: model, the component library, flows, links, protected live links, decisions, arranging, health, CALM, scenario merging, the trust page, the document, your own rules, large models, templates, the pull-request gate, the APM import, AI, questions, checks, MCP, import readers, sync engine, comparison, and the database rules and the API on a real Postgres
+npm test                   # 640 tests: model, the component library, flows, links, protected live links, decisions, arranging, health, CALM, scenario merging, the trust page, the document, your own rules, large models, templates, the pull-request gate, the APM import, AI, questions, checks, MCP, import readers, sync engine, comparison, and the database rules and the API on a real Postgres
 npm run build              # type-check and production build into dist/
-npm run test:browser       # 291 end-to-end checks of browser-only mode (run after a build)
+npm run test:browser       # 292 end-to-end checks of browser-only mode (run after a build)
 npm run test:browser:cloud # 128 end-to-end checks of hosted mode with several people
 ```
 
